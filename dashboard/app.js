@@ -729,8 +729,18 @@ document.addEventListener('alpine:init', () => {
             this.classifyFleetForMLView();
           }
           const triggerResize = () => {
+            if (newTab === 'overview') {
+              if (!chartRegistry.timeline || chartRegistry.timeline.width === 0) {
+                this.initCharts();
+              } else {
+                this.updateTimelineChart();
+              }
+            }
             Object.values(chartRegistry).forEach(c => {
-              if (c && typeof c.resize === 'function') c.resize();
+              if (c) {
+                if (typeof c.resize === 'function') c.resize();
+                if (typeof c.update === 'function') c.update();
+              }
             });
             if (typeof window.initReveal === 'function') window.initReveal();
           };
@@ -1303,6 +1313,10 @@ document.addEventListener('alpine:init', () => {
       // 1. Behavioural Distance Timeline Chart
       const timelineCtx = document.getElementById('anomalyTimelineChart');
       if (timelineCtx) {
+        if (chartRegistry.timeline) {
+          try { chartRegistry.timeline.destroy(); } catch (e) { }
+          chartRegistry.timeline = null;
+        }
         const hasScores = this.scores && this.scores.length > 0;
         const labels = hasScores ? this.scores.slice(0, 7).reverse().map(s => new Date(s.window_start).toLocaleTimeString().slice(0, 5)) : ['W-6', 'W-5', 'W-4', 'W-3', 'W-2', 'W-1', 'Now'];
         const dataPoints = hasScores ? this.scores.slice(0, 7).reverse().map(s => s.total_score ?? 0) : [0, 0, 0, 0, 0, 0, this.currentAnomalyScore];
@@ -1423,6 +1437,10 @@ document.addEventListener('alpine:init', () => {
       // 2. Score Composition Doughnut Chart: Newsprint styling
       const compCtx = document.getElementById('anomalyCompositionChart');
       if (compCtx) {
+        if (chartRegistry.composition) {
+          try { chartRegistry.composition.destroy(); } catch (e) { }
+          chartRegistry.composition = null;
+        }
         chartRegistry.composition = new Chart(compCtx, {
           type: 'doughnut',
           data: {
@@ -1475,6 +1493,10 @@ document.addEventListener('alpine:init', () => {
       // 3. Evidence Ladder Bar Chart: Newsprint styling
       const ladderCtx = document.getElementById('evidenceLadderChart');
       if (ladderCtx) {
+        if (chartRegistry.ladder) {
+          try { chartRegistry.ladder.destroy(); } catch (e) { }
+          chartRegistry.ladder = null;
+        }
         chartRegistry.ladder = new Chart(ladderCtx, {
           type: 'bar',
           data: {
