@@ -28,6 +28,7 @@ All contributors and AI pairing assistants must adhere strictly to every rule de
 * Avoid vague, ceremonial, or verbose commit messages.
 
 ### 1.4 Multi-Repository & Branch Synchronization
+* Active development repository: `https://github.com/Porygon-Real/Porygon.git`. Treat it as the primary repository. Mirror publication requires a separate explicit user request.
 * The project exists across two local directories:
   * Primary working workspace: `/home/anuruprkris/Project/final_yeat_work`
   * Mirror/Git upstream repository: `/home/anuruprkris/Project/Porygon`

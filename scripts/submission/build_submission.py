@@ -33,7 +33,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORK = ROOT / "artifacts/local/college-submission"
 OUT = WORK / "anurup-technical-enrichment-submission"
 PUBLIC = "https://github.com/Anurup-R-Krishnan/Porygon/tree/technical-enrichment"
-DATASET_URL = PUBLIC + "/datasets/porygon-pilot-v1.0.0"
+PRIMARY = "https://github.com/Porygon-Real/Porygon"
+DATASET_URL = "https://www.kaggle.com/datasets/anuruprkrishnan/porygon-controlled-container-pilot-dataset"
 
 
 def build():
@@ -77,7 +78,8 @@ def build():
     (repo / "repository-details.json").write_text(
         json.dumps(
             {
-                "public_repository": PUBLIC,
+                "project_repository": PRIMARY,
+                "public_source_repository": PUBLIC,
                 "local_source_commit": sha,
                 "working_tree_changes_included": False,
                 "public_dataset_release_url": DATASET_URL,
@@ -107,8 +109,37 @@ def build():
     demo = OUT / "04-working-demonstration"
     demo.mkdir(exist_ok=True)
     recording = WORK / "recording"
+    final_video = WORK / "porygon-website-demonstration.mp4"
+    if not final_video.exists():
+        raise FileNotFoundError("Render the HyperFrames website demonstration first")
+    shutil.copy2(final_video, demo / "demo.mp4")
+    for name in ["kaggle-publication.json", "film-metadata.json"]:
+        if (WORK / name).exists():
+            shutil.copy2(WORK / name, demo / name)
+    if (WORK / "kaggle-publication.json").exists():
+        shutil.copy2(WORK / "kaggle-publication.json", dataset / "public-release.json")
+    film_source = WORK / "website-film"
+    shutil.copytree(
+        film_source,
+        demo / "hyperframes-project",
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns(
+            ".hyperframes",
+            "node_modules",
+            "renders",
+            ".git",
+            ".media",
+            ".thumbnails",
+            ".transcode-cache",
+            ".waveform-cache",
+            "AGENTS.md",
+            "CLAUDE.md",
+            "review.md",
+            "storylines.md",
+            "spec.md",
+        ),
+    )
     for name in [
-        "demo.mp4",
         "demo.cast",
         "run.log",
         "run-metadata.json",
@@ -292,7 +323,8 @@ def build():
             "Open-source Technical Repository",
             "Activity 5 · contribution to the group deliverable · 5 marks",
             [
-                ("p", "Public project repository: " + PUBLIC),
+                ("p", "Project repository: " + PRIMARY),
+                ("p", "Public source evidence: " + PUBLIC),
                 (
                     "table",
                     [
@@ -372,7 +404,7 @@ def build():
                 ("h", "Recorded result"),
                 (
                     "p",
-                    "The recorded end-to-end verification completed successfully; the accompanying log and sample outputs contain the acceptance assertions."
+                    "The HyperFrames video presents the actual website, live dashboard, captured process events, incident evidence and public Kaggle dataset. The recorded end-to-end verification completed successfully; metrics and original sample outputs accompany the video."
                     if ready
                     else "The live recording and final metrics will be attached after the end-to-end verification completes.",
                 ),

@@ -1,6 +1,14 @@
 # Porygon working demonstration
 
-Open `demo.mp4` for the 2 minute 4 second demonstration. It replays the successful terminal verification with idle time condensed and ends with measured results. `demo.cast` retains the complete timestamped output; `run.log` contains the command log.
+Open `demo.mp4` for the 84-second HyperFrames demonstration. The film shows the actual homepage and dashboard, filters real telemetry from the disposable `porygon-video-workload` container, reviews an existing incident, presents the original successful acceptance metrics and opens the public Kaggle release. Six narration segments explain the workflow.
+
+`hyperframes-project/` contains the editable composition, captured website footage, fonts and audio. From that folder run `npx hyperframes preview --background` to edit it, or `npx hyperframes render --quality delivery --output demonstration.mp4` to render it again. HyperFrames is pinned in package.json. `film-metadata.json` identifies the website capture and output hashes.
+
+`demo.cast` retains the original timestamped acceptance output; `run.log` contains its command log. The video identifies its acceptance figures as recorded verification results. Original configuration and model identifiers remain in `versions.json`.
+
+Project repository: https://github.com/Porygon-Real/Porygon
+
+Public dataset: https://www.kaggle.com/datasets/anuruprkrishnan/porygon-controlled-container-pilot-dataset
 
 ## Recorded workflow
 

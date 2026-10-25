@@ -3,9 +3,8 @@
 Use a Linux machine with Docker Engine, Docker Compose v2, Git, Python 3.11 or later, Make and curl. Falco requires host kernel eBPF support. The recorded demonstration used kernel 7.2.7-1-cachyos and the pinned Falco 0.45.1 image in compose.yaml.
 
 ```sh
-git clone https://github.com/Anurup-R-Krishnan/Porygon.git
+git clone https://github.com/Porygon-Real/Porygon.git
 cd Porygon
-git checkout technical-enrichment
 make init
 make config
 make up
