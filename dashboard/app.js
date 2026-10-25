@@ -1294,10 +1294,10 @@ document.addEventListener('alpine:init', () => {
       this.updateTimelineChart();
     },
 
-    // Chart Initializations — Newsprint styling
+    // Chart Initializations: Newsprint styling
     initCharts() {
       Chart.defaults.font.family = 'JetBrains Mono';
-      Chart.defaults.color = '#525252';
+      Chart.defaults.color = '#111111';
       Chart.defaults.borderColor = '#E5E5E0';
 
       // 1. Behavioural Distance Timeline Chart
@@ -1316,37 +1316,37 @@ document.addEventListener('alpine:init', () => {
               {
                 label: 'JENSEN-SHANNON D_JS',
                 data: dataPoints,
-                borderColor: '#FFFFFF',
-                backgroundColor: 'rgba(124,58,237,0.10)',
-                borderWidth: 2.5,
+                borderColor: '#111111',
+                backgroundColor: 'rgba(17, 17, 17, 0.06)',
+                borderWidth: 2,
                 // 0, not smoothed: scored windows can have real time gaps between
                 // them (a window that couldn't be scored, a restart, a burst of
                 // polling misses). A smoothed curve (tension>0) visually implies
                 // continuous monitoring across those gaps that didn't happen.
                 tension: 0,
                 fill: true,
-                pointBackgroundColor: '#FFFFFF',
-                pointBorderColor: '#0A0A0F',
-                pointBorderWidth: 1,
-                pointRadius: 3,
-                pointHoverRadius: 4,
+                pointBackgroundColor: '#111111',
+                pointBorderColor: '#FFFFFF',
+                pointBorderWidth: 1.5,
+                pointRadius: 4,
+                pointHoverRadius: 6,
                 stepped: false
               },
               {
-                label: 'DEVIATION 0.50 [POR-DET-001]',
+                label: 'ELEVATED DRIFT (0.50)',
                 data: Array(labels.length).fill(0.50),
-                borderColor: '#FFB000',
-                borderWidth: 1,
-                borderDash: [4, 4],
+                borderColor: '#D97706',
+                borderWidth: 1.5,
+                borderDash: [6, 4],
                 pointRadius: 0,
                 fill: false
               },
               {
-                label: 'EXTREME 0.75',
+                label: 'CRITICAL ANOMALY (0.75)',
                 data: Array(labels.length).fill(0.75),
-                borderColor: '#E11D48',
-                borderWidth: 1,
-                borderDash: [2, 4],
+                borderColor: '#CC0000',
+                borderWidth: 1.5,
+                borderDash: [4, 4],
                 pointRadius: 0,
                 fill: false
               }
@@ -1359,30 +1359,60 @@ document.addEventListener('alpine:init', () => {
               y: {
                 min: 0.0,
                 max: 1.0,
-                grid: { color: 'rgba(255,255,255,0.06)', lineWidth: 1 },
-                ticks: { color: 'rgba(255,255,255,0.45)', font: { family: 'JetBrains Mono', size: 10 } },
-                border: { color: 'rgba(255,255,255,0.08)' }
+                grid: { color: '#E5E5E0', lineWidth: 1 },
+                ticks: {
+                  color: '#111111',
+                  font: { family: 'JetBrains Mono', size: 10, weight: 'bold' },
+                  stepSize: 0.25,
+                  callback: function(v) { return Number(v).toFixed(2); }
+                },
+                title: {
+                  display: true,
+                  text: 'D_JS DISTANCE',
+                  color: '#525252',
+                  font: { family: 'JetBrains Mono', size: 9, weight: 'bold' }
+                },
+                border: { color: '#111111', width: 1 }
               },
               x: {
-                grid: { color: 'rgba(255,255,255,0.04)', lineWidth: 1 },
-                ticks: { color: 'rgba(255,255,255,0.45)', font: { family: 'JetBrains Mono', size: 10 } },
-                border: { color: 'rgba(255,255,255,0.08)' }
+                grid: { color: '#E5E5E0', lineWidth: 1 },
+                ticks: {
+                  color: '#111111',
+                  font: { family: 'JetBrains Mono', size: 10, weight: 'bold' }
+                },
+                title: {
+                  display: true,
+                  text: 'OBSERVATION WINDOWS (60S)',
+                  color: '#525252',
+                  font: { family: 'JetBrains Mono', size: 9, weight: 'bold' }
+                },
+                border: { color: '#111111', width: 1 }
               }
             },
             plugins: {
               legend: {
-                labels: { color: 'rgba(255,255,255,0.6)', font: { family: 'JetBrains Mono', size: 10 }, boxWidth: 10, usePointStyle: true, pointStyle: 'rect' }
+                display: true,
+                position: 'top',
+                align: 'center',
+                labels: {
+                  color: '#111111',
+                  font: { family: 'JetBrains Mono', size: 10, weight: 'bold' },
+                  boxWidth: 12,
+                  boxHeight: 12,
+                  padding: 16,
+                  usePointStyle: false
+                }
               },
               tooltip: {
-                backgroundColor: 'rgba(10,10,12,0.92)',
+                backgroundColor: '#111111',
                 titleColor: '#FFFFFF',
-                bodyColor: 'rgba(255,255,255,0.7)',
-                titleFont: { family: 'JetBrains Mono', weight: 'bold' },
-                bodyFont: { family: 'JetBrains Mono' },
-                borderColor: 'rgba(255,255,255,0.10)',
+                bodyColor: '#E5E5E0',
+                titleFont: { family: 'JetBrains Mono', weight: 'bold', size: 11 },
+                bodyFont: { family: 'JetBrains Mono', size: 11 },
+                borderColor: '#111111',
                 borderWidth: 1,
-                cornerRadius: 12,
-                padding: 10,
+                cornerRadius: 0,
+                padding: 8,
                 displayColors: true
               }
             }
@@ -1390,42 +1420,51 @@ document.addEventListener('alpine:init', () => {
         });
       }
 
-      // 2. Score Composition Doughnut Chart — ethereal violet/emerald
+      // 2. Score Composition Doughnut Chart: Newsprint styling
       const compCtx = document.getElementById('anomalyCompositionChart');
       if (compCtx) {
         chartRegistry.composition = new Chart(compCtx, {
           type: 'doughnut',
           data: {
-            labels: ['CATEGORICAL 50%', 'NOVELTY 30%', 'NUMERIC 20%'],
+            labels: ['CATEGORICAL (50%)', 'NOVELTY (30%)', 'NUMERIC (20%)'],
             datasets: [{
               data: [50, 30, 20],
               backgroundColor: [
-                '#7C3AED',
-                '#10B981',
-                '#F59E0B'
+                '#111111',
+                '#525252',
+                '#CC0000'
               ],
-              borderColor: '#0A0A0F',
+              borderColor: '#FFFFFF',
               borderWidth: 2,
-              hoverOffset: 6
+              hoverOffset: 4
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            cutout: '72%',
+            cutout: '70%',
             plugins: {
               legend: {
                 position: 'bottom',
-                labels: { color: 'rgba(255,255,255,0.55)', font: { family: 'Plus Jakarta Sans', size: 11, weight: '600' }, boxWidth: 10, usePointStyle: true, pointStyle: 'circle', padding: 14 }
+                labels: {
+                  color: '#111111',
+                  font: { family: 'JetBrains Mono', size: 10, weight: 'bold' },
+                  boxWidth: 10,
+                  boxHeight: 10,
+                  usePointStyle: false,
+                  padding: 10
+                }
               },
               tooltip: {
-                backgroundColor: 'rgba(10,10,15,0.9)',
+                backgroundColor: '#111111',
                 titleColor: '#FFFFFF',
-                bodyColor: 'rgba(255,255,255,0.7)',
-                borderColor: 'rgba(255,255,255,0.10)',
+                bodyColor: '#E5E5E0',
+                titleFont: { family: 'JetBrains Mono', weight: 'bold', size: 11 },
+                bodyFont: { family: 'JetBrains Mono', size: 11 },
+                borderColor: '#111111',
                 borderWidth: 1,
-                cornerRadius: 12,
-                padding: 12,
+                cornerRadius: 0,
+                padding: 8,
                 displayColors: true
               }
             }
@@ -1433,7 +1472,7 @@ document.addEventListener('alpine:init', () => {
         });
       }
 
-      // 3. Evidence Ladder Bar Chart
+      // 3. Evidence Ladder Bar Chart: Newsprint styling
       const ladderCtx = document.getElementById('evidenceLadderChart');
       if (ladderCtx) {
         chartRegistry.ladder = new Chart(ladderCtx, {
@@ -1449,15 +1488,15 @@ document.addEventListener('alpine:init', () => {
                 this.evidenceCounts.runtime_observed_and_port_published
               ],
               backgroundColor: [
-                'rgba(255,255,255,0.18)',
-                'rgba(255,255,255,0.32)',
-                '#FFB000',
-                '#E11D48'
+                '#E5E5E0',
+                '#888888',
+                '#D97706',
+                '#CC0000'
               ],
-              borderColor: 'rgba(255,255,255,0.0)',
-              borderWidth: 0,
+              borderColor: '#111111',
+              borderWidth: 1,
               borderSkipped: false,
-              borderRadius: 12
+              borderRadius: 0
             }]
           },
           options: {
@@ -1466,37 +1505,37 @@ document.addEventListener('alpine:init', () => {
             maintainAspectRatio: false,
             scales: {
               x: {
-                grid: { color: 'rgba(255,255,255,0.06)', lineWidth: 1 },
-                ticks: { color: 'rgba(255,255,255,0.45)', font: { family: 'JetBrains Mono', size: 10 } },
-                border: { color: 'rgba(255,255,255,0.08)' }
+                grid: { color: '#E5E5E0', lineWidth: 1 },
+                ticks: { color: '#111111', font: { family: 'JetBrains Mono', size: 10, weight: 'bold' } },
+                border: { color: '#111111' }
               },
               y: {
                 grid: { display: false },
-                ticks: { color: '#FFFFFF', font: { family: 'JetBrains Mono', weight: '700', size: 10 } },
-                border: { color: 'rgba(255,255,255,0.08)' }
+                ticks: { color: '#111111', font: { family: 'JetBrains Mono', weight: 'bold', size: 10 } },
+                border: { color: '#111111' }
               }
             },
             plugins: {
               legend: { display: false },
               tooltip: {
-                backgroundColor: 'rgba(10,10,12,0.92)',
+                backgroundColor: '#111111',
                 titleColor: '#FFFFFF',
-                bodyColor: 'rgba(255,255,255,0.7)',
-                borderColor: 'rgba(255,255,255,0.10)',
+                bodyColor: '#E5E5E0',
+                titleFont: { family: 'JetBrains Mono', weight: 'bold', size: 11 },
+                bodyFont: { family: 'JetBrains Mono', size: 11 },
+                borderColor: '#111111',
                 borderWidth: 1,
-                cornerRadius: 12
+                cornerRadius: 0,
+                padding: 8
               }
             }
           }
         });
       }
 
-      // NOTE: A "System Call Flow Deviation Radar" chart previously lived here,
-      // rendering hardcoded per-syscall frequency data (epoll_wait/read/write/etc)
-      // as if it were live telemetry. Porygon's sensor is execve/execveat-only
-      // (see docs/research/threat-model.md) — it never captures per-syscall frequency
-      // data, so there was no real signal behind that chart. Removed rather than
-      // relabeled, since there's no backing data source to show instead.
+      // NOTE: System Call Flow Deviation Radar chart was intentionally removed
+      // because Porygon sensor is execve/execveat-only (see docs/research/threat-model.md)
+      // and does not capture per-syscall frequency telemetry.
     },
 
     updateTimelineChart() {
