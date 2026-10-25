@@ -5,189 +5,280 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Porygon Documentation: eBPF Runtime Anomaly Detection</title>
   <meta name="description" content="Technical documentation for Porygon: installation, architecture, eBPF syscall telemetry, Jensen-Shannon drift scoring, ML classification, rules, and reproducibility.">
-  <meta name="theme-color" content="#f7f6f2">
+
+  <!-- Favicon matching the dashboard -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23111111'/%3E%3Cpath d='M8 6h16v20H8z' fill='%23F9F9F7'/%3E%3Cpath d='M11 10h10M11 14h10M11 18h6' stroke='%23111111' stroke-width='2'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+
+  <!-- Newsprint Core Stylesheet -->
+  <link rel="stylesheet" href="style.css?v=2.5">
+
+  <!-- Docs Specific Layout Stylesheet -->
   <link rel="stylesheet" href="docs.css">
-  <script>try { var t = localStorage.getItem("porygon-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
 </head>
 <body>
 
-<header class="bar" id="top">
-  <div class="wrap">
-    <a class="brand" href="home.html" aria-label="Porygon home"><b>Porygon</b><span>DOCS</span></a>
-    <button class="menu-btn" aria-expanded="false" aria-controls="nav">Menu</button>
-    <nav class="nav" id="nav" aria-label="Site Navigation">
-      <a href="home.html">Overview</a>
-      <a href="index.html#overview">Dashboard</a>
-      <a href="index.html#telemetry">Telemetry</a>
-      <a href="index.html#ml">Scoring &amp; ML</a>
-      <a href="docs.html" class="active">Docs</a>
-      <a href="https://github.com/anuruprkris/porygon" target="_blank" rel="noopener">GitHub ↗</a>
-      <button class="icon-btn theme-toggle" aria-label="Switch colour theme" title="Switch colour theme">
-        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>
-      </button>
-    </nav>
-  </div>
-</header>
-
-<div class="wrap docs">
-  <aside class="toc" aria-label="On this page">
-    <p class="tl-t">Get started</p>
-    <ol>
-      <li><a href="#overview">Overview</a></li>
-      <li><a href="#install">Installation</a></li>
-      <li><a href="#quickstart">Quick start</a></li>
-      <li><a href="#compose">Docker Compose stack</a></li>
-    </ol>
-    <p class="tl-t">Architecture &amp; Engine</p>
-    <ol>
-      <li><a href="#architecture">Microservice architecture</a></li>
-      <li><a href="#ebpf">eBPF syscall telemetry</a></li>
-      <li><a href="#baselines">Workload baseline profiles</a></li>
-      <li><a href="#jensen-shannon">Jensen-Shannon distance</a></li>
-      <li><a href="#ml-classifier">Tree Ensemble classifier</a></li>
-      <li><a href="#rules">Detection rules &amp; allowlists</a></li>
-      <li><a href="#containment">Autonomous containment</a></li>
-    </ol>
-    <p class="tl-t">Reference &amp; Research</p>
-    <ol>
-      <li><a href="#api">REST API reference</a></li>
-      <li><a href="#config">Configuration settings</a></li>
-      <li><a href="#simulator">Attack Lab scenarios</a></li>
-      <li><a href="#reproduce">Reproducing results</a></li>
-      <li><a href="#limits">Limitations</a></li>
-      <li><a href="#licences">Licences &amp; data</a></li>
-    </ol>
+  <!-- TOP UTILITY NAVIGATION -->
+  <aside class="top-utility-bar" aria-label="System Identity and Quick Switcher">
+    <div class="top-utility-inner">
+      <div class="top-utility-tag">
+        23CSE498 &middot; Final Year Project &middot; Team 75
+      </div>
+      <nav class="top-utility-nav" aria-label="Primary Navigation">
+        <a href="home.html">Home Overview</a>
+        <a href="index.html#overview">Dashboard</a>
+        <a href="index.html#telemetry">Telemetry</a>
+        <a href="index.html#ml">Scoring &amp; ML</a>
+        <a href="docs.html" class="active">Docs</a>
+        <a href="index.html#simulator">Attack Lab</a>
+      </nav>
+    </div>
   </aside>
 
-  <article class="doc">
-    <div class="eyebrow">Documentation</div>
-    <h1>Running and building on Porygon</h1>
-    <p class="lead">Porygon instruments the Linux kernel with eBPF probes to extract syscall telemetry directly
-      from container workloads. It pairs bounded Jensen-Shannon distance for baseline behavioral drift with an
-      explainable machine learning classifier to detect runtime anomalies without sidecar agent overhead.</p>
+  <!-- DOCS HEADER MASTHEAD -->
+  <div class="docs-root">
+    <header class="docs-header" id="top">
+      <div class="docs-header-inner">
+        <div class="docs-brand-wrap">
+          <a href="home.html" class="docs-brand-title">PORYGON</a>
+          <span class="docs-brand-badge">DOCUMENTATION</span>
+        </div>
+        <div class="docs-header-meta">
+          <span>eBPF RUNTIME ANOMALY DETECTION</span>
+          <span class="dot">&bull;</span>
+          <span>RESEARCH SPECIFICATION</span>
+          <span class="dot">&bull;</span>
+          <a href="https://github.com/anuruprkris/porygon" target="_blank" rel="noopener" style="color: inherit; text-decoration: none;">GITHUB &rarr;</a>
+        </div>
+      </div>
+    </header>
+  </div>
 
-    <section id="overview">
-      <h2>Overview</h2>
-      <p>Modern container environments are designed to run predictable, repetitive microservices. When a container
-        deviates from its intended function: spawning unobserved shells, invoking reconnaissance binaries, or altering
-        user namespaces: traditional file scanners on disk cannot detect active in-flight execution.</p>
-      <p>Porygon approaches container observability through a multi-tiered pipeline:</p>
-      <ul>
-        <li><b>Kernel-space instrumentation (eBPF).</b> Intercepts <code>execve</code>, <code>fork</code>, <code>connect</code>,
-          and socket operations at the syscall boundary using modern Falco kernel probes with zero user-space sidecar penalty.</li>
-        <li><b>Digest-bound behavioral baselines.</b> Profiles historical container behavior tied strictly to cryptographic
-          image digests (<code>image@sha256:...</code>) rather than mutable human tags.</li>
-        <li><b>Information-theoretic drift ($D_{JS}$).</b> Calculates base-2 Jensen-Shannon distance across categorical
-          distributions (process names, binaries, parent-child lineages, bigram transitions) and token novelty.</li>
-        <li><b>Explainable ML classification (TreeSHAP).</b> Evaluates 12 runtime telemetry features against a Random Forest
-          ensemble, mapping anomalous activity to MITRE ATT&amp;CK tactics with local feature attributions.</li>
-        <li><b>Deterministic rule synthesis &amp; containment.</b> Cross-references anomalies against deterministic rules
-          and active allowlists, triggering automated container quarantine, process termination, or network isolation.</li>
-      </ul>
-    </section>
+  <!-- MAIN 2-COLUMN DOCUMENTATION LAYOUT -->
+  <div class="docs-root">
+    <div class="docs-grid">
 
-    <section id="install">
-      <h2>Installation</h2>
-      <p>Porygon is developed on Linux (kernel 5.8+ with BTF support) and requires Python 3.11+ and Docker Engine.</p>
-      <div class="code"><button class="copy">Copy</button>
-<pre>git clone https://github.com/anuruprkris/porygon.git
+      <!-- LEFT SIDEBAR: STICKY TABLE OF CONTENTS -->
+      <aside class="docs-sidebar" aria-label="Documentation Table of Contents">
+        <div class="docs-sidebar-sticky">
+
+          <div class="toc-group">
+            <div class="toc-label">Get Started</div>
+            <ul class="toc-list">
+              <li class="toc-item"><a href="#overview" class="toc-link">Overview</a></li>
+              <li class="toc-item"><a href="#install" class="toc-link">Installation</a></li>
+              <li class="toc-item"><a href="#quickstart" class="toc-link">Quick Start</a></li>
+              <li class="toc-item"><a href="#compose" class="toc-link">Docker Compose Stack</a></li>
+            </ul>
+          </div>
+
+          <div class="toc-group">
+            <div class="toc-label">Architecture &amp; Engine</div>
+            <ul class="toc-list">
+              <li class="toc-item"><a href="#architecture" class="toc-link">Microservices</a></li>
+              <li class="toc-item"><a href="#ebpf" class="toc-link">eBPF Syscall Telemetry</a></li>
+              <li class="toc-item"><a href="#baselines" class="toc-link">Workload Baselines</a></li>
+              <li class="toc-item"><a href="#jensen-shannon" class="toc-link">Jensen-Shannon Distance</a></li>
+              <li class="toc-item"><a href="#ml-classifier" class="toc-link">Tree Ensemble Classifier</a></li>
+              <li class="toc-item"><a href="#rules" class="toc-link">Rules &amp; Allowlists</a></li>
+              <li class="toc-item"><a href="#containment" class="toc-link">Autonomous Containment</a></li>
+            </ul>
+          </div>
+
+          <div class="toc-group">
+            <div class="toc-label">Reference &amp; Research</div>
+            <ul class="toc-list">
+              <li class="toc-item"><a href="#api" class="toc-link">REST API Reference</a></li>
+              <li class="toc-item"><a href="#config" class="toc-link">Configuration</a></li>
+              <li class="toc-item"><a href="#simulator" class="toc-link">Attack Lab Scenarios</a></li>
+              <li class="toc-item"><a href="#reproduce" class="toc-link">Reproducing Results</a></li>
+              <li class="toc-item"><a href="#limits" class="toc-link">Limitations</a></li>
+              <li class="toc-item"><a href="#licences" class="toc-link">Licences &amp; Attribution</a></li>
+            </ul>
+          </div>
+
+        </div>
+      </aside>
+
+      <!-- RIGHT COLUMN: MAIN DOCUMENTATION CONTENT -->
+      <article class="docs-main">
+        <span class="docs-eyebrow">Technical Reference Specification</span>
+        <h1 class="docs-title">Running and building on Porygon</h1>
+        <p class="docs-lead">
+          Porygon instruments the Linux kernel with eBPF probes to extract syscall telemetry directly
+          from container workloads. It pairs bounded Jensen-Shannon distance for baseline behavioral drift with an
+          explainable machine learning classifier to detect runtime anomalies without sidecar agent overhead.
+        </p>
+
+        <!-- SECTION: OVERVIEW -->
+        <section id="overview" class="doc-section">
+          <h2 class="doc-section-title">Overview</h2>
+          <p class="doc-p">
+            Modern container environments are designed to run predictable, repetitive microservices. When a container
+            deviates from its intended function: spawning unobserved shells, invoking reconnaissance binaries, or altering
+            user namespaces: traditional file scanners on disk cannot detect active in-flight execution.
+          </p>
+          <p class="doc-p">Porygon approaches container observability through a multi-tiered pipeline:</p>
+          <ul class="doc-ul">
+            <li class="doc-li"><strong>Kernel-space instrumentation (eBPF).</strong> Intercepts <code>execve</code>, <code>fork</code>, <code>connect</code>,
+              and socket operations at the syscall boundary using modern Falco kernel probes with zero user-space sidecar penalty.</li>
+            <li class="doc-li"><strong>Digest-bound behavioral baselines.</strong> Profiles historical container behavior tied strictly to cryptographic
+              image digests (<code>image@sha256:...</code>) rather than mutable human tags.</li>
+            <li class="doc-li"><strong>Information-theoretic drift ($D_{JS}$).</strong> Calculates base-2 Jensen-Shannon distance across categorical
+              distributions (process names, binaries, parent-child lineages, bigram transitions) and token novelty.</li>
+            <li class="doc-li"><strong>Explainable ML classification (TreeSHAP).</strong> Evaluates 12 runtime telemetry features against a Random Forest
+              ensemble, mapping anomalous activity to MITRE ATT&amp;CK tactics with local feature attributions.</li>
+            <li class="doc-li"><strong>Deterministic rule synthesis &amp; containment.</strong> Cross-references anomalies against deterministic rules
+              and active allowlists, triggering automated container quarantine, process termination, or network isolation.</li>
+          </ul>
+        </section>
+
+        <!-- SECTION: INSTALLATION -->
+        <section id="install" class="doc-section">
+          <h2 class="doc-section-title">Installation &amp; Prerequisites</h2>
+          <p class="doc-p">
+            Porygon is developed on Linux (kernel 5.8+ with BTF support) and requires Python 3.11+ and Docker Engine.
+          </p>
+          <div class="code-block-wrap">
+            <button class="btn-code-copy" data-copy="code-install">Copy</button>
+            <pre class="code-block" id="code-install">git clone https://github.com/anuruprkris/porygon.git
 cd porygon
 python3 -m venv .venv &amp;&amp; source .venv/bin/activate
 pip install -e backend/ -e telemetry/ -e collector/ -e scanner/ -e responder/
-pytest</pre></div>
-      <ul>
-        <li><b>Unit test suite.</b> The repository includes 169+ passing unit tests covering scoring algorithms, AST rule compiling,
-          eBPF event deserialization, and containment idempotency.</li>
-        <li><b>eBPF host support.</b> Real-time kernel event capture requires root access to attach probes via Falco or modern BPF CO-RE.</li>
-        <li><b>Database.</b> Development mode supports local SQLite; production and staging use PostgreSQL 17 with connection pooling.</li>
-      </ul>
-      <p class="note"><b>Kernel requirement note.</b> When running outside a virtualized development environment, verify that your host kernel
-        exposes eBPF tracepoints via <code>ls /sys/kernel/debug/tracing/events/syscalls/sys_enter_execve</code>.</p>
-    </section>
+pytest</pre>
+          </div>
+          <ul class="doc-ul">
+            <li class="doc-li"><strong>Unit test suite.</strong> The repository includes 169+ passing unit tests covering scoring algorithms, AST rule compiling,
+              eBPF event deserialization, and containment idempotency.</li>
+            <li class="doc-li"><strong>eBPF host support.</strong> Real-time kernel event capture requires root access to attach probes via Falco or modern BPF CO-RE.</li>
+            <li class="doc-li"><strong>Database backend.</strong> Development mode supports local SQLite; production and staging use PostgreSQL 17 with connection pooling.</li>
+          </ul>
+          <div class="news-note">
+            <strong>Kernel Requirement Note</strong>
+            When running outside a virtualized development environment, verify that your host kernel
+            exposes eBPF tracepoints via <code>ls /sys/kernel/debug/tracing/events/syscalls/sys_enter_execve</code>.
+          </div>
+        </section>
 
-    <section id="quickstart">
-      <h2>Quick start</h2>
-      <h3>1. Start the API Gateway &amp; Dashboard</h3>
-      <div class="code"><button class="copy">Copy</button>
-<pre># Start the dashboard and proxy server (port 3000)
+        <!-- SECTION: QUICKSTART -->
+        <section id="quickstart" class="doc-section">
+          <h2 class="doc-section-title">Quick Start</h2>
+          <h3 class="doc-subsection-title">1. Start the API Gateway &amp; Dashboard</h3>
+          <div class="code-block-wrap">
+            <button class="btn-code-copy" data-copy="code-quickstart">Copy</button>
+            <pre class="code-block" id="code-quickstart"># Start the dashboard and proxy server (port 3000)
 python3 scripts/serve_dashboard.py
 
 # In a second terminal, launch the FastAPI core backend (port 8000)
-uvicorn porygon_api.main:app --host 127.0.0.1 --port 8000 --reload</pre></div>
-      <p>Visit <code>http://127.0.0.1:3000</code> in your browser to access the live dashboard, telemetry streaming feed,
-        and Attack Lab simulator.</p>
+uvicorn porygon_api.main:app --host 127.0.0.1 --port 8000 --reload</pre>
+          </div>
+          <p class="doc-p">
+            Open <code>http://127.0.0.1:3000</code> in your browser to access the live dashboard, telemetry streaming feed,
+            and Attack Lab simulator.
+          </p>
 
-      <h3>2. Inspect System Verification</h3>
-      <div class="code"><button class="copy">Copy</button>
-<pre># Run static validation, typing checks, and unit test gates
+          <h3 class="doc-subsection-title">2. Inspect System Verification</h3>
+          <div class="code-block-wrap">
+            <button class="btn-code-copy" data-copy="code-verify">Copy</button>
+            <pre class="code-block" id="code-verify"># Run static validation, typing checks, and unit test gates
 bash scripts/verify_all.sh unit
 
 # Verify the deterministic detection engine and AST compiler
-bash scripts/verify_detection_engine.sh</pre></div>
-    </section>
+bash scripts/verify_detection_engine.sh</pre>
+          </div>
+        </section>
 
-    <section id="compose">
-      <h2>Docker Compose stack</h2>
-      <p>The entire modular architecture can be launched as isolated microservices via Docker Compose:</p>
-      <div class="code"><button class="copy">Copy</button>
-<pre>cp .env.example .env
+        <!-- SECTION: DOCKER COMPOSE -->
+        <section id="compose" class="doc-section">
+          <h2 class="doc-section-title">Docker Compose Stack</h2>
+          <p class="doc-p">
+            The entire modular architecture can be launched as isolated microservices via Docker Compose:
+          </p>
+          <div class="code-block-wrap">
+            <button class="btn-code-copy" data-copy="code-compose">Copy</button>
+            <pre class="code-block" id="code-compose">cp .env.example .env
 docker compose up -d --build
-docker compose ps</pre></div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Service</th><th>Internal Container</th><th>Role</th></tr></thead>
-        <tbody>
-          <tr><td><code>backend</code></td><td><code>porygon-backend</code></td><td>FastAPI API gateway, Jensen-Shannon scorer, rule engine, and incident store</td></tr>
-          <tr><td><code>collector</code></td><td><code>porygon-collector</code></td><td>Docker Engine daemon lifecycle event listener and image digest indexer</td></tr>
-          <tr><td><code>telemetry</code></td><td><code>porygon-telemetry</code></td><td>Falco eBPF probe streamer, ring-buffer reader, and batch spooler</td></tr>
-          <tr><td><code>scanner</code></td><td><code>porygon-scanner</code></td><td>Trivy CVE vulnerability scanner and active port cross-referencing</td></tr>
-          <tr><td><code>responder</code></td><td><code>porygon-responder</code></td><td>Containment orchestrator: container pause, process kill, network egress drop</td></tr>
-          <tr><td><code>postgres</code></td><td><code>porygon-postgres</code></td><td>PostgreSQL 17 ACID relational store for baselines, events, and audit logs</td></tr>
-        </tbody>
-      </table></div>
-    </section>
+docker compose ps</pre>
+          </div>
+          <div class="table-container">
+            <table class="news-table">
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Internal Container</th>
+                  <th>Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>backend</code></td><td><code>porygon-backend</code></td><td>FastAPI API gateway, Jensen-Shannon scorer, rule engine, and incident store</td></tr>
+                <tr><td><code>collector</code></td><td><code>porygon-collector</code></td><td>Docker Engine daemon lifecycle event listener and image digest indexer</td></tr>
+                <tr><td><code>telemetry</code></td><td><code>porygon-telemetry</code></td><td>Falco eBPF probe streamer, ring-buffer reader, and batch spooler</td></tr>
+                <tr><td><code>scanner</code></td><td><code>porygon-scanner</code></td><td>Trivy CVE vulnerability scanner and active port cross-referencing</td></tr>
+                <tr><td><code>responder</code></td><td><code>porygon-responder</code></td><td>Containment orchestrator: container pause, process kill, network egress drop</td></tr>
+                <tr><td><code>postgres</code></td><td><code>porygon-postgres</code></td><td>PostgreSQL 17 ACID relational store for baselines, events, and audit logs</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-    <section id="architecture">
-      <h2>Microservice architecture</h2>
-      <p>Every component in Porygon adheres to strict capability modeling (<code>process-telemetry</code>,
-        <code>event-ingestion</code>, <code>vulnerability-enrichment</code>, <code>containment-response</code>).
-        All inter-service API responses carry structured metadata envelopes and system identity manifests.</p>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Component</th><th>Source Path</th><th>Primary Capabilities</th></tr></thead>
-        <tbody>
-          <tr><td>API Core &amp; Scorer</td><td><code>backend/src/porygon_api/</code></td><td><code>anomaly-scoring</code>, <code>rule-engine</code>, <code>incident-management</code></td></tr>
-          <tr><td>Scoring Engine</td><td><code>backend/src/porygon_api/scoring.py</code></td><td>Base-2 Jensen-Shannon distance, categorical weights, novelty tracking</td></tr>
-          <tr><td>ML Threat Engine</td><td><code>backend/src/porygon_api/ml_classifier.py</code></td><td>Random Forest ensemble, 12 feature extractions, TreeSHAP importances</td></tr>
-          <tr><td>Baseline Profiler</td><td><code>backend/src/porygon_api/baseline.py</code></td><td>Deterministic document builder, quality metrics, distribution normalization</td></tr>
-          <tr><td>Telemetry Spooler</td><td><code>telemetry/src/porygon_telemetry/</code></td><td><code>process-telemetry</code>, Falco FIFO ingestion, batch flushers</td></tr>
-          <tr><td>Incident Responder</td><td><code>responder/src/porygon_responder/</code></td><td><code>containment-response</code>, Docker socket client, audit logging</td></tr>
-        </tbody>
-      </table></div>
-    </section>
+        <!-- SECTION: ARCHITECTURE -->
+        <section id="architecture" class="doc-section">
+          <h2 class="doc-section-title">Microservice Architecture</h2>
+          <p class="doc-p">
+            Every component in Porygon adheres to strict capability modeling (<code>process-telemetry</code>,
+            <code>event-ingestion</code>, <code>vulnerability-enrichment</code>, <code>containment-response</code>).
+            All inter-service API responses carry structured metadata envelopes and system identity manifests.
+          </p>
+          <div class="table-container">
+            <table class="news-table">
+              <thead>
+                <tr>
+                  <th>Component</th>
+                  <th>Source Path</th>
+                  <th>Primary Capabilities</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>API Core &amp; Scorer</td><td><code>backend/src/porygon_api/</code></td><td><code>anomaly-scoring</code>, <code>rule-engine</code>, <code>incident-management</code></td></tr>
+                <tr><td>Scoring Engine</td><td><code>backend/src/porygon_api/scoring.py</code></td><td>Base-2 Jensen-Shannon distance, categorical weights, novelty tracking</td></tr>
+                <tr><td>ML Threat Engine</td><td><code>backend/src/porygon_api/ml_classifier.py</code></td><td>Random Forest ensemble, 12 feature extractions, TreeSHAP importances</td></tr>
+                <tr><td>Baseline Profiler</td><td><code>backend/src/porygon_api/baseline.py</code></td><td>Deterministic document builder, quality metrics, distribution normalization</td></tr>
+                <tr><td>Telemetry Spooler</td><td><code>telemetry/src/porygon_telemetry/</code></td><td><code>process-telemetry</code>, Falco FIFO ingestion, batch flushers</td></tr>
+                <tr><td>Incident Responder</td><td><code>responder/src/porygon_responder/</code></td><td><code>containment-response</code>, Docker socket client, audit logging</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-    <section id="ebpf">
-      <h2>eBPF syscall telemetry</h2>
-      <p>Porygon intercepts kernel execution without modifying container containerfiles or requiring privileged sidecars in each pod.
-        When a process executes inside an isolated container, Falco eBPF tracepoints trigger in host kernel space:</p>
-      <ul>
-        <li><b>Syscall interception.</b> Intercepts <code>sys_enter_execve</code>, <code>sys_enter_fork</code>, <code>sys_enter_connect</code>,
-          and file permission alterations.</li>
-        <li><b>Kernel metadata enrichment.</b> The probe reads the calling process's kernel <code>task_struct</code>, extracting the
-          cgroup identifier, host PID, container namespace PID, parent executable, and user UID.</li>
-        <li><b>Zero container overhead.</b> Telemetry events pass through the eBPF perf ring-buffer to the userspace daemon
-          with sub-50ms latency and minimal CPU overhead.</li>
-      </ul>
-    </section>
+        <!-- SECTION: EBPF -->
+        <section id="ebpf" class="doc-section">
+          <h2 class="doc-section-title">eBPF Syscall Telemetry</h2>
+          <p class="doc-p">
+            Porygon intercepts kernel execution without modifying container images or requiring privileged sidecars in each pod.
+            When a process executes inside an isolated container, Falco eBPF tracepoints trigger in host kernel space:
+          </p>
+          <ul class="doc-ul">
+            <li class="doc-li"><strong>Syscall interception.</strong> Intercepts <code>sys_enter_execve</code>, <code>sys_enter_fork</code>, <code>sys_enter_connect</code>,
+              and file permission alterations.</li>
+            <li class="doc-li"><strong>Kernel metadata enrichment.</strong> The probe reads the calling process's kernel <code>task_struct</code>, extracting the
+              cgroup identifier, host PID, container namespace PID, parent executable, and user UID.</li>
+            <li class="doc-li"><strong>Zero container overhead.</strong> Telemetry events pass through the eBPF perf ring-buffer to the userspace daemon
+              with sub-50ms latency and minimal CPU overhead.</li>
+          </ul>
+        </section>
 
-    <section id="baselines">
-      <h2>Workload baseline profiles</h2>
-      <p>Porygon rejects arbitrary tag names (e.g. <code>:latest</code> or <code>:v1</code>) because mutable tags can be overwritten
-        by attackers or CI pipelines. Instead, every profile is cryptographically bound to an OCI image digest (<code>image@sha256:...</code>).</p>
-      <div class="code"><button class="copy">Copy</button>
-<pre>from porygon_api.baseline import build_profile_document
+        <!-- SECTION: BASELINES -->
+        <section id="baselines" class="doc-section">
+          <h2 class="doc-section-title">Workload Baseline Profiles</h2>
+          <p class="doc-p">
+            Porygon rejects arbitrary tag names (e.g. <code>:latest</code>) because mutable tags can be overwritten
+            by attackers or CI pipelines. Instead, every profile is cryptographically bound to an OCI image digest (<code>image@sha256:...</code>).
+          </p>
+          <div class="code-block-wrap">
+            <button class="btn-code-copy" data-copy="code-baseline">Copy</button>
+            <pre class="code-block" id="code-baseline">from porygon_api.baseline import build_profile_document
 
 profile, summaries, quality, manifest = build_profile_document(
     image_digest="nginx@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc",
@@ -198,254 +289,312 @@ profile, summaries, quality, manifest = build_profile_document(
     runtime_events=[],
     minimum_process_events=10,
     minimum_nonempty_windows=2,
-)</pre></div>
-      <p>The builder compiles 6 categorical probability distributions: <code>process_name</code>, <code>executable</code>,
-        <code>parent_child</code>, <code>user_uid</code>, <code>runtime_action</code>, and <code>process_sequence_bigram</code>.</p>
-    </section>
+)</pre>
+          </div>
+          <p class="doc-p">
+            The builder compiles 6 categorical probability distributions: <code>process_name</code>, <code>executable</code>,
+            <code>parent_child</code>, <code>user_uid</code>, <code>runtime_action</code>, and <code>process_sequence_bigram</code>.
+          </p>
+        </section>
 
-    <section id="jensen-shannon">
-      <h2>Jensen-Shannon distance</h2>
-      <p>Traditional anomaly detectors often employ Euclidean distance or black-box thresholds. Porygon grounds baseline drift
-        in <b>Information Theory</b> using bounded base-2 <b>Jensen-Shannon distance ($D_{JS}$)</b>:</p>
-      <div class="code"><button class="copy">Copy</button>
-<pre>D_JS(P, Q) = sqrt( 0.5 * D_KL(P || M) + 0.5 * D_KL(Q || M) )
-where M = 0.5 * (P + Q)</pre></div>
-      <ul>
-        <li><b>Bounded metric.</b> Base-2 $D_{JS}$ yields a clean, symmetric score in $[0.0, 1.0]$, where $0.0$ signifies identical
-          probability distributions and $1.0$ represents completely disjoint behavioral profiles.</li>
-        <li><b>Top-level weights.</b> Categorical distance (50%), Token novelty (30%), Numeric z-score deviation (20%).</li>
-        <li><b>Categorical feature weights.</b> Executable path (25%), Parent-child lineage (20%), Process sequence bigram (20%),
-          Process name (15%), User UID (10%), Runtime action (10%).</li>
-        <li><b>Novelty tracking.</b> When an executable appears that was completely absent from the baseline, it is cataloged
-          as an unseen token and scaled by its proportional frequency.</li>
-      </ul>
-    </section>
+        <!-- SECTION: JENSEN-SHANNON -->
+        <section id="jensen-shannon" class="doc-section">
+          <h2 class="doc-section-title">Jensen-Shannon Distance Engine</h2>
+          <p class="doc-p">
+            Traditional anomaly detectors often employ Euclidean distance or black-box thresholds. Porygon grounds baseline drift
+            in <strong>Information Theory</strong> using bounded base-2 <strong>Jensen-Shannon distance ($D_{JS}$)</strong>:
+          </p>
+          <div class="code-block-wrap">
+            <button class="btn-code-copy" data-copy="code-js">Copy</button>
+            <pre class="code-block" id="code-js">D_JS(P, Q) = sqrt( 0.5 * D_KL(P || M) + 0.5 * D_KL(Q || M) )
+where M = 0.5 * (P + Q)</pre>
+          </div>
+          <ul class="doc-ul">
+            <li class="doc-li"><strong>Bounded metric.</strong> Base-2 $D_{JS}$ yields a clean, symmetric score in $[0.0, 1.0]$, where $0.0$ signifies identical
+              probability distributions and $1.0$ represents completely disjoint behavioral profiles.</li>
+            <li class="doc-li"><strong>Top-level weights.</strong> Categorical distance (50%), Token novelty (30%), Numeric z-score deviation (20%).</li>
+            <li class="doc-li"><strong>Categorical feature weights.</strong> Executable path (25%), Parent-child lineage (20%), Process sequence bigram (20%),
+              Process name (15%), User UID (10%), Runtime action (10%).</li>
+            <li class="doc-li"><strong>Novelty tracking.</strong> When an executable appears that was completely absent from the baseline, it is cataloged
+              as an unseen token and scaled by its proportional frequency.</li>
+          </ul>
+        </section>
 
-    <section id="ml-classifier">
-      <h2>Tree Ensemble classifier</h2>
-      <p>The machine learning threat classification engine (<code>porygon_api/ml_classifier.py</code>) evaluates 60-second observation
-        windows across 12 engineered features:</p>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Feature</th><th>Extraction Logic</th></tr></thead>
-        <tbody>
-          <tr><td><code>jensen_shannon_drift</code></td><td>Categorical Jensen-Shannon distance against baseline process distribution</td></tr>
-          <tr><td><code>shell_ratio</code></td><td>Fraction of executions belonging to interactive shells (bash, sh, zsh, ash)</td></tr>
-          <tr><td><code>recon_ratio</code></td><td>Fraction of executions matching reconnaissance taxonomy (whoami, id, uname, ip, lsof)</td></tr>
-          <tr><td><code>tooling_ratio</code></td><td>Fraction of network or security tools (curl, wget, nc, socat, nmap, tcpdump)</td></tr>
-          <tr><td><code>priv_escalation_ratio</code></td><td>Executions involving SUID binaries, sudo, su, or root capability elevation</td></tr>
-          <tr><td><code>unseen_executable_ratio</code></td><td>Fraction of processes with binary paths absent from the image baseline</td></tr>
-          <tr><td><code>parent_shim_ratio</code></td><td>Processes directly spawned by container runtime shims (indicative of docker exec)</td></tr>
-          <tr><td><code>distinct_proc_count</code></td><td>Total number of unique binary paths observed in the time window</td></tr>
-        </tbody>
-      </table></div>
-      <p>The model outputs probabilities across 5 target MITRE tactics: <code>benign</code>, <code>reconnaissance</code>,
-        <code>privilege_escalation</code>, <code>shell_escape</code>, and <code>suspicious_tooling</code>, accompanied by TreeSHAP
-        feature attribution matrices.</p>
-    </section>
+        <!-- SECTION: ML CLASSIFIER -->
+        <section id="ml-classifier" class="doc-section">
+          <h2 class="doc-section-title">Tree Ensemble Threat Classifier</h2>
+          <p class="doc-p">
+            The machine learning threat classification engine (<code>porygon_api/ml_classifier.py</code>) evaluates 60-second observation
+            windows across 12 engineered features:
+          </p>
+          <div class="table-container">
+            <table class="news-table">
+              <thead>
+                <tr>
+                  <th>Feature</th>
+                  <th>Extraction Logic</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>jensen_shannon_drift</code></td><td>Categorical Jensen-Shannon distance against baseline process distribution</td></tr>
+                <tr><td><code>shell_ratio</code></td><td>Fraction of executions belonging to interactive shells (bash, sh, zsh, ash)</td></tr>
+                <tr><td><code>recon_ratio</code></td><td>Fraction of executions matching reconnaissance taxonomy (whoami, id, uname, ip, lsof)</td></tr>
+                <tr><td><code>tooling_ratio</code></td><td>Fraction of network or security tools (curl, wget, nc, socat, nmap, tcpdump)</td></tr>
+                <tr><td><code>priv_escalation_ratio</code></td><td>Executions involving SUID binaries, sudo, su, or root capability elevation</td></tr>
+                <tr><td><code>unseen_executable_ratio</code></td><td>Fraction of processes with binary paths absent from the image baseline</td></tr>
+                <tr><td><code>parent_shim_ratio</code></td><td>Processes directly spawned by container runtime shims (indicative of docker exec)</td></tr>
+                <tr><td><code>distinct_proc_count</code></td><td>Total number of unique binary paths observed in the time window</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="doc-p">
+            The model outputs probabilities across 5 target MITRE tactics: <code>benign</code>, <code>reconnaissance</code>,
+            <code>privilege_escalation</code>, <code>shell_escape</code>, and <code>suspicious_tooling</code>, accompanied by TreeSHAP
+            feature attribution matrices.
+          </p>
+        </section>
 
-    <section id="rules">
-      <h2>Detection rules &amp; allowlists</h2>
-      <p>Porygon couples continuous statistical drift scoring with deterministic, verifiable rules.</p>
-      <h3>Built-in Rules</h3>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Rule ID</th><th>Severity</th><th>Trigger Condition</th></tr></thead>
-        <tbody>
-          <tr><td><code>POR-DET-001</code></td><td>HIGH</td><td>Interactive shell execution inside production container without terminal allocation</td></tr>
-          <tr><td><code>POR-DET-002</code></td><td>CRITICAL</td><td>Reverse shell payload pattern or netcat socket binding</td></tr>
-          <tr><td><code>POR-DET-003</code></td><td>HIGH</td><td>Reconnaissance sweep execution exceeding 5 unique discovery binaries in 60s</td></tr>
-          <tr><td><code>POR-DET-004</code></td><td>CRITICAL</td><td>Crypto-miner binary execution or high CPU-spinning stratum loop</td></tr>
-          <tr><td><code>POR-DET-005</code></td><td>HIGH</td><td>Runtime modification of sensitive mount points (e.g. <code>/etc/shadow</code> or crontabs)</td></tr>
-        </tbody>
-      </table></div>
+        <!-- SECTION: RULES & ALLOWLISTS -->
+        <section id="rules" class="doc-section">
+          <h2 class="doc-section-title">Detection Rules &amp; Allowlists</h2>
+          <p class="doc-p">
+            Porygon couples continuous statistical drift scoring with deterministic, verifiable rules.
+          </p>
+          <h3 class="doc-subsection-title">Built-in Rules</h3>
+          <div class="table-container">
+            <table class="news-table">
+              <thead>
+                <tr>
+                  <th>Rule ID</th>
+                  <th>Severity</th>
+                  <th>Trigger Condition</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>POR-DET-001</code></td><td>HIGH</td><td>Interactive shell execution inside production container without terminal allocation</td></tr>
+                <tr><td><code>POR-DET-002</code></td><td>CRITICAL</td><td>Reverse shell payload pattern or netcat socket binding</td></tr>
+                <tr><td><code>POR-DET-003</code></td><td>HIGH</td><td>Reconnaissance sweep execution exceeding 5 unique discovery binaries in 60s</td></tr>
+                <tr><td><code>POR-DET-004</code></td><td>CRITICAL</td><td>Crypto-miner binary execution or high CPU-spinning stratum loop</td></tr>
+                <tr><td><code>POR-DET-005</code></td><td>HIGH</td><td>Runtime modification of sensitive mount points (e.g. <code>/etc/shadow</code> or crontabs)</td></tr>
+              </tbody>
+            </table>
+          </div>
 
-      <h3>Custom Rule AST Compiler &amp; Allowlists</h3>
-      <p>Operators can submit custom detection expressions via <code>POST /api/v1/custom-detection-rules</code>. Expressions compile into
-        safe Python AST conditions. Furthermore, when novel behavior is deemed benign, operators register an immutable allowlist entry
-        via <code>POST /api/v1/detection-allowlists</code> to prevent alert noise.</p>
-    </section>
+          <h3 class="doc-subsection-title">Custom Rule AST Compiler &amp; Allowlists</h3>
+          <p class="doc-p">
+            Operators can submit custom detection expressions via <code>POST /api/v1/custom-detection-rules</code>. Expressions compile into
+            safe Python AST conditions. Furthermore, when novel behavior is deemed benign, operators register an immutable allowlist entry
+            via <code>POST /api/v1/detection-allowlists</code> to prevent alert noise.
+          </p>
+        </section>
 
-    <section id="containment">
-      <h2>Autonomous containment</h2>
-      <p>When an incident's composite anomaly score exceeds configured operator thresholds, the responder service executes deterministic
-        containment actions against the Docker Engine API:</p>
-      <ul>
-        <li><b>Workload pause (<code>docker pause</code>).</b> Instantly freezes container cgroup CPU scheduling, preserving RAM state
-          for post-incident forensic inspection without destroying volatile memory artifacts.</li>
-        <li><b>Process termination (<code>SIGKILL</code>).</b> Terminates the specific rogue PID while leaving the surrounding container
-          service operational.</li>
-        <li><b>Network egress quarantine.</b> Drops egress bridge iptables chains to prevent data exfiltration or reverse shell connections.</li>
-        <li><b>Immutable audit logging.</b> Every containment decision writes a tamper-evident audit record with execution timestamps
-          and triggering anomaly IDs.</li>
-      </ul>
-    </section>
+        <!-- SECTION: CONTAINMENT -->
+        <section id="containment" class="doc-section">
+          <h2 class="doc-section-title">Autonomous Containment</h2>
+          <p class="doc-p">
+            When an incident's composite anomaly score exceeds configured operator thresholds, the responder service executes deterministic
+            containment actions against the Docker Engine API:
+          </p>
+          <ul class="doc-ul">
+            <li class="doc-li"><strong>Workload pause (<code>docker pause</code>).</strong> Instantly freezes container cgroup CPU scheduling, preserving RAM state
+              for post-incident forensic inspection without destroying volatile memory artifacts.</li>
+            <li class="doc-li"><strong>Process termination (<code>SIGKILL</code>).</strong> Terminates the specific rogue PID while leaving the surrounding container
+              service operational.</li>
+            <li class="doc-li"><strong>Network egress quarantine.</strong> Drops egress bridge iptables chains to prevent data exfiltration or reverse shell connections.</li>
+            <li class="doc-li"><strong>Immutable audit logging.</strong> Every containment decision writes a tamper-evident audit record with execution timestamps
+              and triggering anomaly IDs.</li>
+          </ul>
+        </section>
 
-    <section id="api">
-      <h2>REST API reference</h2>
-      <p>The Porygon core API is documented via OpenAPI/Swagger at <code>http://127.0.0.1:8000/docs</code>. Key operational endpoints:</p>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>GET</code></td><td><code>/api/v1/system/info</code></td><td>Returns microservice registration count, live event metrics, and status</td></tr>
-          <tr><td><code>POST</code></td><td><code>/api/v1/telemetry/events</code></td><td>Ingests batches of eBPF process and socket execution records</td></tr>
-          <tr><td><code>POST</code></td><td><code>/api/v1/ml/classify</code></td><td>Evaluates observation window against Tree Ensemble and TreeSHAP explainer</td></tr>
-          <tr><td><code>GET</code></td><td><code>/api/v1/baselines</code></td><td>Lists digest-pinned baseline documents and quality reports</td></tr>
-          <tr><td><code>GET</code></td><td><code>/api/v1/incidents</code></td><td>Returns open and historical incident records with forensic audit trails</td></tr>
-          <tr><td><code>POST</code></td><td><code>/operator/v1/containment/execute</code></td><td>Triggers operator-approved workload quarantine or process kill</td></tr>
-        </tbody>
-      </table></div>
-    </section>
+        <!-- SECTION: REST API REFERENCE -->
+        <section id="api" class="doc-section">
+          <h2 class="doc-section-title">REST API Reference</h2>
+          <p class="doc-p">
+            The Porygon core API is documented via OpenAPI/Swagger at <code>http://127.0.0.1:8000/docs</code>. Key operational endpoints:
+          </p>
+          <div class="table-container">
+            <table class="news-table">
+              <thead>
+                <tr>
+                  <th>Method</th>
+                  <th>Endpoint</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>GET</code></td><td><code>/api/v1/system/info</code></td><td>Returns microservice registration count, live event metrics, and status</td></tr>
+                <tr><td><code>POST</code></td><td><code>/api/v1/telemetry/events</code></td><td>Ingests batches of eBPF process and socket execution records</td></tr>
+                <tr><td><code>POST</code></td><td><code>/api/v1/ml/classify</code></td><td>Evaluates observation window against Tree Ensemble and TreeSHAP explainer</td></tr>
+                <tr><td><code>GET</code></td><td><code>/api/v1/baselines</code></td><td>Lists digest-pinned baseline documents and quality reports</td></tr>
+                <tr><td><code>GET</code></td><td><code>/api/v1/incidents</code></td><td>Returns open and historical incident records with forensic audit trails</td></tr>
+                <tr><td><code>POST</code></td><td><code>/operator/v1/containment/execute</code></td><td>Triggers operator-approved workload quarantine or process kill</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-    <section id="config">
-      <h2>Configuration settings</h2>
-      <p>All runtime settings are configured via environment variables or <code>.env</code> file:</p>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Variable</th><th>Default</th><th>Meaning</th></tr></thead>
-        <tbody>
-          <tr><td><code>PORYGON_DB_HOST</code></td><td><code>localhost</code></td><td>PostgreSQL database host</td></tr>
-          <tr><td><code>PORYGON_DB_PORT</code></td><td><code>5432</code></td><td>PostgreSQL database port</td></tr>
-          <tr><td><code>PORYGON_INTERNAL_API_TOKEN</code></td><td><code>Required</code></td><td>Secret token for inter-service communication (telemetry to backend)</td></tr>
-          <tr><td><code>PORYGON_OPERATOR_API_TOKEN</code></td><td><code>Required</code></td><td>Secret token required for triggering containment and scenario runs</td></tr>
-          <tr><td><code>PORYGON_RESPONSE_EXECUTION_MODE</code></td><td><code>disabled</code></td><td>Response execution policy: <code>disabled</code>, <code>manual</code>, or <code>autonomous</code></td></tr>
-          <tr><td><code>PORYGON_DEMO_MODE</code></td><td><code>0</code></td><td>Enables sandboxed attack scenario triggering in the Attack Lab</td></tr>
-        </tbody>
-      </table></div>
-    </section>
+        <!-- SECTION: CONFIGURATION -->
+        <section id="config" class="doc-section">
+          <h2 class="doc-section-title">Configuration Settings</h2>
+          <p class="doc-p">
+            All runtime settings are configured via environment variables or <code>.env</code> file:
+          </p>
+          <div class="table-container">
+            <table class="news-table">
+              <thead>
+                <tr>
+                  <th>Variable</th>
+                  <th>Default</th>
+                  <th>Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>PORYGON_DB_HOST</code></td><td><code>localhost</code></td><td>PostgreSQL database host</td></tr>
+                <tr><td><code>PORYGON_DB_PORT</code></td><td><code>5432</code></td><td>PostgreSQL database port</td></tr>
+                <tr><td><code>PORYGON_INTERNAL_API_TOKEN</code></td><td><code>Required</code></td><td>Secret token for inter-service communication (telemetry to backend)</td></tr>
+                <tr><td><code>PORYGON_OPERATOR_API_TOKEN</code></td><td><code>Required</code></td><td>Secret token required for triggering containment and scenario runs</td></tr>
+                <tr><td><code>PORYGON_RESPONSE_EXECUTION_MODE</code></td><td><code>disabled</code></td><td>Response execution policy: <code>disabled</code>, <code>manual</code>, or <code>autonomous</code></td></tr>
+                <tr><td><code>PORYGON_DEMO_MODE</code></td><td><code>0</code></td><td>Enables sandboxed attack scenario triggering in the Attack Lab</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-    <section id="simulator">
-      <h2>Attack Lab scenarios</h2>
-      <p>The built-in Attack Simulator allows operators to evaluate detection latency and containment policies against sandboxed workloads:</p>
-      <ul>
-        <li><b>Crypto-miner execution.</b> Spawns a digest-pinned image (<code>quay.io/petr_ruzicka/malware-cryptominer-container</code>)
-          verifying high CPU-spinning loop detection and <code>POR-DET-004</code> trigger.</li>
-        <li><b>Reverse shell infiltration.</b> Simulates interactive socket redirection via netcat, testing kernel execve capture
-          and <code>POR-DET-002</code> containment.</li>
-        <li><b>SUID privilege escalation.</b> Tests unauthorized execution of setuid binaries, root namespace alteration, and
-          <code>POR-DET-003</code> alerting.</li>
-        <li><b>Benign batch job baseline.</b> Executes typical Alpine Linux package updates and curl health-checks to verify zero
-          false-positive containment against standard profiles.</li>
-      </ul>
-    </section>
+        <!-- SECTION: ATTACK SIMULATOR -->
+        <section id="simulator" class="doc-section">
+          <h2 class="doc-section-title">Attack Lab Scenarios</h2>
+          <p class="doc-p">
+            The built-in Attack Simulator allows operators to evaluate detection latency and containment policies against sandboxed workloads:
+          </p>
+          <ul class="doc-ul">
+            <li class="doc-li"><strong>Crypto-miner execution.</strong> Spawns a digest-pinned image (<code>quay.io/petr_ruzicka/malware-cryptominer-container</code>)
+              verifying high CPU-spinning loop detection and <code>POR-DET-004</code> trigger.</li>
+            <li class="doc-li"><strong>Reverse shell infiltration.</strong> Simulates interactive socket redirection via netcat, testing kernel execve capture
+              and <code>POR-DET-002</code> containment.</li>
+            <li class="doc-li"><strong>SUID privilege escalation.</strong> Tests unauthorized execution of setuid binaries, root namespace alteration, and
+              <code>POR-DET-003</code> alerting.</li>
+            <li class="doc-li"><strong>Benign batch job baseline.</strong> Executes typical Alpine Linux package updates and curl health-checks to verify zero
+              false-positive containment against standard profiles.</li>
+          </ul>
+        </section>
 
-    <section id="reproduce">
-      <h2>Reproducing results</h2>
-      <p>Porygon enforces full scientific reproducibility for all academic evaluation claims:</p>
-      <div class="code"><button class="copy">Copy</button>
-<pre># Run static validation checks
+        <!-- SECTION: REPRODUCING RESULTS -->
+        <section id="reproduce" class="doc-section">
+          <h2 class="doc-section-title">Reproducing Results &amp; Verification</h2>
+          <p class="doc-p">
+            Porygon enforces full scientific reproducibility for all academic evaluation claims:
+          </p>
+          <div class="code-block-wrap">
+            <button class="btn-code-copy" data-copy="code-reproduce">Copy</button>
+            <pre class="code-block" id="code-reproduce"># Run static validation checks
 bash scripts/verify_all.sh static
 
 # Run complete pytest test suite
 bash scripts/verify_all.sh unit
 
 # Package verified Pilot Dataset release
-python3 scripts/package_pilot_dataset.py</pre></div>
-      <p class="note success"><b>Verification Manifest.</b> Every release writes an SHA-256 integrity manifest to
-        <code>artifacts/verification-manifest.json</code> recording gate durations, timestamps, and test outcomes.</p>
-    </section>
+python3 scripts/package_pilot_dataset.py</pre>
+          </div>
+          <div class="news-note success">
+            <strong>Verification Manifest</strong>
+            Every release writes an SHA-256 integrity manifest to
+            <code>artifacts/verification-manifest.json</code> recording gate durations, timestamps, and test outcomes.
+          </div>
+        </section>
 
-    <section id="limits">
-      <h2>Limitations</h2>
-      <ul>
-        <li><b>Linux host kernel dependency.</b> eBPF syscall capture requires kernel tracepoints and ring-buffer support (Linux 5.8+).
-          Windows and macOS require a Linux virtual machine backend.</li>
-        <li><b>Baseline cold-start period.</b> Accurate Jensen-Shannon distance calculation requires a representative baseline
-          window (minimum 10 process events across 2 non-empty windows). During initial container startup before baseline convergence,
-          the engine defaults to deterministic rule evaluation.</li>
-        <li><b>Root privilege for probe loading.</b> Loading eBPF programs into kernel space requires <code>CAP_BPF</code> or <code>CAP_SYS_ADMIN</code>.</li>
-      </ul>
-    </section>
+        <!-- SECTION: LIMITATIONS -->
+        <section id="limits" class="doc-section">
+          <h2 class="doc-section-title">Limitations</h2>
+          <ul class="doc-ul">
+            <li class="doc-li"><strong>Linux host kernel dependency.</strong> eBPF syscall capture requires kernel tracepoints and ring-buffer support (Linux 5.8+).
+              Windows and macOS require a Linux virtual machine backend.</li>
+            <li class="doc-li"><strong>Baseline cold-start period.</strong> Accurate Jensen-Shannon distance calculation requires a representative baseline
+              window (minimum 10 process events across 2 non-empty windows). During initial container startup before baseline convergence,
+              the engine defaults to deterministic rule evaluation.</li>
+            <li class="doc-li"><strong>Root privilege for probe loading.</strong> Loading eBPF programs into kernel space requires <code>CAP_BPF</code> or <code>CAP_SYS_ADMIN</code>.</li>
+          </ul>
+        </section>
 
-    <section id="licences">
-      <h2>Licences &amp; data</h2>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Component</th><th>Licence</th><th>Usage</th></tr></thead>
-        <tbody>
-          <tr><td>Porygon core codebase</td><td>MIT</td><td>Full system, API, scoring algorithms, dashboard</td></tr>
-          <tr><td>Falco eBPF probes</td><td>Apache-2.0</td><td>Kernel-space syscall tracepoint instrumentation</td></tr>
-          <tr><td>Trivy vulnerability scanner</td><td>Apache-2.0</td><td>Image vulnerability scanning and CVE matching</td></tr>
-          <tr><td>Scikit-learn &amp; SHAP</td><td>BSD-3</td><td>Machine learning ensemble and feature attribution trees</td></tr>
-          <tr><td>PostgreSQL driver</td><td>LGPL-3.0</td><td>Database connectivity</td></tr>
-        </tbody>
-      </table></div>
-    </section>
-  </article>
-</div>
+        <!-- SECTION: LICENCES & ATTRIBUTION -->
+        <section id="licences" class="doc-section">
+          <h2 class="doc-section-title">Licences &amp; Attribution</h2>
+          <div class="table-container">
+            <table class="news-table">
+              <thead>
+                <tr>
+                  <th>Component</th>
+                  <th>Licence</th>
+                  <th>Usage</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Porygon core codebase</td><td>MIT</td><td>Full system, API, scoring algorithms, dashboard</td></tr>
+                <tr><td>Falco eBPF probes</td><td>Apache-2.0</td><td>Kernel-space syscall tracepoint instrumentation</td></tr>
+                <tr><td>Trivy vulnerability scanner</td><td>Apache-2.0</td><td>Image vulnerability scanning and CVE matching</td></tr>
+                <tr><td>Scikit-learn &amp; SHAP</td><td>BSD-3</td><td>Machine learning ensemble and feature attribution trees</td></tr>
+                <tr><td>PostgreSQL driver</td><td>LGPL-3.0</td><td>Database connectivity</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-<footer class="foot">
-  <div class="wrap">
-    <div>
-      <p><b style="color:var(--ink);font-weight:600">Porygon</b> &middot; Capstone Research Deliverable &middot; Course 23CSE498 Team 75 &middot; Open Source under the MIT licence</p>
-      <p>Kernel eBPF telemetry, Jensen-Shannon drift scoring, and autonomous container runtime anomaly detection.</p>
+      </article>
+
     </div>
-    <p><a href="#top">Back to top &uarr;</a></p>
   </div>
-</footer>
 
-<script>
-(function () {
-  const root = document.documentElement;
+  <!-- FOOTER -->
+  <footer class="docs-footer">
+    <div class="docs-root">
+      <div class="docs-footer-inner">
+        <div class="docs-footer-copy">
+          &copy; 2026 Porygon &middot; Capstone Research Deliverable &middot; Course 23CSE498 Team 75 &middot; MIT Licence
+        </div>
+        <div class="docs-footer-links">
+          <a href="home.html">Home Overview</a>
+          <a href="index.html#overview">Dashboard</a>
+          <a href="index.html#telemetry">Telemetry</a>
+          <a href="#top">Back to top &uarr;</a>
+        </div>
+      </div>
+    </div>
+  </footer>
 
-  // Theme toggle: follows system preference until the user clicks
-  const toggle = document.querySelector(".theme-toggle");
-  if (toggle) {
-    toggle.addEventListener("click", () => {
-      const dark = root.dataset.theme
-        ? root.dataset.theme === "dark"
-        : matchMedia("(prefers-color-scheme: dark)").matches;
-      root.dataset.theme = dark ? "light" : "dark";
-      try { localStorage.setItem("porygon-theme", root.dataset.theme); } catch (e) {}
-    });
-  }
+  <script>
+    (function initDocs() {
+      // 1. Scrollspy: highlight active TOC section as user scrolls
+      const links = Array.from(document.querySelectorAll('.toc-link'));
+      const targets = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
 
-  // Small-screen menu toggle
-  const menu = document.querySelector(".menu-btn");
-  const nav = document.getElementById("nav");
-  if (menu && nav) {
-    menu.addEventListener("click", () => {
-      const open = nav.classList.toggle("open");
-      menu.setAttribute("aria-expanded", String(open));
-    });
-    nav.addEventListener("click", (e) => {
-      if (e.target.closest("a")) {
-        nav.classList.remove("open");
-        menu.setAttribute("aria-expanded", "false");
+      if (targets.length && 'IntersectionObserver' in window) {
+        const seen = new Map();
+        const io = new IntersectionObserver((entries) => {
+          entries.forEach(e => seen.set(e.target.id, e.isIntersecting));
+          const current = targets.find(t => seen.get(t.id));
+          links.forEach(a => {
+            const isMatch = !!current && a.getAttribute('href') === '#' + current.id;
+            a.classList.toggle('active', isMatch);
+          });
+        }, { rootMargin: '-20% 0px -65% 0px' });
+        targets.forEach(t => io.observe(t));
       }
-    });
-  }
 
-  // Hairline under top bar on scroll
-  const bar = document.querySelector(".bar");
-  const onScroll = () => bar && bar.classList.toggle("scrolled", window.scrollY > 8);
-  window.addEventListener("scroll", onScroll, { passive: true });
-  onScroll();
-
-  // Scrollspy: highlight active TOC section as user scrolls
-  const links = [...document.querySelectorAll('.toc a[href^="#"]')];
-  const targets = links.map((a) => document.querySelector(a.getAttribute("href"))).filter(Boolean);
-  if (targets.length && "IntersectionObserver" in window) {
-    const seen = new Map();
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach((e) => seen.set(e.target.id, e.isIntersecting));
-      const current = targets.find((t) => seen.get(t.id));
-      links.forEach((a) => a.classList.toggle("active", !!current && a.getAttribute("href") === "#" + current.id));
-    }, { rootMargin: "-20% 0px -60% 0px" });
-    targets.forEach((t) => io.observe(t));
-  }
-
-  // 1-Click Code Block Copy Buttons
-  document.querySelectorAll(".copy").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const pre = btn.parentElement.querySelector("pre");
-      if (!pre) return;
-      try {
-        await navigator.clipboard.writeText(pre.textContent.trim());
-        btn.textContent = "Copied";
-      } catch (e) {
-        btn.textContent = "Copied";
-      }
-      setTimeout(() => (btn.textContent = "Copy"), 1600);
-    });
-  });
-})();
-</script>
+      // 2. 1-Click Code Block Copy Buttons
+      document.querySelectorAll('.btn-code-copy').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const targetId = btn.dataset.copy;
+          const pre = targetId ? document.getElementById(targetId) : btn.parentElement.querySelector('pre');
+          if (!pre) return;
+          try {
+            await navigator.clipboard.writeText(pre.textContent.trim());
+            btn.textContent = 'COPIED';
+          } catch (e) {
+            btn.textContent = 'COPIED';
+          }
+          setTimeout(() => { btn.textContent = 'COPY'; }, 1800);
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
