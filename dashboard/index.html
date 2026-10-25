@@ -203,11 +203,10 @@
               <span class="font-serif font-bold text-lg text-[#111111]">Behavioral Distance History (D_JS)</span>
               <div class="font-mono text-[10px] text-neutral-500">Empirical Jensen-Shannon divergence across 60s sliding windows</div>
             </div>
-            <span class="font-mono text-xs font-bold text-[#111111]" x-text="'WINDOW: ' + (currentScoreWindowStart ? new Date(currentScoreWindowStart).toLocaleTimeString() : 'LIVE')">WINDOW: LIVE</span>
-          </div>
-
-          <div x-show="latestWindowInsufficientData" class="mb-3 border border-[#CC0000] bg-red-50 text-[#CC0000] p-2 text-xs font-mono">
-            Notice: Telemetry insufficient to score current window. Showing last verified window.
+            <div class="flex items-center gap-2">
+              <span x-show="latestWindowInsufficientData" class="font-mono text-[10px] border border-[#CC0000] bg-red-50 text-[#CC0000] px-1.5 py-0.5 font-bold">INSUFFICIENT TELEMETRY</span>
+              <span class="font-mono text-xs font-bold text-[#111111]" x-text="'WINDOW: ' + (currentScoreWindowStart ? new Date(currentScoreWindowStart).toLocaleTimeString() : 'LIVE')">WINDOW: LIVE</span>
+            </div>
           </div>
 
           <div class="h-60 sm:h-64 w-full relative">
@@ -220,7 +219,7 @@
           <div>
             <div class="border-b border-[#111111] pb-2 mb-3">
               <span class="font-serif font-bold text-lg text-[#111111]">Score Composition</span>
-              <div class="font-mono text-[10px] text-neutral-500">Protocol v1 fixed empirical weights</div>
+              <div class="font-mono text-[10px] text-neutral-500">Fixed component weights</div>
             </div>
             <div class="h-44 w-full relative">
               <canvas id="anomalyCompositionChart"></canvas>
@@ -279,8 +278,8 @@
                     <button @click.stop="classifyContainerWithML(c)" class="btn-news-secondary py-0.5 px-2 text-[10px] mr-1 bg-[#FFF9E6] hover:bg-[#FFF0B3] border border-[#111111]" title="Classify container runtime threat tactics with Random Forest ML">
                       <i class="ph ph-brain text-xs"></i> ML CLASSIFY
                     </button>
-                    <button @click.stop="auditContainerWithAi(c)" class="btn-news-secondary py-0.5 px-2 text-[10px]" title="Audit container security posture with AI">
-                      <i class="ph ph-sparkle text-xs"></i> AI AUDIT
+                    <button @click.stop="auditContainerWithAi(c)" class="btn-news-secondary py-0.5 px-2 text-[10px]" title="Inspect security posture advisory">
+                      <i class="ph ph-shield-check text-xs"></i> ADVISORY
                     </button>
                   </td>
                 </tr>
@@ -401,7 +400,7 @@
         <div class="flex flex-wrap items-center justify-between border-b border-[#111111] pb-3 mb-4 gap-3">
           <div>
             <h2 class="font-serif font-bold text-2xl text-[#111111] m-0">Security Incidents &amp; Containment Actions</h2>
-            <p class="font-body text-xs text-neutral-600 m-0">Human-approved container containment gated behind cryptographic operator clearance.</p>
+            <p class="font-body text-xs text-neutral-600 m-0">Operator-approved container containment actions and audit records.</p>
           </div>
           <div class="flex items-center gap-2">
             <button @click="cleanAllIncidents()"
@@ -519,7 +518,7 @@
                     <template x-if="inc.status === 'closed' || inc.status === 'resolved'">
                       <div class="py-1.5 px-2 bg-emerald-50 border border-emerald-800 font-mono text-[10px] text-emerald-800 font-bold uppercase text-center flex items-center justify-center gap-1.5">
                         <i class="ph ph-check-circle text-emerald-600 text-sm"></i>
-                        <span>HISTORICAL INCIDENT &bull; RESOLVED &amp; CLEAN</span>
+                        <span>RESOLVED</span>
                       </div>
                     </template>
                   </div>
@@ -529,8 +528,8 @@
           </template>
 
           <div x-show="filteredIncidents.length === 0" class="border border-[#111111] bg-[#F9F9F7] p-8 text-center">
-            <h4 class="font-serif font-bold text-lg text-[#111111] m-0" x-text="incidentFilter === 'open' ? 'ALL SYSTEMS NOMINAL : ZERO ACTIVE INCIDENTS' : 'NO INCIDENTS MATCHING FILTER'"></h4>
-            <p class="font-body text-xs text-neutral-500 mt-1" x-text="incidentFilter === 'open' ? 'All security alerts have been reviewed and marked clean.' : 'No incidents cataloged.'"></p>
+            <h4 class="font-serif font-bold text-lg text-[#111111] m-0" x-text="incidentFilter === 'open' ? 'No Active Incidents' : 'No Incidents Matching Filter'"></h4>
+            <p class="font-body text-xs text-neutral-500 mt-1" x-text="incidentFilter === 'open' ? 'All alert events have been reviewed.' : 'No incidents cataloged.'"></p>
           </div>
         </div>
 
@@ -605,15 +604,6 @@
           <div class="border-2 border-[#CC0000] bg-red-50 text-[#CC0000] p-3">
             <div class="font-bold">4. PORT REACHABLE</div>
             <div class="font-serif font-black text-2xl mt-1" x-text="evidenceCounts.runtime_observed_and_port_published">0</div>
-          </div>
-        </div>
-
-        <!-- Dynamic Pipeline Audit Callout -->
-        <div class="border border-[#111111] p-3 bg-neutral-100 flex items-start gap-2.5 mb-6 text-xs font-mono">
-          <i class="ph ph-info text-base mt-0.5 text-[#111111]"></i>
-          <div>
-            <strong>LIVE DYNAMIC FUNNEL AUDIT:</strong>
-            <span class="text-neutral-700">These 4 counts (<span x-text="evidenceCounts.package_present"></span>, <span x-text="evidenceCounts.deployed"></span>, <span x-text="evidenceCounts.runtime_observed"></span>, <span x-text="evidenceCounts.runtime_observed_and_port_published"></span>) dynamically filter static CycloneDX SBOM &amp; Trivy CVE scans against active eBPF kernel execution. As vulnerability scans are cataloged, findings are progressively intersected with running containers, kernel execve events, and published ports.</span>
           </div>
         </div>
 
@@ -701,9 +691,9 @@
             <div class="font-bold" :class="mlSummaryStats.threats > 0 ? 'text-[#CC0000]' : 'text-neutral-500'">3. ACTIVE THREATS</div>
             <div class="font-serif font-black text-2xl mt-1" x-text="mlSummaryStats.threats">0</div>
           </div>
-          <div class="border border-[#111111] bg-neutral-100 p-3">
-            <div class="text-[#111111] font-bold">4. EVALUATION SPEED</div>
-            <div class="font-serif font-black text-2xl text-[#111111] mt-1">&lt; 1.5 ms</div>
+          <div class="border border-[#111111] bg-[#F9F9F7] p-3">
+            <div class="text-neutral-500 font-bold">4. FEATURE VECTOR</div>
+            <div class="font-serif font-black text-2xl text-[#111111] mt-1">12 SIGNALS</div>
           </div>
         </div>
 
@@ -895,17 +885,14 @@
         
         <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-[#111111] pb-3 mb-4 gap-3">
           <div>
-            <div class="flex items-center gap-2">
-              <span class="badge-breaking">[LIVE WAR ROOM]</span>
-              <h2 class="font-serif font-bold text-2xl text-[#111111] m-0">Canary Attack Simulator &amp; Validation Lab</h2>
-            </div>
+            <h2 class="font-serif font-bold text-2xl text-[#111111] m-0">Canary Attack Simulator</h2>
             <p class="font-body text-xs text-neutral-600 mt-1 mb-0">
-              Dispatch real-time container attacks against isolated targets to verify live eBPF kernel detection, rule triggering, and anomaly divergence scoring.
+              Dispatch controlled canary workloads to verify kernel execve telemetry capture, rule evaluation, and anomaly drift scoring.
             </p>
           </div>
           <div class="flex items-center gap-2 font-mono text-xs">
-            <span class="border border-[#111111] px-2.5 py-1 bg-neutral-100 font-bold">
-              OPERATOR CLEARANCE: <span :class="operatorToken ? 'text-[#111111]' : 'text-[#CC0000]'" x-text="operatorToken ? 'AUTHORIZED (TOKEN SET)' : 'REQUIRED'"></span>
+            <span class="border border-[#111111] px-2.5 py-1 bg-white font-bold">
+              OPERATOR TOKEN: <span :class="operatorToken ? 'text-[#111111]' : 'text-[#CC0000]'" x-text="operatorToken ? 'CONFIGURED' : 'REQUIRED'"></span>
             </span>
           </div>
         </div>
@@ -1275,15 +1262,15 @@
 
         </div>
 
-        <!-- Teletype Canary Terminal Box -->
+        <!-- Execution Output Console -->
         <div class="border-2 border-[#111111] bg-[#111111] text-[#F9F9F7] p-4 hard-shadow">
           <div class="flex items-center justify-between border-b border-[#333333] pb-2 mb-2 font-mono text-xs">
             <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 bg-[#CC0000] animate-pulse"></span>
-              <span class="font-bold uppercase tracking-wider text-white">TELETYPE CANARY TERMINAL WIRE</span>
+              <span class="w-2 h-2 bg-emerald-400"></span>
+              <span class="font-bold uppercase tracking-wider text-white">EXECUTION OUTPUT</span>
             </div>
             <button @click="terminalLogs=[]" class="text-neutral-400 hover:text-white uppercase text-[10px] underline">
-              CLEAR LOGS
+              CLEAR
             </button>
           </div>
 
@@ -1296,7 +1283,7 @@
               </div>
             </template>
             <div x-show="terminalLogs.length === 0" class="text-neutral-500 italic py-4 text-center">
-              Canary terminal idle. Click 'TRIGGER ATTACK' on any scenario above to dispatch real container workloads and stream stdout/stderr.
+              No execution output recorded.
             </div>
           </div>
         </div>
@@ -1312,7 +1299,7 @@
     <div x-show="tokenModal.show" class="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" style="display:none" @keydown.escape.window="cancelTokenModal()">
       <div class="border-2 border-[#111111] bg-white p-6 max-w-md w-full hard-shadow text-[#111111]">
         <div class="flex items-center justify-between border-b border-[#111111] pb-2 mb-3">
-          <span class="font-mono text-xs font-bold uppercase text-[#CC0000]">OPERATOR CLEARANCE</span>
+          <span class="font-mono text-xs font-bold uppercase text-[#CC0000]">OPERATOR TOKEN</span>
           <button @click="cancelTokenModal()" class="font-mono font-bold text-base">&times;</button>
         </div>
         <h3 class="font-serif font-bold text-xl text-[#111111] m-0" x-text="tokenModal.title">Operator Token</h3>
@@ -1333,14 +1320,14 @@
     <div x-show="aiAuditModal.show" class="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" style="display:none" @keydown.escape.window="aiAuditModal.show=false">
       <div class="border-2 border-[#111111] bg-white p-6 max-w-xl w-full hard-shadow text-[#111111] max-h-[85vh] overflow-y-auto">
         <div class="flex items-center justify-between border-b border-[#111111] pb-2 mb-3">
-          <span class="badge-breaking">AI SECURITY REPORT</span>
+          <span class="border border-[#111111] bg-[#111111] text-white px-2 py-0.5 text-[10px] font-mono font-bold uppercase">SECURITY ADVISORY</span>
           <button @click="aiAuditModal.show=false" class="font-mono font-bold text-base">&times;</button>
         </div>
-        <h3 class="font-serif font-bold text-xl text-[#111111] m-0">Container Audit</h3>
+        <h3 class="font-serif font-bold text-xl text-[#111111] m-0">Container Advisory</h3>
         <div class="font-mono text-xs text-neutral-500 mt-0.5 mb-4" x-text="'TARGET: ' + (aiAuditModal.container?.container_name || '')"></div>
 
         <div x-show="aiAuditModal.loading" class="text-center py-8 font-mono text-xs">
-          <span>RUNNING AI SECURITY ASSESSMENT...</span>
+          <span>GENERATING WORKLOAD SECURITY ADVISORY...</span>
         </div>
 
         <div x-show="!aiAuditModal.loading && aiAuditModal.result" class="space-y-3 font-body text-xs">
