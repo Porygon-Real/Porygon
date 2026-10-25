@@ -1,13 +1,16 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Porygon Documentation: eBPF Runtime Anomaly Detection</title>
-  <meta name="description" content="Technical documentation for Porygon: installation, architecture, eBPF syscall telemetry, Jensen-Shannon drift scoring, ML classification, rules, and reproducibility.">
+  <meta name="description"
+    content="Technical documentation for Porygon: installation, architecture, eBPF syscall telemetry, Jensen-Shannon drift scoring, ML classification, rules, and reproducibility.">
 
   <!-- Favicon matching the dashboard -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23111111'/%3E%3Cpath d='M8 6h16v20H8z' fill='%23F9F9F7'/%3E%3Cpath d='M11 10h10M11 14h10M11 18h6' stroke='%23111111' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23111111'/%3E%3Cpath d='M8 6h16v20H8z' fill='%23F9F9F7'/%3E%3Cpath d='M11 10h10M11 14h10M11 18h6' stroke='%23111111' stroke-width='2'/%3E%3C/svg%3E">
 
   <!-- Newsprint Core Stylesheet -->
   <link rel="stylesheet" href="style.css?v=2.5">
@@ -18,6 +21,7 @@
   <!-- Phosphor Icons -->
   <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
 </head>
+
 <body>
 
   <!-- TOP UTILITY NAVIGATION -->
@@ -27,7 +31,7 @@
         23CSE498 &middot; Final Year Project &middot; Team 75
       </div>
       <nav class="top-utility-nav" aria-label="Primary Navigation">
-        <a href="home.html">Home Overview</a>
+        <a href="home.html">Home</a>
         <a href="index.html#overview">Dashboard</a>
         <a href="index.html#telemetry">Telemetry</a>
         <a href="index.html#ml">Scoring &amp; ML</a>
@@ -50,7 +54,8 @@
           <span class="dot">&bull;</span>
           <span>RESEARCH SPECIFICATION</span>
           <span class="dot">&bull;</span>
-          <a href="https://github.com/anuruprkris/porygon" target="_blank" rel="noopener" style="color: inherit; text-decoration: none;">GITHUB &rarr;</a>
+          <a href="https://github.com/anuruprkris/porygon" target="_blank" rel="noopener"
+            style="color: inherit; text-decoration: none;">GITHUB &rarr;</a>
         </div>
       </div>
     </header>
@@ -117,21 +122,29 @@
           <h2 class="doc-section-title">Overview</h2>
           <p class="doc-p">
             Modern container environments are designed to run predictable, repetitive microservices. When a container
-            deviates from its intended function: spawning unobserved shells, invoking reconnaissance binaries, or altering
+            deviates from its intended function: spawning unobserved shells, invoking reconnaissance binaries, or
+            altering
             user namespaces: traditional file scanners on disk cannot detect active in-flight execution.
           </p>
           <p class="doc-p">Porygon approaches container observability through a multi-tiered pipeline:</p>
           <ul class="doc-ul">
-            <li class="doc-li"><strong>Kernel-space instrumentation (eBPF).</strong> Intercepts <code>execve</code>, <code>fork</code>, <code>connect</code>,
-              and socket operations at the syscall boundary using modern Falco kernel probes with zero user-space sidecar penalty.</li>
-            <li class="doc-li"><strong>Digest-bound behavioral baselines.</strong> Profiles historical container behavior tied strictly to cryptographic
+            <li class="doc-li"><strong>Kernel-space instrumentation (eBPF).</strong> Intercepts <code>execve</code>,
+              <code>fork</code>, <code>connect</code>,
+              and socket operations at the syscall boundary using modern Falco kernel probes with zero user-space
+              sidecar penalty.</li>
+            <li class="doc-li"><strong>Digest-bound behavioral baselines.</strong> Profiles historical container
+              behavior tied strictly to cryptographic
               image digests (<code>image@sha256:...</code>) rather than mutable human tags.</li>
-            <li class="doc-li"><strong>Information-theoretic drift ($D_{JS}$).</strong> Calculates base-2 Jensen-Shannon distance across categorical
+            <li class="doc-li"><strong>Information-theoretic drift ($D_{JS}$).</strong> Calculates base-2 Jensen-Shannon
+              distance across categorical
               distributions (process names, binaries, parent-child lineages, bigram transitions) and token novelty.</li>
-            <li class="doc-li"><strong>Explainable ML classification (TreeSHAP).</strong> Evaluates 12 runtime telemetry features against a Random Forest
+            <li class="doc-li"><strong>Explainable ML classification (TreeSHAP).</strong> Evaluates 12 runtime telemetry
+              features against a Random Forest
               ensemble, mapping anomalous activity to MITRE ATT&amp;CK tactics with local feature attributions.</li>
-            <li class="doc-li"><strong>Deterministic rule synthesis &amp; containment.</strong> Cross-references anomalies against deterministic rules
-              and active allowlists, triggering automated container quarantine, process termination, or network isolation.</li>
+            <li class="doc-li"><strong>Deterministic rule synthesis &amp; containment.</strong> Cross-references
+              anomalies against deterministic rules
+              and active allowlists, triggering automated container quarantine, process termination, or network
+              isolation.</li>
           </ul>
         </section>
 
@@ -150,10 +163,13 @@ pip install -e backend/ -e telemetry/ -e collector/ -e scanner/ -e responder/
 pytest</pre>
           </div>
           <ul class="doc-ul">
-            <li class="doc-li"><strong>Unit test suite.</strong> The repository includes 169+ passing unit tests covering scoring algorithms, AST rule compiling,
+            <li class="doc-li"><strong>Unit test suite.</strong> The repository includes 169+ passing unit tests
+              covering scoring algorithms, AST rule compiling,
               eBPF event deserialization, and containment idempotency.</li>
-            <li class="doc-li"><strong>eBPF host support.</strong> Real-time kernel event capture requires root access to attach probes via Falco or modern BPF CO-RE.</li>
-            <li class="doc-li"><strong>Database backend.</strong> Development mode supports local SQLite; production and staging use PostgreSQL 17 with connection pooling.</li>
+            <li class="doc-li"><strong>eBPF host support.</strong> Real-time kernel event capture requires root access
+              to attach probes via Falco or modern BPF CO-RE.</li>
+            <li class="doc-li"><strong>Database backend.</strong> Development mode supports local SQLite; production and
+              staging use PostgreSQL 17 with connection pooling.</li>
           </ul>
           <div class="news-note">
             <strong>Kernel Requirement Note</strong>
@@ -175,7 +191,8 @@ python3 scripts/serve_dashboard.py
 uvicorn porygon_api.main:app --host 127.0.0.1 --port 8000 --reload</pre>
           </div>
           <p class="doc-p">
-            Open <code>http://127.0.0.1:3000</code> in your browser to access the live dashboard, telemetry streaming feed,
+            Open <code>http://127.0.0.1:3000</code> in your browser to access the live dashboard, telemetry streaming
+            feed,
             and Attack Lab simulator.
           </p>
 
@@ -212,12 +229,36 @@ docker compose ps</pre>
                 </tr>
               </thead>
               <tbody>
-                <tr><td><code>backend</code></td><td><code>porygon-backend</code></td><td>FastAPI API gateway, Jensen-Shannon scorer, rule engine, and incident store</td></tr>
-                <tr><td><code>collector</code></td><td><code>porygon-collector</code></td><td>Docker Engine daemon lifecycle event listener and image digest indexer</td></tr>
-                <tr><td><code>telemetry</code></td><td><code>porygon-telemetry</code></td><td>Falco eBPF probe streamer, ring-buffer reader, and batch spooler</td></tr>
-                <tr><td><code>scanner</code></td><td><code>porygon-scanner</code></td><td>Trivy CVE vulnerability scanner and active port cross-referencing</td></tr>
-                <tr><td><code>responder</code></td><td><code>porygon-responder</code></td><td>Containment orchestrator: container pause, process kill, network egress drop</td></tr>
-                <tr><td><code>postgres</code></td><td><code>porygon-postgres</code></td><td>PostgreSQL 17 ACID relational store for baselines, events, and audit logs</td></tr>
+                <tr>
+                  <td><code>backend</code></td>
+                  <td><code>porygon-backend</code></td>
+                  <td>FastAPI API gateway, Jensen-Shannon scorer, rule engine, and incident store</td>
+                </tr>
+                <tr>
+                  <td><code>collector</code></td>
+                  <td><code>porygon-collector</code></td>
+                  <td>Docker Engine daemon lifecycle event listener and image digest indexer</td>
+                </tr>
+                <tr>
+                  <td><code>telemetry</code></td>
+                  <td><code>porygon-telemetry</code></td>
+                  <td>Falco eBPF probe streamer, ring-buffer reader, and batch spooler</td>
+                </tr>
+                <tr>
+                  <td><code>scanner</code></td>
+                  <td><code>porygon-scanner</code></td>
+                  <td>Trivy CVE vulnerability scanner and active port cross-referencing</td>
+                </tr>
+                <tr>
+                  <td><code>responder</code></td>
+                  <td><code>porygon-responder</code></td>
+                  <td>Containment orchestrator: container pause, process kill, network egress drop</td>
+                </tr>
+                <tr>
+                  <td><code>postgres</code></td>
+                  <td><code>porygon-postgres</code></td>
+                  <td>PostgreSQL 17 ACID relational store for baselines, events, and audit logs</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -241,12 +282,36 @@ docker compose ps</pre>
                 </tr>
               </thead>
               <tbody>
-                <tr><td>API Core &amp; Scorer</td><td><code>backend/src/porygon_api/</code></td><td><code>anomaly-scoring</code>, <code>rule-engine</code>, <code>incident-management</code></td></tr>
-                <tr><td>Scoring Engine</td><td><code>backend/src/porygon_api/scoring.py</code></td><td>Base-2 Jensen-Shannon distance, categorical weights, novelty tracking</td></tr>
-                <tr><td>ML Threat Engine</td><td><code>backend/src/porygon_api/ml_classifier.py</code></td><td>Random Forest ensemble, 12 feature extractions, TreeSHAP importances</td></tr>
-                <tr><td>Baseline Profiler</td><td><code>backend/src/porygon_api/baseline.py</code></td><td>Deterministic document builder, quality metrics, distribution normalization</td></tr>
-                <tr><td>Telemetry Spooler</td><td><code>telemetry/src/porygon_telemetry/</code></td><td><code>process-telemetry</code>, Falco FIFO ingestion, batch flushers</td></tr>
-                <tr><td>Incident Responder</td><td><code>responder/src/porygon_responder/</code></td><td><code>containment-response</code>, Docker socket client, audit logging</td></tr>
+                <tr>
+                  <td>API Core &amp; Scorer</td>
+                  <td><code>backend/src/porygon_api/</code></td>
+                  <td><code>anomaly-scoring</code>, <code>rule-engine</code>, <code>incident-management</code></td>
+                </tr>
+                <tr>
+                  <td>Scoring Engine</td>
+                  <td><code>backend/src/porygon_api/scoring.py</code></td>
+                  <td>Base-2 Jensen-Shannon distance, categorical weights, novelty tracking</td>
+                </tr>
+                <tr>
+                  <td>ML Threat Engine</td>
+                  <td><code>backend/src/porygon_api/ml_classifier.py</code></td>
+                  <td>Random Forest ensemble, 12 feature extractions, TreeSHAP importances</td>
+                </tr>
+                <tr>
+                  <td>Baseline Profiler</td>
+                  <td><code>backend/src/porygon_api/baseline.py</code></td>
+                  <td>Deterministic document builder, quality metrics, distribution normalization</td>
+                </tr>
+                <tr>
+                  <td>Telemetry Spooler</td>
+                  <td><code>telemetry/src/porygon_telemetry/</code></td>
+                  <td><code>process-telemetry</code>, Falco FIFO ingestion, batch flushers</td>
+                </tr>
+                <tr>
+                  <td>Incident Responder</td>
+                  <td><code>responder/src/porygon_responder/</code></td>
+                  <td><code>containment-response</code>, Docker socket client, audit logging</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -256,15 +321,19 @@ docker compose ps</pre>
         <section id="ebpf" class="doc-section">
           <h2 class="doc-section-title">eBPF Syscall Telemetry</h2>
           <p class="doc-p">
-            Porygon intercepts kernel execution without modifying container images or requiring privileged sidecars in each pod.
+            Porygon intercepts kernel execution without modifying container images or requiring privileged sidecars in
+            each pod.
             When a process executes inside an isolated container, Falco eBPF tracepoints trigger in host kernel space:
           </p>
           <ul class="doc-ul">
-            <li class="doc-li"><strong>Syscall interception.</strong> Intercepts <code>sys_enter_execve</code>, <code>sys_enter_fork</code>, <code>sys_enter_connect</code>,
+            <li class="doc-li"><strong>Syscall interception.</strong> Intercepts <code>sys_enter_execve</code>,
+              <code>sys_enter_fork</code>, <code>sys_enter_connect</code>,
               and file permission alterations.</li>
-            <li class="doc-li"><strong>Kernel metadata enrichment.</strong> The probe reads the calling process's kernel <code>task_struct</code>, extracting the
+            <li class="doc-li"><strong>Kernel metadata enrichment.</strong> The probe reads the calling process's kernel
+              <code>task_struct</code>, extracting the
               cgroup identifier, host PID, container namespace PID, parent executable, and user UID.</li>
-            <li class="doc-li"><strong>Zero container overhead.</strong> Telemetry events pass through the eBPF perf ring-buffer to the userspace daemon
+            <li class="doc-li"><strong>Zero container overhead.</strong> Telemetry events pass through the eBPF perf
+              ring-buffer to the userspace daemon
               with sub-50ms latency and minimal CPU overhead.</li>
           </ul>
         </section>
@@ -274,7 +343,8 @@ docker compose ps</pre>
           <h2 class="doc-section-title">Workload Baseline Profiles</h2>
           <p class="doc-p">
             Porygon rejects arbitrary tag names (e.g. <code>:latest</code>) because mutable tags can be overwritten
-            by attackers or CI pipelines. Instead, every profile is cryptographically bound to an OCI image digest (<code>image@sha256:...</code>).
+            by attackers or CI pipelines. Instead, every profile is cryptographically bound to an OCI image digest
+            (<code>image@sha256:...</code>).
           </p>
           <div class="code-block-wrap">
             <button class="btn-code-copy" data-copy="code-baseline">Copy</button>
@@ -292,8 +362,10 @@ profile, summaries, quality, manifest = build_profile_document(
 )</pre>
           </div>
           <p class="doc-p">
-            The builder compiles 6 categorical probability distributions: <code>process_name</code>, <code>executable</code>,
-            <code>parent_child</code>, <code>user_uid</code>, <code>runtime_action</code>, and <code>process_sequence_bigram</code>.
+            The builder compiles 6 categorical probability distributions: <code>process_name</code>,
+            <code>executable</code>,
+            <code>parent_child</code>, <code>user_uid</code>, <code>runtime_action</code>, and
+            <code>process_sequence_bigram</code>.
           </p>
         </section>
 
@@ -301,8 +373,10 @@ profile, summaries, quality, manifest = build_profile_document(
         <section id="jensen-shannon" class="doc-section">
           <h2 class="doc-section-title">Jensen-Shannon Distance Engine</h2>
           <p class="doc-p">
-            Traditional anomaly detectors often employ Euclidean distance or black-box thresholds. Porygon grounds baseline drift
-            in <strong>Information Theory</strong> using bounded base-2 <strong>Jensen-Shannon distance ($D_{JS}$)</strong>:
+            Traditional anomaly detectors often employ Euclidean distance or black-box thresholds. Porygon grounds
+            baseline drift
+            in <strong>Information Theory</strong> using bounded base-2 <strong>Jensen-Shannon distance
+              ($D_{JS}$)</strong>:
           </p>
           <div class="code-block-wrap">
             <button class="btn-code-copy" data-copy="code-js">Copy</button>
@@ -310,12 +384,16 @@ profile, summaries, quality, manifest = build_profile_document(
 where M = 0.5 * (P + Q)</pre>
           </div>
           <ul class="doc-ul">
-            <li class="doc-li"><strong>Bounded metric.</strong> Base-2 $D_{JS}$ yields a clean, symmetric score in $[0.0, 1.0]$, where $0.0$ signifies identical
+            <li class="doc-li"><strong>Bounded metric.</strong> Base-2 $D_{JS}$ yields a clean, symmetric score in
+              $[0.0, 1.0]$, where $0.0$ signifies identical
               probability distributions and $1.0$ represents completely disjoint behavioral profiles.</li>
-            <li class="doc-li"><strong>Top-level weights.</strong> Categorical distance (50%), Token novelty (30%), Numeric z-score deviation (20%).</li>
-            <li class="doc-li"><strong>Categorical feature weights.</strong> Executable path (25%), Parent-child lineage (20%), Process sequence bigram (20%),
+            <li class="doc-li"><strong>Top-level weights.</strong> Categorical distance (50%), Token novelty (30%),
+              Numeric z-score deviation (20%).</li>
+            <li class="doc-li"><strong>Categorical feature weights.</strong> Executable path (25%), Parent-child lineage
+              (20%), Process sequence bigram (20%),
               Process name (15%), User UID (10%), Runtime action (10%).</li>
-            <li class="doc-li"><strong>Novelty tracking.</strong> When an executable appears that was completely absent from the baseline, it is cataloged
+            <li class="doc-li"><strong>Novelty tracking.</strong> When an executable appears that was completely absent
+              from the baseline, it is cataloged
               as an unseen token and scaled by its proportional frequency.</li>
           </ul>
         </section>
@@ -324,7 +402,8 @@ where M = 0.5 * (P + Q)</pre>
         <section id="ml-classifier" class="doc-section">
           <h2 class="doc-section-title">Tree Ensemble Threat Classifier</h2>
           <p class="doc-p">
-            The machine learning threat classification engine (<code>porygon_api/ml_classifier.py</code>) evaluates 60-second observation
+            The machine learning threat classification engine (<code>porygon_api/ml_classifier.py</code>) evaluates
+            60-second observation
             windows across 12 engineered features:
           </p>
           <div class="table-container">
@@ -336,20 +415,46 @@ where M = 0.5 * (P + Q)</pre>
                 </tr>
               </thead>
               <tbody>
-                <tr><td><code>jensen_shannon_drift</code></td><td>Categorical Jensen-Shannon distance against baseline process distribution</td></tr>
-                <tr><td><code>shell_ratio</code></td><td>Fraction of executions belonging to interactive shells (bash, sh, zsh, ash)</td></tr>
-                <tr><td><code>recon_ratio</code></td><td>Fraction of executions matching reconnaissance taxonomy (whoami, id, uname, ip, lsof)</td></tr>
-                <tr><td><code>tooling_ratio</code></td><td>Fraction of network or security tools (curl, wget, nc, socat, nmap, tcpdump)</td></tr>
-                <tr><td><code>priv_escalation_ratio</code></td><td>Executions involving SUID binaries, sudo, su, or root capability elevation</td></tr>
-                <tr><td><code>unseen_executable_ratio</code></td><td>Fraction of processes with binary paths absent from the image baseline</td></tr>
-                <tr><td><code>parent_shim_ratio</code></td><td>Processes directly spawned by container runtime shims (indicative of docker exec)</td></tr>
-                <tr><td><code>distinct_proc_count</code></td><td>Total number of unique binary paths observed in the time window</td></tr>
+                <tr>
+                  <td><code>jensen_shannon_drift</code></td>
+                  <td>Categorical Jensen-Shannon distance against baseline process distribution</td>
+                </tr>
+                <tr>
+                  <td><code>shell_ratio</code></td>
+                  <td>Fraction of executions belonging to interactive shells (bash, sh, zsh, ash)</td>
+                </tr>
+                <tr>
+                  <td><code>recon_ratio</code></td>
+                  <td>Fraction of executions matching reconnaissance taxonomy (whoami, id, uname, ip, lsof)</td>
+                </tr>
+                <tr>
+                  <td><code>tooling_ratio</code></td>
+                  <td>Fraction of network or security tools (curl, wget, nc, socat, nmap, tcpdump)</td>
+                </tr>
+                <tr>
+                  <td><code>priv_escalation_ratio</code></td>
+                  <td>Executions involving SUID binaries, sudo, su, or root capability elevation</td>
+                </tr>
+                <tr>
+                  <td><code>unseen_executable_ratio</code></td>
+                  <td>Fraction of processes with binary paths absent from the image baseline</td>
+                </tr>
+                <tr>
+                  <td><code>parent_shim_ratio</code></td>
+                  <td>Processes directly spawned by container runtime shims (indicative of docker exec)</td>
+                </tr>
+                <tr>
+                  <td><code>distinct_proc_count</code></td>
+                  <td>Total number of unique binary paths observed in the time window</td>
+                </tr>
               </tbody>
             </table>
           </div>
           <p class="doc-p">
-            The model outputs probabilities across 5 target MITRE tactics: <code>benign</code>, <code>reconnaissance</code>,
-            <code>privilege_escalation</code>, <code>shell_escape</code>, and <code>suspicious_tooling</code>, accompanied by TreeSHAP
+            The model outputs probabilities across 5 target MITRE tactics: <code>benign</code>,
+            <code>reconnaissance</code>,
+            <code>privilege_escalation</code>, <code>shell_escape</code>, and <code>suspicious_tooling</code>,
+            accompanied by TreeSHAP
             feature attribution matrices.
           </p>
         </section>
@@ -371,19 +476,41 @@ where M = 0.5 * (P + Q)</pre>
                 </tr>
               </thead>
               <tbody>
-                <tr><td><code>POR-DET-001</code></td><td>HIGH</td><td>Interactive shell execution inside production container without terminal allocation</td></tr>
-                <tr><td><code>POR-DET-002</code></td><td>CRITICAL</td><td>Reverse shell payload pattern or netcat socket binding</td></tr>
-                <tr><td><code>POR-DET-003</code></td><td>HIGH</td><td>Reconnaissance sweep execution exceeding 5 unique discovery binaries in 60s</td></tr>
-                <tr><td><code>POR-DET-004</code></td><td>CRITICAL</td><td>Crypto-miner binary execution or high CPU-spinning stratum loop</td></tr>
-                <tr><td><code>POR-DET-005</code></td><td>HIGH</td><td>Runtime modification of sensitive mount points (e.g. <code>/etc/shadow</code> or crontabs)</td></tr>
+                <tr>
+                  <td><code>POR-DET-001</code></td>
+                  <td>HIGH</td>
+                  <td>Interactive shell execution inside production container without terminal allocation</td>
+                </tr>
+                <tr>
+                  <td><code>POR-DET-002</code></td>
+                  <td>CRITICAL</td>
+                  <td>Reverse shell payload pattern or netcat socket binding</td>
+                </tr>
+                <tr>
+                  <td><code>POR-DET-003</code></td>
+                  <td>HIGH</td>
+                  <td>Reconnaissance sweep execution exceeding 5 unique discovery binaries in 60s</td>
+                </tr>
+                <tr>
+                  <td><code>POR-DET-004</code></td>
+                  <td>CRITICAL</td>
+                  <td>Crypto-miner binary execution or high CPU-spinning stratum loop</td>
+                </tr>
+                <tr>
+                  <td><code>POR-DET-005</code></td>
+                  <td>HIGH</td>
+                  <td>Runtime modification of sensitive mount points (e.g. <code>/etc/shadow</code> or crontabs)</td>
+                </tr>
               </tbody>
             </table>
           </div>
 
           <h3 class="doc-subsection-title">Custom Rule AST Compiler &amp; Allowlists</h3>
           <p class="doc-p">
-            Operators can submit custom detection expressions via <code>POST /api/v1/custom-detection-rules</code>. Expressions compile into
-            safe Python AST conditions. Furthermore, when novel behavior is deemed benign, operators register an immutable allowlist entry
+            Operators can submit custom detection expressions via <code>POST /api/v1/custom-detection-rules</code>.
+            Expressions compile into
+            safe Python AST conditions. Furthermore, when novel behavior is deemed benign, operators register an
+            immutable allowlist entry
             via <code>POST /api/v1/detection-allowlists</code> to prevent alert noise.
           </p>
         </section>
@@ -392,16 +519,21 @@ where M = 0.5 * (P + Q)</pre>
         <section id="containment" class="doc-section">
           <h2 class="doc-section-title">Autonomous Containment</h2>
           <p class="doc-p">
-            When an incident's composite anomaly score exceeds configured operator thresholds, the responder service executes deterministic
+            When an incident's composite anomaly score exceeds configured operator thresholds, the responder service
+            executes deterministic
             containment actions against the Docker Engine API:
           </p>
           <ul class="doc-ul">
-            <li class="doc-li"><strong>Workload pause (<code>docker pause</code>).</strong> Instantly freezes container cgroup CPU scheduling, preserving RAM state
+            <li class="doc-li"><strong>Workload pause (<code>docker pause</code>).</strong> Instantly freezes container
+              cgroup CPU scheduling, preserving RAM state
               for post-incident forensic inspection without destroying volatile memory artifacts.</li>
-            <li class="doc-li"><strong>Process termination (<code>SIGKILL</code>).</strong> Terminates the specific rogue PID while leaving the surrounding container
+            <li class="doc-li"><strong>Process termination (<code>SIGKILL</code>).</strong> Terminates the specific
+              rogue PID while leaving the surrounding container
               service operational.</li>
-            <li class="doc-li"><strong>Network egress quarantine.</strong> Drops egress bridge iptables chains to prevent data exfiltration or reverse shell connections.</li>
-            <li class="doc-li"><strong>Immutable audit logging.</strong> Every containment decision writes a tamper-evident audit record with execution timestamps
+            <li class="doc-li"><strong>Network egress quarantine.</strong> Drops egress bridge iptables chains to
+              prevent data exfiltration or reverse shell connections.</li>
+            <li class="doc-li"><strong>Immutable audit logging.</strong> Every containment decision writes a
+              tamper-evident audit record with execution timestamps
               and triggering anomaly IDs.</li>
           </ul>
         </section>
@@ -410,7 +542,8 @@ where M = 0.5 * (P + Q)</pre>
         <section id="api" class="doc-section">
           <h2 class="doc-section-title">REST API Reference</h2>
           <p class="doc-p">
-            The Porygon core API is documented via OpenAPI/Swagger at <code>http://127.0.0.1:8000/docs</code>. Key operational endpoints:
+            The Porygon core API is documented via OpenAPI/Swagger at <code>http://127.0.0.1:8000/docs</code>. Key
+            operational endpoints:
           </p>
           <div class="table-container">
             <table class="news-table">
@@ -422,12 +555,36 @@ where M = 0.5 * (P + Q)</pre>
                 </tr>
               </thead>
               <tbody>
-                <tr><td><code>GET</code></td><td><code>/api/v1/system/info</code></td><td>Returns microservice registration count, live event metrics, and status</td></tr>
-                <tr><td><code>POST</code></td><td><code>/api/v1/telemetry/events</code></td><td>Ingests batches of eBPF process and socket execution records</td></tr>
-                <tr><td><code>POST</code></td><td><code>/api/v1/ml/classify</code></td><td>Evaluates observation window against Tree Ensemble and TreeSHAP explainer</td></tr>
-                <tr><td><code>GET</code></td><td><code>/api/v1/baselines</code></td><td>Lists digest-pinned baseline documents and quality reports</td></tr>
-                <tr><td><code>GET</code></td><td><code>/api/v1/incidents</code></td><td>Returns open and historical incident records with forensic audit trails</td></tr>
-                <tr><td><code>POST</code></td><td><code>/operator/v1/containment/execute</code></td><td>Triggers operator-approved workload quarantine or process kill</td></tr>
+                <tr>
+                  <td><code>GET</code></td>
+                  <td><code>/api/v1/system/info</code></td>
+                  <td>Returns microservice registration count, live event metrics, and status</td>
+                </tr>
+                <tr>
+                  <td><code>POST</code></td>
+                  <td><code>/api/v1/telemetry/events</code></td>
+                  <td>Ingests batches of eBPF process and socket execution records</td>
+                </tr>
+                <tr>
+                  <td><code>POST</code></td>
+                  <td><code>/api/v1/ml/classify</code></td>
+                  <td>Evaluates observation window against Tree Ensemble and TreeSHAP explainer</td>
+                </tr>
+                <tr>
+                  <td><code>GET</code></td>
+                  <td><code>/api/v1/baselines</code></td>
+                  <td>Lists digest-pinned baseline documents and quality reports</td>
+                </tr>
+                <tr>
+                  <td><code>GET</code></td>
+                  <td><code>/api/v1/incidents</code></td>
+                  <td>Returns open and historical incident records with forensic audit trails</td>
+                </tr>
+                <tr>
+                  <td><code>POST</code></td>
+                  <td><code>/operator/v1/containment/execute</code></td>
+                  <td>Triggers operator-approved workload quarantine or process kill</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -449,12 +606,37 @@ where M = 0.5 * (P + Q)</pre>
                 </tr>
               </thead>
               <tbody>
-                <tr><td><code>PORYGON_DB_HOST</code></td><td><code>localhost</code></td><td>PostgreSQL database host</td></tr>
-                <tr><td><code>PORYGON_DB_PORT</code></td><td><code>5432</code></td><td>PostgreSQL database port</td></tr>
-                <tr><td><code>PORYGON_INTERNAL_API_TOKEN</code></td><td><code>Required</code></td><td>Secret token for inter-service communication (telemetry to backend)</td></tr>
-                <tr><td><code>PORYGON_OPERATOR_API_TOKEN</code></td><td><code>Required</code></td><td>Secret token required for triggering containment and scenario runs</td></tr>
-                <tr><td><code>PORYGON_RESPONSE_EXECUTION_MODE</code></td><td><code>disabled</code></td><td>Response execution policy: <code>disabled</code>, <code>manual</code>, or <code>autonomous</code></td></tr>
-                <tr><td><code>PORYGON_DEMO_MODE</code></td><td><code>0</code></td><td>Enables sandboxed attack scenario triggering in the Attack Lab</td></tr>
+                <tr>
+                  <td><code>PORYGON_DB_HOST</code></td>
+                  <td><code>localhost</code></td>
+                  <td>PostgreSQL database host</td>
+                </tr>
+                <tr>
+                  <td><code>PORYGON_DB_PORT</code></td>
+                  <td><code>5432</code></td>
+                  <td>PostgreSQL database port</td>
+                </tr>
+                <tr>
+                  <td><code>PORYGON_INTERNAL_API_TOKEN</code></td>
+                  <td><code>Required</code></td>
+                  <td>Secret token for inter-service communication (telemetry to backend)</td>
+                </tr>
+                <tr>
+                  <td><code>PORYGON_OPERATOR_API_TOKEN</code></td>
+                  <td><code>Required</code></td>
+                  <td>Secret token required for triggering containment and scenario runs</td>
+                </tr>
+                <tr>
+                  <td><code>PORYGON_RESPONSE_EXECUTION_MODE</code></td>
+                  <td><code>disabled</code></td>
+                  <td>Response execution policy: <code>disabled</code>, <code>manual</code>, or <code>autonomous</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>PORYGON_DEMO_MODE</code></td>
+                  <td><code>0</code></td>
+                  <td>Enables sandboxed attack scenario triggering in the Attack Lab</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -464,16 +646,22 @@ where M = 0.5 * (P + Q)</pre>
         <section id="simulator" class="doc-section">
           <h2 class="doc-section-title">Attack Lab Scenarios</h2>
           <p class="doc-p">
-            The built-in Attack Simulator allows operators to evaluate detection latency and containment policies against sandboxed workloads:
+            The built-in Attack Simulator allows operators to evaluate detection latency and containment policies
+            against sandboxed workloads:
           </p>
           <ul class="doc-ul">
-            <li class="doc-li"><strong>Crypto-miner execution.</strong> Spawns a digest-pinned image (<code>quay.io/petr_ruzicka/malware-cryptominer-container</code>)
+            <li class="doc-li"><strong>Crypto-miner execution.</strong> Spawns a digest-pinned image
+              (<code>quay.io/petr_ruzicka/malware-cryptominer-container</code>)
               verifying high CPU-spinning loop detection and <code>POR-DET-004</code> trigger.</li>
-            <li class="doc-li"><strong>Reverse shell infiltration.</strong> Simulates interactive socket redirection via netcat, testing kernel execve capture
+            <li class="doc-li"><strong>Reverse shell infiltration.</strong> Simulates interactive socket redirection via
+              netcat, testing kernel execve capture
               and <code>POR-DET-002</code> containment.</li>
-            <li class="doc-li"><strong>SUID privilege escalation.</strong> Tests unauthorized execution of setuid binaries, root namespace alteration, and
-              <code>POR-DET-003</code> alerting.</li>
-            <li class="doc-li"><strong>Benign batch job baseline.</strong> Executes typical Alpine Linux package updates and curl health-checks to verify zero
+            <li class="doc-li"><strong>SUID privilege escalation.</strong> Tests unauthorized execution of setuid
+              binaries, root namespace alteration, and
+              <code>POR-DET-003</code> alerting.
+            </li>
+            <li class="doc-li"><strong>Benign batch job baseline.</strong> Executes typical Alpine Linux package updates
+              and curl health-checks to verify zero
               false-positive containment against standard profiles.</li>
           </ul>
         </section>
@@ -506,12 +694,16 @@ python3 scripts/package_pilot_dataset.py</pre>
         <section id="limits" class="doc-section">
           <h2 class="doc-section-title">Limitations</h2>
           <ul class="doc-ul">
-            <li class="doc-li"><strong>Linux host kernel dependency.</strong> eBPF syscall capture requires kernel tracepoints and ring-buffer support (Linux 5.8+).
+            <li class="doc-li"><strong>Linux host kernel dependency.</strong> eBPF syscall capture requires kernel
+              tracepoints and ring-buffer support (Linux 5.8+).
               Windows and macOS require a Linux virtual machine backend.</li>
-            <li class="doc-li"><strong>Baseline cold-start period.</strong> Accurate Jensen-Shannon distance calculation requires a representative baseline
-              window (minimum 10 process events across 2 non-empty windows). During initial container startup before baseline convergence,
+            <li class="doc-li"><strong>Baseline cold-start period.</strong> Accurate Jensen-Shannon distance calculation
+              requires a representative baseline
+              window (minimum 10 process events across 2 non-empty windows). During initial container startup before
+              baseline convergence,
               the engine defaults to deterministic rule evaluation.</li>
-            <li class="doc-li"><strong>Root privilege for probe loading.</strong> Loading eBPF programs into kernel space requires <code>CAP_BPF</code> or <code>CAP_SYS_ADMIN</code>.</li>
+            <li class="doc-li"><strong>Root privilege for probe loading.</strong> Loading eBPF programs into kernel
+              space requires <code>CAP_BPF</code> or <code>CAP_SYS_ADMIN</code>.</li>
           </ul>
         </section>
 
@@ -528,11 +720,31 @@ python3 scripts/package_pilot_dataset.py</pre>
                 </tr>
               </thead>
               <tbody>
-                <tr><td>Porygon core codebase</td><td>MIT</td><td>Full system, API, scoring algorithms, dashboard</td></tr>
-                <tr><td>Falco eBPF probes</td><td>Apache-2.0</td><td>Kernel-space syscall tracepoint instrumentation</td></tr>
-                <tr><td>Trivy vulnerability scanner</td><td>Apache-2.0</td><td>Image vulnerability scanning and CVE matching</td></tr>
-                <tr><td>Scikit-learn &amp; SHAP</td><td>BSD-3</td><td>Machine learning ensemble and feature attribution trees</td></tr>
-                <tr><td>PostgreSQL driver</td><td>LGPL-3.0</td><td>Database connectivity</td></tr>
+                <tr>
+                  <td>Porygon core codebase</td>
+                  <td>MIT</td>
+                  <td>Full system, API, scoring algorithms, dashboard</td>
+                </tr>
+                <tr>
+                  <td>Falco eBPF probes</td>
+                  <td>Apache-2.0</td>
+                  <td>Kernel-space syscall tracepoint instrumentation</td>
+                </tr>
+                <tr>
+                  <td>Trivy vulnerability scanner</td>
+                  <td>Apache-2.0</td>
+                  <td>Image vulnerability scanning and CVE matching</td>
+                </tr>
+                <tr>
+                  <td>Scikit-learn &amp; SHAP</td>
+                  <td>BSD-3</td>
+                  <td>Machine learning ensemble and feature attribution trees</td>
+                </tr>
+                <tr>
+                  <td>PostgreSQL driver</td>
+                  <td>LGPL-3.0</td>
+                  <td>Database connectivity</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -548,10 +760,11 @@ python3 scripts/package_pilot_dataset.py</pre>
     <div class="docs-root">
       <div class="docs-footer-inner">
         <div class="docs-footer-copy">
-          &copy; 2026 Porygon &middot; Capstone Research Deliverable &middot; Course 23CSE498 Team 75 &middot; MIT Licence
+          &copy; 2026 Porygon &middot; Capstone Research Deliverable &middot; Course 23CSE498 Team 75 &middot; MIT
+          Licence
         </div>
         <div class="docs-footer-links">
-          <a href="home.html">Home Overview</a>
+          <a href="home.html">Home</a>
           <a href="index.html#overview">Dashboard</a>
           <a href="index.html#telemetry">Telemetry</a>
           <a href="#top">Back to top &uarr;</a>
@@ -597,4 +810,5 @@ python3 scripts/package_pilot_dataset.py</pre>
     })();
   </script>
 </body>
+
 </html>
