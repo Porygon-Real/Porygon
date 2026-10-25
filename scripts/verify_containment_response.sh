@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Internal checks use Docker exec; the public gateway intentionally rejects /internal/.
+if [[ -z "${PORYGON_VERIFY_BASE_URL:-}" ]]; then
+  exec python3 scripts/verification_api.py bash "$0" "$@"
+fi
+
 TARGET_NAME="porygon-containment-target"
 TARGET_IMAGE="alpine:3.20"
 
@@ -44,7 +49,7 @@ pass "Detection engine verification completed"
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
 backend_port="${backend_port:-8000}"
-base_url="http://127.0.0.1:${backend_port}"
+base_url="${PORYGON_VERIFY_BASE_URL:-http://127.0.0.1:${backend_port}}"
 
 curl --fail --silent --show-error "${base_url}/api/v1/response-policy" \
   > artifacts/containment-response-policy.json

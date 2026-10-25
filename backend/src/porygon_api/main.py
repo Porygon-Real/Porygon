@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import math
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from threading import BoundedSemaphore
 from typing import Any
 from uuid import uuid4
 
@@ -10,7 +12,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from sqlalchemy import case, desc, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from porygon_api.baseline import FEATURE_SCHEMA_VERSION, build_profile_document
 from porygon_api.calibrated_provenance import (
@@ -24,6 +26,7 @@ from porygon_api.calibrated_rarity import (
 )
 from porygon_api.run_calibration import build_calibration_artifact, score_test_block
 from porygon_api.retention import apply_retention
+from porygon_api.maintenance import RetentionWorker
 from porygon_api.config import get_settings
 from porygon_api.detection import (
     CORRELATION_WINDOW_SECONDS,
@@ -37,7 +40,7 @@ from porygon_api.detection import (
     evaluate_detection,
     ruleset_hash,
 )
-from porygon_api.db import get_db
+from porygon_api.db import SessionLocal, get_db
 from porygon_api.models import (
     AnomalyScore,
     BehaviorProfile,
@@ -179,8 +182,21 @@ def _require_calibrated_enabled() -> None:
 
 APP_VERSION = "0.8.0"
 CAPABILITY_ID = "vulnerability-enrichment"
+audit_slots = BoundedSemaphore(settings.ai_max_concurrent_audits)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    worker = RetentionWorker(settings, SessionLocal)
+    if settings.retention_scheduler_enabled:
+        worker.start()
+    try:
+        yield
+    finally:
+        worker.stop()
 
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.app_name,
     version=APP_VERSION,
     description=(
@@ -526,7 +542,8 @@ def _find_parent_event_id(
     occurred_at: datetime,
     time_nano: int,
 ) -> str | None:
-    if process_ppid is None or process_ppid <= 0:
+    # Until identity is resolved, PID reuse cannot establish a safe namespace.
+    if not container_id or process_ppid is None or process_ppid <= 0:
         return None
 
     earliest_parent_time = occurred_at - timedelta(
@@ -542,7 +559,7 @@ def _find_parent_event_id(
         statement = statement.where(ProcessExecEvent.docker_host_id == docker_host_id)
     if container_id:
         statement = statement.where(ProcessExecEvent.container_id == container_id)
-    if not docker_host_id and not container_id:
+    if not docker_host_id:
         statement = statement.where(ProcessExecEvent.sensor_instance_id == sensor_instance_id)
 
     return db.scalar(statement.order_by(desc(ProcessExecEvent.time_nano)).limit(1))
@@ -595,7 +612,49 @@ def _reconcile_process_identities(db: Session, limit: int = 1000) -> int:
             time_nano=event.time_nano,
         )
         repaired += 1
+    _reconcile_process_parents(db, limit=limit)
     db.commit()
+    return repaired
+
+
+def _reconcile_process_parents(db: Session, limit: int = 1000) -> int:
+    """Repair out-of-order direct parents using recorded PPIDs, never group guesses.
+
+    Only children with an available same-container parent enter the bounded batch,
+    so permanently missing fork/exec evidence cannot starve later repairs.
+    """
+    parent = aliased(ProcessExecEvent)
+    available = select(parent.event_id).where(
+        parent.container_id == ProcessExecEvent.container_id,
+        or_(
+            parent.docker_host_id == ProcessExecEvent.docker_host_id,
+            (parent.docker_host_id.is_(None)
+             & ProcessExecEvent.docker_host_id.is_(None)
+             & (parent.sensor_instance_id == ProcessExecEvent.sensor_instance_id)),
+        ),
+        parent.process_pid == ProcessExecEvent.process_ppid,
+        parent.event_id != ProcessExecEvent.event_id,
+        parent.time_nano <= ProcessExecEvent.time_nano,
+        parent.time_nano >= ProcessExecEvent.time_nano
+        - settings.parent_correlation_lookback_seconds * 1_000_000_000,
+    ).correlate(ProcessExecEvent).exists()
+    children = db.scalars(select(ProcessExecEvent).where(
+        ProcessExecEvent.container_id.is_not(None),
+        ProcessExecEvent.parent_event_id.is_(None),
+        ProcessExecEvent.process_ppid > 0,
+        available,
+    ).order_by(ProcessExecEvent.time_nano, ProcessExecEvent.event_id).limit(limit))
+    repaired = 0
+    for child in children:
+        event_id = _find_parent_event_id(
+            db, sensor_instance_id=child.sensor_instance_id,
+            docker_host_id=child.docker_host_id, container_id=child.container_id,
+            process_ppid=child.process_ppid, occurred_at=child.occurred_at,
+            time_nano=child.time_nano,
+        )
+        if event_id is not None and event_id != child.event_id:
+            child.parent_event_id = event_id
+            repaired += 1
     return repaired
 
 
@@ -2558,7 +2617,7 @@ def audit_container(
             .limit(1)
         )
 
-    drift_score = float(latest_score.score_value) if latest_score and latest_score.score_value is not None else None
+    drift_score = float(latest_score.total_score) if latest_score and latest_score.total_score is not None else None
 
     cves: list[dict[str, Any]] = []
     if container.image_digest:
@@ -2611,6 +2670,15 @@ def audit_container(
         if e.rule_name and e.rule_name not in matched_rules:
             matched_rules.append(e.rule_name)
 
+    # Materialise plain data before returning the checked-out connection. No ORM
+    # attributes may be read after this point, including on provider retries.
+    db.close()
+    if not audit_slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI audit capacity is busy; retry shortly",
+            headers={"Retry-After": "5"},
+        )
     try:
         return perform_container_audit(
             container_info=container_info,
@@ -2628,6 +2696,9 @@ def audit_container(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+    finally:
+        audit_slots.release()
 
 
 @app.get("/api/v1/ml/model-info", response_model=MLModelInfoOut, tags=["ml"])

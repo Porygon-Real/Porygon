@@ -1,23 +1,13 @@
-"""Mutable-tag drift experiment: distinguishes ARM-TAG from ARM-DIGEST for real.
+"""Controlled local-tag reassignment experiment using real pinned image versions.
 
-PROFILE_SCOPE_EXPERIMENT_V1.md's "Immutable workload coordinates" section
-specifies exactly this mechanism: a controlled local alias
-(porygon-study/<repo>:mutable) that resolves to a workload's V1 coordinate
-for fit runs, then is repointed to V2 for predeclared drift runs, exposing
-tag-selection failure deterministically without touching the real upstream
-tags.
-
-Until this script, nothing in the codebase implemented that alias, so every
-prior scope-comparison result had ARM-TAG and ARM-DIGEST scoring identically
-(every human_tag happened to map to exactly one digest). This is what makes
-them actually distinguishable: an ARM-TAG profile keyed on the literal tag
-`porygon-study/nginx:mutable` gets contaminated by both V1 and V2 behaviour
-if a naive implementation resolves the tag at scoring time; a correct
-ARM-DIGEST profile never can be, because it is keyed on the resolved digest
-which V1 and V2 never share.
+This is laboratory fault injection, not observation of an upstream registry tag
+changing naturally. A harness-owned local alias is reassigned from one pinned
+version to another while the underlying image digests are retained. Distinct
+image identities need not produce distinct process-name distributions: the
+observed scope decisions may remain identical.
 
 Usage:
-    python3 -m experiments.tag_drift --workload WL-NGX --replicas 5
+    python3 -m experiments.tag_drift --workload WL-NGX --fit-replicas 5 --drift-replicas 5
 """
 from __future__ import annotations
 
@@ -158,6 +148,10 @@ def run_tag_drift_experiment(
             "schema_version": "porygon.experiment.tag-drift-run.v1",
             "run_id": run_id,
             "kind": "tag_drift_experiment",
+            "evidence_class": "pilot",
+            "research_eligible": False,
+            "drift_mechanism": "controlled_local_alias_reassignment",
+            "natural_upstream_tag_shift_observed": False,
             "family": family,
             "alias": alias,
             "v1_digest": v1["reference"],

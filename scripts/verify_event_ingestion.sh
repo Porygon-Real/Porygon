@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Internal checks use Docker exec; the public gateway intentionally rejects /internal/.
+if [[ -z "${PORYGON_VERIFY_BASE_URL:-}" ]]; then
+  exec python3 scripts/verification_api.py bash "$0" "$@"
+fi
+
 RUN_ID="${PORYGON_VERIFY_RUN_ID:-$(date -u +%Y%m%dt%H%M%Sz)-$$}"
 PROBE_NAME="porygon-ingest-${RUN_ID}"
 PROBE_NETWORK="porygon-ingest-net-${RUN_ID}"
@@ -67,7 +72,7 @@ pass "PostgreSQL, backend, and Docker collector reached healthy state"
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
 backend_port="${backend_port:-8000}"
-base_url="http://127.0.0.1:${backend_port}"
+base_url="${PORYGON_VERIFY_BASE_URL:-http://127.0.0.1:${backend_port}}"
 
 curl --fail --silent --show-error "${base_url}/health/live" >/dev/null
 curl --fail --silent --show-error "${base_url}/health/ready" >/dev/null

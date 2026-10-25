@@ -37,6 +37,12 @@ curl --fail --silent --show-error "${base_url}/health/live" >/dev/null
 curl --fail --silent --show-error "${base_url}/health/ready" >/dev/null
 pass "Backend liveness and database readiness checks passed"
 
+for path in /internal /internal/ /internal/v1/process-events/batch /%69nternal/v1/process-events/batch; do
+  code="$(curl --silent --output /dev/null --write-out '%{http_code}' "${base_url}${path}")"
+  [[ "$code" == "403" ]] || fail "Gateway exposed internal route ${path}: ${code}"
+done
+pass "Public gateway rejects internal control-plane routes"
+
 backend_id="$(docker compose ps --quiet backend)"
 gateway_id="$(docker compose ps --quiet gateway)"
 [[ -n "$backend_id" && -n "$gateway_id" ]] || fail "Backend or gateway container ID is missing"
@@ -49,8 +55,8 @@ backend, gateway = json.loads(os.environ["BOUNDARY_JSON"])
 backend_ports = backend["NetworkSettings"]["Ports"]
 assert not any(backend_ports.values()), "backend publishes a host port"
 backend_networks = set(backend["NetworkSettings"]["Networks"])
-assert len(backend_networks) == 1
-assert next(iter(backend_networks)).endswith("_porygon_internal")
+assert any(name.endswith("_porygon_internal") for name in backend_networks)
+assert not any(name.endswith("_porygon_ingress") for name in backend_networks)
 
 gateway_ports = gateway["NetworkSettings"]["Ports"]
 bindings = gateway_ports.get("8080/tcp") or []

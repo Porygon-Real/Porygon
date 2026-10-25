@@ -7,7 +7,7 @@ from pathlib import PurePosixPath
 from typing import Any, Iterable
 
 RULESET_VERSION = "porygon.detection.v1"
-MATCHER_REVISION = "porygon.detection.matcher.v5"
+MATCHER_REVISION = "porygon.detection.matcher.tool-scoped-allowlists"
 CORRELATION_WINDOW_SECONDS = 120
 
 SHELL_NAMES = {"sh", "bash", "dash", "ash", "zsh", "ksh", "fish"}
@@ -627,9 +627,9 @@ def _apply_allowlists(
         if match["rule_id"] != "POR-DET-005":
             continue
         details = match.get("details", {})
-        suppressor = suppressed_source_events.get(details.get("shell_event_id")) or suppressed_source_events.get(
-            details.get("tool_event_id")
-        )
+        # A maintenance-shell exception does not approve its subsequent tools.
+        # Only an exact allowlist match for this tool event suppresses the pair.
+        suppressor = suppressed_source_events.get(details.get("tool_event_id"))
         if suppressor is not None:
             suppressed.append({**match, "suppressed_by_allowlist_id": suppressor})
         else:

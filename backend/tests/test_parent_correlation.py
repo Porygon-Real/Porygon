@@ -85,3 +85,74 @@ def test_parent_lookup_rejects_stale_pid_reuse() -> None:
             time_nano=int(now.timestamp() * 1_000_000_000),
         )
         assert result == recent.event_id
+
+
+def test_unresolved_container_never_uses_host_pid_fallback() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    ProcessExecEvent.__table__.create(engine)
+    now = datetime(2026, 7, 21, 12, 0, tzinfo=timezone.utc)
+    with Session(engine) as db:
+        db.add(_event("a" * 64, now - timedelta(seconds=1), 42))
+        db.commit()
+        for host in (None, "host-1"):
+            assert (
+                _find_parent_event_id(
+                    db,
+                    sensor_instance_id="sensor-1",
+                    docker_host_id=host,
+                    container_id=None,
+                    process_ppid=42,
+                    occurred_at=now,
+                    time_nano=int(now.timestamp() * 1_000_000_000),
+                )
+                is None
+            )
+
+
+def test_parent_lookup_isolated_by_container_and_sensor_when_host_missing() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    ProcessExecEvent.__table__.create(engine)
+    now = datetime(2026, 7, 21, 12, 0, tzinfo=timezone.utc)
+    with Session(engine) as db:
+        parent = _event("a" * 64, now - timedelta(seconds=1), 42)
+        db.add(parent)
+        db.commit()
+        for container, sensor in (("other", "sensor-1"), ("c1", "other-sensor")):
+            assert (
+                _find_parent_event_id(
+                    db,
+                    sensor_instance_id=sensor,
+                    docker_host_id=None,
+                    container_id=container,
+                    process_ppid=42,
+                    occurred_at=now,
+                    time_nano=int(now.timestamp() * 1_000_000_000),
+                )
+                is None
+            )
+
+
+def test_late_parent_repairs_only_same_container_without_starvation() -> None:
+    from porygon_api.main import _reconcile_process_parents
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    ProcessExecEvent.__table__.create(engine)
+    now = datetime(2026, 7, 21, 12, 0, tzinfo=timezone.utc)
+    with Session(engine) as db:
+        missing = _event("a" * 64, now - timedelta(seconds=4), 88)
+        missing.process_ppid = 999
+        child = _event("b" * 64, now, 50)
+        child.process_ppid = 42
+        db.add_all([missing, child])
+        db.commit()
+        assert _reconcile_process_parents(db, limit=1) == 0
+        parent = _event("c" * 64, now - timedelta(seconds=1), 42)
+        unrelated = _event("d" * 64, now, 60)
+        unrelated.container_id = "other-container"
+        unrelated.process_ppid = 42
+        db.add_all([parent, unrelated])
+        db.commit()
+        assert _reconcile_process_parents(db, limit=1) == 1
+        assert child.parent_event_id == parent.event_id
+        assert missing.parent_event_id is None
+        assert unrelated.parent_event_id is None

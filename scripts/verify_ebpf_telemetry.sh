@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Internal checks use Docker exec; the public gateway intentionally rejects /internal/.
+if [[ -z "${PORYGON_VERIFY_BASE_URL:-}" ]]; then
+  exec python3 scripts/verification_api.py bash "$0" "$@"
+fi
+
 RUN_ID="${PORYGON_VERIFY_RUN_ID:-$(date -u +%Y%m%dt%H%M%Sz)-$$}"
 PROBE_NAME="porygon-telemetry-${RUN_ID}"
 PROBE_IMAGE="alpine:3.20"
@@ -74,7 +79,7 @@ pass "Falco remained running with the modern eBPF configuration"
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
 backend_port="${backend_port:-8000}"
-base_url="http://127.0.0.1:${backend_port}"
+base_url="${PORYGON_VERIFY_BASE_URL:-http://127.0.0.1:${backend_port}}"
 curl --fail --silent --show-error "${base_url}/health/ready" >/dev/null
 
 collector_uid="$(docker compose exec -T collector id -u | tr -d '\r')"

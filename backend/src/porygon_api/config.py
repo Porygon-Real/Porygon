@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     ai_api_key: SecretStr | None = None
     ai_provider: Literal["gemini", "openai"] = "gemini"
     ai_model: str | None = None
+    ai_max_concurrent_audits: int = Field(default=2, ge=1, le=16)
     response_approval_max_age_seconds: int = Field(default=3600, ge=60, le=86400)
     baseline_max_events: int = Field(default=250000, ge=100, le=2000000)
     baseline_max_windows: int = Field(default=50000, ge=10, le=500000)
@@ -44,6 +45,8 @@ class Settings(BaseSettings):
     sbom_max_components: int = Field(default=500000, ge=1, le=2000000)
     raw_event_retention_days: int = Field(default=30, ge=1, le=3650)
     retention_max_delete_batch: int = Field(default=50000, ge=1, le=1000000)
+    retention_scheduler_enabled: bool = False
+    retention_interval_seconds: int = Field(default=21600, ge=60, le=604800)
 
     @property
     def database_url(self) -> URL:

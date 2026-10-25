@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Internal checks use Docker exec; the public gateway intentionally rejects /internal/.
+if [[ -z "${PORYGON_VERIFY_BASE_URL:-}" ]]; then
+  exec python3 scripts/verification_api.py bash "$0" "$@"
+fi
+
 RUN_ID="${PORYGON_VERIFY_RUN_ID:-$(date -u +%Y%m%dt%H%M%Sz)-$$}"
 PROBE_NAME="porygon-scoring-${RUN_ID}"
 PROBE_IMAGE="alpine:3.20"
@@ -40,7 +45,7 @@ pass "Behavior profiling remains valid and an active immutable-digest profile ex
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
 backend_port="${backend_port:-8000}"
-base_url="http://127.0.0.1:${backend_port}"
+base_url="${PORYGON_VERIFY_BASE_URL:-http://127.0.0.1:${backend_port}}"
 token="$(grep -E '^PORYGON_INTERNAL_API_TOKEN=' .env | tail -1 | cut -d= -f2- || true)"
 [[ ${#token} -ge 32 ]] || fail "PORYGON_INTERNAL_API_TOKEN is missing or too short"
 

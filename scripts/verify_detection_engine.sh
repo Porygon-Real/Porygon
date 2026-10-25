@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Internal checks use Docker exec; the public gateway intentionally rejects /internal/.
+if [[ -z "${PORYGON_VERIFY_BASE_URL:-}" ]]; then
+  exec python3 scripts/verification_api.py bash "$0" "$@"
+fi
+
 fail() {
   echo "[FAIL] $*" >&2
   exit 1
@@ -17,7 +22,7 @@ pass "Anomaly scoring verification completed"
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
 backend_port="${backend_port:-8000}"
-base_url="http://127.0.0.1:${backend_port}"
+base_url="${PORYGON_VERIFY_BASE_URL:-http://127.0.0.1:${backend_port}}"
 token="$(grep -E '^PORYGON_INTERNAL_API_TOKEN=' .env | tail -1 | cut -d= -f2- || true)"
 [[ ${#token} -ge 32 ]] || fail "PORYGON_INTERNAL_API_TOKEN is missing or too short"
 
@@ -27,7 +32,7 @@ python3 - <<'PY' || fail "Detection ruleset metadata is invalid"
 import json
 cfg=json.load(open('artifacts/detection-ruleset.json'))
 assert cfg['ruleset_version']=='porygon.detection.v1'
-assert cfg['matcher_revision']=='porygon.detection.matcher.v5'
+assert cfg['matcher_revision']=='porygon.detection.matcher.tool-scoped-allowlists'
 assert len(cfg['ruleset_hash'])==64
 assert len(cfg['rules']) >= 7
 assert 'Neither is a probability of compromise' in cfg['interpretation']
