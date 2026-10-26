@@ -79,12 +79,30 @@ COMMAND_LINEAGE_CONFIG.update(
 )
 
 
-def get_scoring_config(feature_schema_version: str = FEATURE_SCHEMA_VERSION) -> dict[str, Any]:
+RARE_EXECUTION_ALGORITHM = "porygon.distance.rare-execution"
+
+
+def get_scoring_config(
+    feature_schema_version: str = FEATURE_SCHEMA_VERSION,
+    algorithm_version: str | None = None,
+) -> dict[str, Any]:
     if feature_schema_version == FEATURE_SCHEMA_VERSION:
-        return deepcopy(SCORING_CONFIG)
-    if feature_schema_version == COMMAND_LINEAGE_SCHEMA:
-        return deepcopy(COMMAND_LINEAGE_CONFIG)
-    raise ValueError("Unsupported feature schema")
+        config = deepcopy(SCORING_CONFIG)
+    elif feature_schema_version == COMMAND_LINEAGE_SCHEMA:
+        config = deepcopy(COMMAND_LINEAGE_CONFIG)
+    else:
+        raise ValueError("Unsupported feature schema")
+    if algorithm_version in {None, config["algorithm_version"]}:
+        return config
+    if algorithm_version == RARE_EXECUTION_ALGORITHM:
+        config["algorithm_version"] = RARE_EXECUTION_ALGORITHM
+        config["numeric_policy"] = {
+            "zero_baseline_shell_score": 0.70,
+            "required_zero_statistics": ["min", "max", "mean", "median", "p95", "stddev"],
+            "application": "floor-shell-component-only-when-training-statistics-are-all-zero",
+        }
+        return config
+    raise ValueError("Scoring algorithm is incompatible with the selected feature schema")
 
 
 def _canonical_json(value: Any) -> str:
@@ -190,7 +208,18 @@ def _numeric_deviation(
     saturation = float(config["numeric_z_saturation"])
     score = max(0.0, min(1.0, (z_score - tolerance) / (saturation - tolerance)))
 
-    return {
+    policy_applied = False
+    unadjusted_score = score
+    policy = config.get("numeric_policy")
+    if policy and feature_name == "shell_process_ratio" and observed > 0:
+        statistics = policy["required_zero_statistics"]
+        if all(
+            key in baseline_summary and float(baseline_summary[key]) == 0.0 for key in statistics
+        ):
+            score = max(score, float(policy["zero_baseline_shell_score"]))
+            policy_applied = True
+
+    result = {
         "score": _round(score),
         "observed": _round(observed),
         "baseline_median": _round(median),
@@ -199,6 +228,12 @@ def _numeric_deviation(
         "effective_scale": _round(scale),
         "absolute_z": _round(z_score),
     }
+
+    if policy_applied:
+        result.update(
+            policy="zero_baseline_shell_floor", score_before_policy=_round(unadjusted_score)
+        )
+    return result
 
 
 def score_band(total_score: float, config: dict[str, Any] | None = None) -> str:
@@ -221,6 +256,7 @@ def build_observation_key(
     selected_event_ids_sha256: str,
     feature_schema_version: str = FEATURE_SCHEMA_VERSION,
     observation_features_sha256: str | None = None,
+    algorithm_version: str | None = None,
 ) -> str:
     document = {
         "profile_id": profile_id,
@@ -228,7 +264,7 @@ def build_observation_key(
         "window_start": window_start,
         "window_end": window_end,
         "selected_event_ids_sha256": selected_event_ids_sha256,
-        "scoring_config": get_scoring_config(feature_schema_version),
+        "scoring_config": get_scoring_config(feature_schema_version, algorithm_version),
     }
     if feature_schema_version == COMMAND_LINEAGE_SCHEMA:
         if (
@@ -246,9 +282,10 @@ def score_feature_documents(
     *,
     baseline_features: dict[str, Any],
     observation_features: dict[str, Any],
+    algorithm_version: str | None = None,
 ) -> tuple[float, str, dict[str, Any], dict[str, Any]]:
     schema = baseline_features.get("schema_version")
-    config = get_scoring_config(schema)
+    config = get_scoring_config(schema, algorithm_version)
     if observation_features.get("schema_version") != schema:
         raise ValueError(
             "Unsupported observation feature schema: baseline and observation must match"

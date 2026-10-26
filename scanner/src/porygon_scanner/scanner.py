@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -24,7 +25,6 @@ class ScanResult:
     sbom: dict[str, Any]
     intel: list[dict[str, Any]]
     metadata: dict[str, Any]
-
 
 
 def file_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
@@ -53,6 +53,7 @@ def database_cache_metadata(cache_dir: str) -> list[dict[str, Any]]:
                 }
             )
     return records
+
 
 def parse_epss(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
@@ -96,6 +97,7 @@ def parse_kev(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def extract_cves(report: dict[str, Any]) -> list[str]:
     import re
+
     cve_pat = re.compile(r"^CVE-\d{4}-\d{4,}$")
     cves: set[str] = set()
     for result in report.get("Results") or []:
@@ -163,13 +165,28 @@ class TrivyScanner:
         attrs = image.attrs
         actual_id = str(attrs.get("Id") or image.id)
         repo_digests = [str(value) for value in (attrs.get("RepoDigests") or [])]
-        if actual_id != image_id or image_digest not in repo_digests:
+        local = re.fullmatch(r"local:sha256:[0-9a-f]{64}", image_digest) is not None
+        valid_target = (
+            (
+                bool(re.fullmatch(r"local:sha256:[0-9a-f]{64}", image_digest))
+                and image_digest == "local:" + actual_id
+            )
+            if local
+            else image_digest in repo_digests
+        )
+        if actual_id != image_id or not valid_target:
             raise ScanError(
                 "image_identity_mismatch",
                 "The local image ID or repository digest no longer matches the queued scan target",
             )
         return {
             "image_id": actual_id,
+            "image_identity": image_digest,
+            "identity_kind": "local_image_id" if local else "repository_digest",
+            "docker_descriptor": attrs.get("Descriptor"),
+            "os": attrs.get("Os"),
+            "architecture": attrs.get("Architecture"),
+            "variant": attrs.get("Variant"),
             "repo_digests": sorted(repo_digests),
             "repo_tags": sorted(str(value) for value in (attrs.get("RepoTags") or [])),
         }
@@ -179,6 +196,8 @@ class TrivyScanner:
             self.trivy_binary,
             "image",
             "--quiet",
+            "--image-src",
+            "docker",
             "--cache-dir",
             self.cache_dir,
             "--timeout",
@@ -204,7 +223,9 @@ class TrivyScanner:
             raise ScanError("scanner_timeout", "Trivy exceeded its configured timeout") from exc
         if completed.returncode != 0:
             stderr = completed.stderr[-4000:]
-            raise ScanError("scanner_error", f"Trivy failed with exit code {completed.returncode}: {stderr}")
+            raise ScanError(
+                "scanner_error", f"Trivy failed with exit code {completed.returncode}: {stderr}"
+            )
 
     def _convert_to_cyclonedx(self, *, report: Path, output: Path) -> None:
         command = [
@@ -225,7 +246,9 @@ class TrivyScanner:
                 timeout=120,
             )
         except subprocess.TimeoutExpired as exc:
-            raise ScanError("scanner_timeout", "Trivy report conversion exceeded its timeout") from exc
+            raise ScanError(
+                "scanner_timeout", "Trivy report conversion exceeded its timeout"
+            ) from exc
         if completed.returncode != 0:
             stderr = completed.stderr[-4000:]
             raise ScanError(
@@ -288,7 +311,16 @@ class TrivyScanner:
                 report = json.loads(report_path.read_text())
                 sbom = json.loads(sbom_path.read_text())
             except (OSError, json.JSONDecodeError) as exc:
-                raise ScanError("invalid_scanner_output", "Trivy output was not valid JSON") from exc
+                raise ScanError(
+                    "invalid_scanner_output", "Trivy output was not valid JSON"
+                ) from exc
+        self.verify_image(image_id=image_id, image_digest=image_digest)
+        reported_id = (report.get("Metadata") or {}).get("ImageID")
+        if reported_id != image_id:
+            raise ScanError(
+                "image_identity_mismatch",
+                "Trivy reported a different image ID than the queued target",
+            )
         cves = extract_cves(report)
         intel, intel_metadata = self._fetch_intel(cves)
         return ScanResult(

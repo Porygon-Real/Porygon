@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     heartbeat_interval_seconds: float = Field(default=10, ge=1, le=300)
     poll_seconds: float = Field(default=2, ge=0.2, le=300)
     lease_seconds: int = Field(default=1800, ge=60, le=7200)
+    docker_host_id: str = Field(default="auto", min_length=1, max_length=128)
     docker_base_url: str = "unix:///var/run/docker.sock"
     docker_timeout_seconds: int = Field(default=30, ge=1, le=300)
     trivy_binary: str = "/usr/local/bin/trivy"
@@ -26,7 +27,9 @@ class Settings(BaseSettings):
     trivy_cache_dir: str = "/var/lib/trivy"
     trivy_timeout_seconds: int = Field(default=900, ge=30, le=7200)
     epss_url: str = "https://api.first.org/data/v1/epss"
-    cisa_kev_url: str = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    cisa_kev_url: str = (
+        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    )
     intel_timeout_seconds: int = Field(default=30, ge=3, le=300)
     intel_batch_size: int = Field(default=100, ge=1, le=500)
 

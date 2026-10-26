@@ -132,3 +132,75 @@ def test_profile_build_scoring_replay_and_repaired_lineage(engine, monkeypatch):
         assert missing.status == "insufficient_data"
         assert missing.total_score is None
         assert missing.components["reason"] == "Insufficient command-line evidence coverage"
+
+
+# The sparse policy reuses this same PostgreSQL fixture/data contract through a
+# focused test so frozen default scoring and the opt-in algorithm stay separate.
+def test_rare_execution_api_keeps_policy_and_model_identity_separate(engine):
+    if os.environ.get("PORYGON_TEST_POSTGRES") != "1":
+        pytest.skip("Requires PostgreSQL scoring transaction locks")
+    from porygon_api.scoring import RARE_EXECUTION_ALGORITHM
+    from porygon_api.models import BehaviorProfile
+    from test_command_lineage import profile, event
+    from datetime import datetime, timezone
+
+    with Session(engine) as db:
+        features, quality, manifest, model_hash = profile([event("train")], FEATURE_SCHEMA_VERSION)
+        baseline = BehaviorProfile(
+            profile_id="11111111-1111-1111-1111-111111111111",
+            image_digest=DIGEST,
+            profile_version=1,
+            status="active",
+            feature_schema_version=FEATURE_SCHEMA_VERSION,
+            model_hash=model_hash,
+            training_start=START,
+            training_end=START + timedelta(seconds=120),
+            window_seconds=60,
+            approved_by="Anurup R Krishnan",
+            process_event_count=1,
+            runtime_event_count=0,
+            container_count=1,
+            window_count=2,
+            quality=quality,
+            training_manifest=manifest,
+            features=features,
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(baseline)
+        start = START + timedelta(seconds=180)
+        for index in range(30):
+            row = _event(
+                format(index + 300, "064x"), start + timedelta(seconds=index + 1), index + 300
+            )
+            row.image_digest = DIGEST
+            row.process_name = "sh" if index == 0 else "curl"
+            row.executable = "/bin/sh" if index == 0 else "/usr/bin/curl"
+            row.command_line = "sh -c true" if index == 0 else "curl https://service/health"
+            db.add(row)
+        db.commit()
+        request = AnomalyScoreComputeIn(
+            image_digest=DIGEST, profile_id=baseline.profile_id, window_start=start
+        )
+        legacy = main.compute_anomaly_score(request, db)
+        rare = main.compute_anomaly_score(
+            request.model_copy(update={"algorithm_version": RARE_EXECUTION_ALGORITHM}), db
+        )
+        assert rare.score_id != legacy.score_id
+        assert rare.algorithm_version == RARE_EXECUTION_ALGORITHM
+        assert (
+            rare.components["numeric_deviation"]["features"]["shell_process_ratio"]["score"] >= 0.7
+        )
+        assert (
+            legacy.components["numeric_deviation"]["features"]["shell_process_ratio"]["score"] == 0
+        )
+        assert "ml_threat_classification" not in rare.explanation
+        assert (
+            rare.explanation["ml_input_contract"]["observed_algorithm"] == RARE_EXECUTION_ALGORITHM
+        )
+        assert main.compute_anomaly_score(request, db).score_id == legacy.score_id
+        assert (
+            main.compute_anomaly_score(
+                request.model_copy(update={"algorithm_version": RARE_EXECUTION_ALGORITHM}), db
+            ).score_id
+            == rare.score_id
+        )

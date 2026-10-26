@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -11,6 +12,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+from porygon_api.vulnerability import is_local_image_identity
 
 from porygon_api.calibrated_provenance import MIN_CALIBRATION_RUNS, validate_run_split
 from porygon_api.rule_expression import (
@@ -483,6 +486,14 @@ class CalibratedRarityScoreOut(BaseModel):
 
 
 class AnomalyScoreComputeIn(BaseModel):
+    algorithm_version: (
+        Literal[
+            "porygon.distance.v1",
+            "porygon.distance.command-lineage",
+            "porygon.distance.rare-execution",
+        ]
+        | None
+    ) = None
     image_digest: str = Field(
         min_length=72,
         max_length=255,
@@ -892,9 +903,30 @@ class ResponseAuditEventOut(BaseModel):
 
 
 class ImageScanCreateIn(BaseModel):
-    image_digest: str = Field(
-        min_length=72, max_length=255, pattern=r"^[^\s@]+@sha256:[0-9a-f]{64}$"
+    image_identity: str = Field(
+        validation_alias=AliasChoices("image_identity", "image_digest"),
+        min_length=72,
+        max_length=255,
+        pattern=r"^(?:[^\s@]+@sha256:[0-9a-f]{64}|local:sha256:[0-9a-f]{64})$",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_conflicting_identity_aliases(cls, value):
+        if (
+            isinstance(value, dict)
+            and "image_identity" in value
+            and "image_digest" in value
+            and value["image_identity"] != value["image_digest"]
+        ):
+            raise ValueError("image_identity and legacy image_digest must agree")
+        return value
+
+    @property
+    def image_digest(self) -> str:
+        """Legacy request alias; local identities are not registry manifests."""
+        return self.image_identity
+
     requested_by: str = Field(min_length=1, max_length=128)
     docker_host_id: str | None = Field(default=None, max_length=128)
     scan_reference: str = Field(
@@ -905,7 +937,23 @@ class ImageScanCreateIn(BaseModel):
     scanner_version: str = Field(default="0.72.0", pattern=r"^\d+\.\d+\.\d+$", max_length=32)
 
 
-class ImageScanOut(BaseModel):
+class ImageIdentityFields(BaseModel):
+    image_digest: str
+
+    @computed_field
+    @property
+    def image_identity(self) -> str:
+        return self.image_digest
+
+    @computed_field
+    @property
+    def identity_kind(self) -> Literal["local_image_id", "repository_digest"]:
+        return (
+            "local_image_id" if is_local_image_identity(self.image_digest) else "repository_digest"
+        )
+
+
+class ImageScanOut(ImageIdentityFields):
     model_config = ConfigDict(from_attributes=True)
 
     scan_id: str
@@ -932,6 +980,7 @@ class ImageScanOut(BaseModel):
 
 
 class ImageScanClaimIn(BaseModel):
+    docker_host_id: str | None = Field(default=None, min_length=1, max_length=128)
     scanner_instance_id: str = Field(min_length=1, max_length=128)
     scanner_name: Literal["trivy"] = "trivy"
     scanner_version: str = Field(pattern=r"^\d+\.\d+\.\d+$", max_length=32)
@@ -986,7 +1035,7 @@ class ImageScanFailIn(BaseModel):
     scanner_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class SbomArtifactSummaryOut(BaseModel):
+class SbomArtifactSummaryOut(ImageIdentityFields):
     model_config = ConfigDict(from_attributes=True)
 
     artifact_id: str
@@ -1004,7 +1053,7 @@ class SbomArtifactOut(SbomArtifactSummaryOut):
     document: dict[str, Any]
 
 
-class VulnerabilityReportArtifactSummaryOut(BaseModel):
+class VulnerabilityReportArtifactSummaryOut(ImageIdentityFields):
     model_config = ConfigDict(from_attributes=True)
 
     artifact_id: str
@@ -1041,7 +1090,7 @@ class VulnerabilityIntelOut(BaseModel):
     fetched_at: datetime
 
 
-class VulnerabilityFindingOut(BaseModel):
+class VulnerabilityFindingOut(ImageIdentityFields):
     model_config = ConfigDict(from_attributes=True)
 
     finding_id: str

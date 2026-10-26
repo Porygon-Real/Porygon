@@ -163,6 +163,7 @@ from porygon_api.response import (
 )
 from porygon_api.security import require_internal_token, require_operator_token
 from porygon_api.vulnerability import (
+    is_local_image_identity,
     assess_exposure,
     build_scan_key,
     normalize_trivy_report,
@@ -1702,7 +1703,9 @@ def compute_anomaly_score(
             )
 
     try:
-        scoring_config = get_scoring_config(profile.feature_schema_version)
+        scoring_config = get_scoring_config(
+            profile.feature_schema_version, payload.algorithm_version
+        )
         if profile.features.get("schema_version") != profile.feature_schema_version:
             raise ValueError("Profile feature document does not match its schema identity")
     except ValueError as exc:
@@ -1781,6 +1784,7 @@ def compute_anomaly_score(
         selected_event_ids_sha256=observation_manifest["selected_event_ids_sha256"],
         feature_schema_version=profile.feature_schema_version,
         observation_features_sha256=observation_manifest.get("feature_document_sha256"),
+        algorithm_version=scoring_config["algorithm_version"],
     )
 
     try:
@@ -1832,8 +1836,9 @@ def compute_anomaly_score(
                 total_score, band, components, explanation = score_feature_documents(
                     baseline_features=profile.features,
                     observation_features=observation_features,
+                    algorithm_version=scoring_config["algorithm_version"],
                 )
-                if profile.feature_schema_version == FEATURE_SCHEMA_VERSION:
+                if scoring_config["algorithm_version"] == ALGORITHM_VERSION:
                     ml_res = default_classifier.predict_document(
                         observation_features=observation_features,
                         baseline_features=profile.features,
@@ -1844,6 +1849,8 @@ def compute_anomaly_score(
                     explanation["ml_input_contract"] = {
                         "supported": False,
                         "required_feature_schema": FEATURE_SCHEMA_VERSION,
+                        "required_algorithm": ALGORITHM_VERSION,
+                        "observed_algorithm": scoring_config["algorithm_version"],
                         "observed_feature_schema": profile.feature_schema_version,
                     }
             except ValueError as exc:
@@ -1911,10 +1918,11 @@ def compute_anomaly_score(
 )
 def get_anomaly_scoring_config(
     feature_schema_version: str = FEATURE_SCHEMA_VERSION,
+    algorithm_version: str | None = None,
 ) -> dict[str, object]:
     """Expose the selected immutable scoring definition for reproducibility."""
     try:
-        config = get_scoring_config(feature_schema_version)
+        config = get_scoring_config(feature_schema_version, algorithm_version)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {
@@ -3999,7 +4007,8 @@ def vulnerability_policy() -> dict[str, object]:
         "scanner": {
             "name": "trivy",
             "pinned_version": "0.72.0",
-            "target": "exact local image ID verified against the requested repository digest",
+            "target": "exact local image ID bound to a repository digest or explicit local:sha256 identity and Docker host",
+            "identity_kinds": ["repository_digest", "local_image_id"],
             "sbom_format": "CycloneDX JSON",
         },
         "evidence_stages": [
@@ -4025,33 +4034,54 @@ def create_image_scan(
     payload: ImageScanCreateIn,
     db: Session = Depends(get_db),
 ) -> ImageScan:
-    statement = select(ImageIdentity).where(
-        ImageIdentity.primary_repo_digest == payload.image_digest,
-        ImageIdentity.digest_status == "resolved",
-    )
+    local = is_local_image_identity(payload.image_identity)
+    if local:
+        statement = select(ImageIdentity).where(
+            ImageIdentity.image_id == payload.image_identity.removeprefix("local:")
+        )
+    else:
+        statement = select(ImageIdentity).where(
+            ImageIdentity.primary_repo_digest == payload.image_identity,
+            ImageIdentity.digest_status == "resolved",
+        )
     if payload.docker_host_id:
         statement = statement.where(ImageIdentity.docker_host_id == payload.docker_host_id)
     identities = list(db.scalars(statement.order_by(desc(ImageIdentity.last_seen_at))).all())
     if not identities:
-        raise HTTPException(
-            status_code=404,
-            detail="No resolved local image identity matches this exact repository digest",
-        )
-    distinct_targets = {(row.docker_host_id, row.image_id) for row in identities}
-    if len(distinct_targets) > 1 and payload.docker_host_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="Digest exists on multiple Docker hosts; specify docker_host_id",
-        )
-    identity = identities[0]
-    scan_key = build_scan_key(
-        image_digest=payload.image_digest,
-        image_id=identity.image_id,
+        if not local or payload.docker_host_id is None:
+            raise HTTPException(
+                status_code=404,
+                detail="No known image identity matches; undeployed local targets require docker_host_id",
+            )
+        # Local package analysis need not deploy a container just to seed inventory.
+        # The matching daemon verifies this full Docker image ID before running Trivy.
+        target_image_id = payload.image_identity.removeprefix("local:")
+        target_host_id = payload.docker_host_id
+    else:
+        distinct_targets = {(row.docker_host_id, row.image_id) for row in identities}
+        if len(distinct_targets) > 1 and payload.docker_host_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Image exists on multiple Docker hosts; specify docker_host_id",
+            )
+        target_image_id = identities[0].image_id
+        target_host_id = identities[0].docker_host_id
+    key_args = dict(
+        image_digest=payload.image_identity,
+        image_id=target_image_id,
         scanner_name=payload.scanner_name,
         scanner_version=payload.scanner_version,
         scan_reference=payload.scan_reference,
     )
-    existing = db.scalar(select(ImageScan).where(ImageScan.scan_key == scan_key))
+    scan_key = build_scan_key(**key_args, docker_host_id=target_host_id)
+    # Reuse old repository-key receipts only on the same host. New host targets
+    # cannot collide with that legacy key or another daemon's work.
+    keys = [scan_key] if local else [scan_key, build_scan_key(**key_args)]
+    existing = db.scalar(
+        select(ImageScan).where(
+            ImageScan.scan_key.in_(keys), ImageScan.docker_host_id == target_host_id
+        )
+    )
     if existing is not None:
         return existing
     now = datetime.now(timezone.utc)
@@ -4059,8 +4089,8 @@ def create_image_scan(
         scan_id=str(uuid4()),
         scan_key=scan_key,
         image_digest=payload.image_digest,
-        image_id=identity.image_id,
-        docker_host_id=identity.docker_host_id,
+        image_id=target_image_id,
+        docker_host_id=target_host_id,
         scanner_name=payload.scanner_name,
         scanner_version=payload.scanner_version,
         scan_reference=payload.scan_reference,
@@ -4102,9 +4132,17 @@ def claim_image_scan(
     db: Session = Depends(get_db),
 ) -> dict[str, ImageScan | None]:
     now = datetime.now(timezone.utc)
+    # Older scanners may still consume registry jobs. Local targets require an
+    # explicit daemon identity, so an old client cannot claim them accidentally.
+    host_filter = (
+        ImageScan.docker_host_id == payload.docker_host_id
+        if payload.docker_host_id
+        else ~ImageScan.image_digest.startswith("local:sha256:")
+    )
     record = db.scalar(
         select(ImageScan)
         .where(
+            host_filter,
             ImageScan.scanner_name == payload.scanner_name,
             ImageScan.scanner_version == payload.scanner_version,
             or_(
@@ -4140,7 +4178,12 @@ def renew_image_scan_lease(
     payload: ImageScanRenewIn,
     db: Session = Depends(get_db),
 ) -> ImageScan:
-    record = db.get(ImageScan, scan_id)
+    record = db.scalar(
+        select(ImageScan)
+        .where(ImageScan.scan_id == scan_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if record is None:
         raise HTTPException(status_code=404, detail="Image scan not found")
     if record.status != "claimed" or record.scanner_instance_id != payload.scanner_instance_id:
@@ -4171,12 +4214,51 @@ def complete_image_scan(
     payload: ImageScanCompleteIn,
     db: Session = Depends(get_db),
 ) -> ImageScan:
-    record = db.get(ImageScan, scan_id)
+    record = db.scalar(
+        select(ImageScan)
+        .where(ImageScan.scan_id == scan_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if record is None:
         raise HTTPException(status_code=404, detail="Image scan not found")
     if record.status == "completed":
         return record
     _require_scan_claim(record, payload.scanner_instance_id)
+
+    reported_host = payload.scanner_metadata.get("docker_host_id")
+    if reported_host is not None and reported_host != record.docker_host_id:
+        raise HTTPException(
+            status_code=409, detail="Scan result belongs to a different Docker host"
+        )
+    report_metadata = payload.trivy_report.get("Metadata") or {}
+    if not isinstance(report_metadata, dict):
+        raise HTTPException(status_code=422, detail="Trivy metadata must be an object")
+    reported_image = report_metadata.get("ImageID")
+    if (reported_image is not None and reported_image != record.image_id) or (
+        is_local_image_identity(record.image_digest) and reported_image != record.image_id
+    ):
+        raise HTTPException(
+            status_code=409, detail="Trivy report does not match the queued image ID"
+        )
+    target = payload.scanner_metadata.get("image_identity", {})
+    if not isinstance(target, dict):
+        raise HTTPException(status_code=422, detail="Scanner image identity must be an object")
+    if is_local_image_identity(record.image_digest):
+        if (
+            target.get("image_id") != record.image_id
+            or target.get("image_identity") != record.image_digest
+            or target.get("identity_kind") != "local_image_id"
+            or payload.scanner_metadata.get("docker_host_id") != record.docker_host_id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Local scan completion does not match its image/host identity",
+            )
+    elif target.get("image_id") is not None and target["image_id"] != record.image_id:
+        raise HTTPException(
+            status_code=409, detail="Scan result image ID differs from the queued target"
+        )
 
     findings = normalize_trivy_report(payload.trivy_report)
     if len(findings) > settings.vulnerability_max_findings:
@@ -4247,16 +4329,34 @@ def complete_image_scan(
         intel_records[cve_id] = intel
     db.flush()
 
+    # Local-ID targets retain deployment evidence without masquerading as a
+    # repository digest. Always bind runtime exposure to this Docker host.
+    container_filter = (
+        ContainerIdentity.image_id == record.image_id
+        if is_local_image_identity(record.image_digest)
+        else ContainerIdentity.image_digest == record.image_digest
+    )
+    process_filter = (
+        ProcessExecEvent.image_id == record.image_id
+        if is_local_image_identity(record.image_digest)
+        else ProcessExecEvent.image_digest == record.image_digest
+    )
     snapshots = [
         row.current_snapshot
         for row in db.scalars(
-            select(ContainerIdentity).where(ContainerIdentity.image_digest == record.image_digest)
+            select(ContainerIdentity).where(
+                container_filter, ContainerIdentity.docker_host_id == record.docker_host_id
+            )
         ).all()
     ]
     process_rows = list(
         db.scalars(
             select(ProcessExecEvent)
-            .where(ProcessExecEvent.image_digest == record.image_digest)
+            .where(
+                process_filter,
+                ProcessExecEvent.docker_host_id == record.docker_host_id,
+                ProcessExecEvent.container_id.is_not(None),
+            )
             .order_by(desc(ProcessExecEvent.occurred_at))
             .limit(settings.vulnerability_runtime_event_limit)
         ).all()
@@ -4396,7 +4496,12 @@ def fail_image_scan(
     payload: ImageScanFailIn,
     db: Session = Depends(get_db),
 ) -> ImageScan:
-    record = db.get(ImageScan, scan_id)
+    record = db.scalar(
+        select(ImageScan)
+        .where(ImageScan.scan_id == scan_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if record is None:
         raise HTTPException(status_code=404, detail="Image scan not found")
     if record.status in {"completed", "failed"}:

@@ -13,7 +13,9 @@ from pathlib import Path
 from private_api import open_api
 
 
-def _request(method: str, url: str, token: str | None = None, payload: dict | None = None) -> object:
+def _request(
+    method: str, url: str, token: str | None = None, payload: dict | None = None
+) -> object:
     body = None
     headers = {"Accept": "application/json"}
     if payload is not None:
@@ -53,13 +55,24 @@ def _token() -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Compute and inspect Porygon behavioural-distance scores")
+    parser = argparse.ArgumentParser(
+        description="Compute and inspect Porygon behavioural-distance scores"
+    )
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     commands = parser.add_subparsers(dest="command", required=True)
 
     compute = commands.add_parser("compute", help="Score one completed fixed observation window")
     compute.add_argument("--image-digest", required=True)
     compute.add_argument("--window-start", required=True, help="ISO-8601 timestamp with timezone")
+    compute.add_argument(
+        "--algorithm",
+        choices=[
+            "porygon.distance.v1",
+            "porygon.distance.command-lineage",
+            "porygon.distance.rare-execution",
+        ],
+        help="Explicit scoring policy; defaults to the profile contract",
+    )
     compute.add_argument("--profile-id", help="Use a specific active or retired profile version")
 
     list_command = commands.add_parser("list", help="List stored scores")
@@ -84,6 +97,7 @@ def main() -> int:
                 "image_digest": args.image_digest,
                 "window_start": args.window_start,
                 "profile_id": args.profile_id,
+                "algorithm_version": args.algorithm,
             },
         )
     elif args.command == "get":

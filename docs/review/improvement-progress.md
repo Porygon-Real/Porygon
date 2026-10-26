@@ -33,14 +33,14 @@ The supplied 18-item audit is an input to verify against current code. Its propo
 | IMP-05 | Fixed | Unresolved containers cannot use host PID fallback; resolved lookup stays within container/host or sensor bounds. Ancestor traversal also rejects old cross-container links. |
 | IMP-06 | Implemented as opt-in contract | Command shapes use a bounded fixed vocabulary without argument values; paired feature/algorithm identities, coverage checks and persisted configuration preserve legacy scoring. New profiles require explicit build/activation. |
 | IMP-07 | Pending model work | Existing model input remains compatible. New structural features require observed metadata and model training/validation; path strings alone do not establish permissions or deleted files. |
-| IMP-08 | Pending numerical model work | The stated dead zone concerns one numeric component, not necessarily the entire score or rule detector. A changed transform needs a distinct algorithm contract and calibration. |
+| IMP-08 | Implemented as opt-in policy | The named rare-execution algorithm applies a 0.70 shell-component floor only to fully zero training summaries. Default algorithms, profiles and score IDs are preserved; a fitted count distribution remains separate work. |
 | IMP-09 | Existing safe handling verified | API persists insufficient-data outcomes for absent process evidence, avoiding a runtime exception without claiming observation-free normality. Verified quiescence would additionally need sensor-coverage evidence. |
 | IMP-10 | Fixed, including multicall paths | Explicit and slash-bearing path conditions use raw executable paths with case-sensitive comparisons; basename conditions retain dispatched applet identity. |
 | IMP-11 | Fixed | A shell exception cannot suppress its later unknown tools. The concrete shell and tool events must both have explicit approved exceptions before their pair is suppressed; both approval IDs are recorded. Matcher identity changes with this behaviour. |
 | IMP-12 | Fixed | Plain audit context is materialised and session closed before provider calls. A bounded per-process admission semaphore rejects excess audits promptly and releases on failure. Incorrect score_value access is corrected to total_score. |
 | IMP-13 | Fixed | Gateway denies bare and nested internal prefixes, including percent-decoded variants. Local administrative tools use authenticated Docker-exec transport; no backend port is published. |
 | IMP-14 | Implemented, opt-in | Lifespan-managed retention worker owns brief sessions, takes a cross-worker advisory transaction lock, deletes bounded batches, and recovers on a later tick. Disabled by default to preserve retained evidence. No existing tables were repartitioned. |
-| IMP-15 | Pending identity contract | Local config IDs must remain distinct from repository digests through API, queue and scan provenance. An unchecked RepoDigests fallback would weaken the existing exact-target guarantee. |
+| IMP-15 | Implemented | Explicit local Docker IDs are preserved with daemon descriptors, host-bound cache/claims, strict report validation and matching exposure scope. Undeployed images can be scanned without fabricating inventory or registry provenance. |
 | IMP-16 | Existing fix verified | A newly started batch container may finish with exit code zero; stale prior successful exits cannot satisfy rollback verification. |
 | IMP-17 | Existing rotation verified; outage budget remains | Consumed source bytes are renamed/drained before deletion. Rotation protects unread records; it is not a hard disk cap during sustained backend outage. Copy-truncating unread evidence would lose events. |
 | IMP-18 | Reporting improved; natural-drift study pending | New tag-drift manifests identify controlled_local_alias_reassignment, pilot eligibility and absence of natural upstream observation. Existing artifacts and frozen protocol bytes remain intact. |
@@ -120,3 +120,28 @@ Remaining backlog after this pass: additional socket/file/memory telemetry (IMP-
 - Live acceptance also built a quality-passing new-contract draft from real captured telemetry: 11 commands, 100% command coverage and one within-window parent-linked edge. The active legacy profile remained unchanged. The draft was not activated.
 - Source/test hashes match all five running service images. All eight services are healthy. Response execution is restored to `disabled`, completion backlog is empty, and automatic retention remains disabled.
 - No commits, pushes, merges, branch changes or presentation/research artifact edits were made. Local logs, source hashes, reference comparisons and the captured draft/configuration are in [command-lineage validation results](../../artifacts/local/command-lineage-validation/results.json).
+
+
+## Local scanning and sparse-behaviour pass
+
+- [x] High — Implement explicit local image identities across scan requests, host-bound queue/claims, scanner verification, stored provenance and exposure evidence (IMP-15).
+- [x] High — Add a separately named opt-in rare-shell scoring policy and bind algorithm selection into score identity/configuration, preserving both existing contracts (IMP-08).
+- [x] High — Add identity-confusion, host-isolation, concurrent-completion, sparse-behaviour and backward-compatibility regressions; verify IMP-06 remains implemented under command-lineage.
+- [x] High — Rebuild affected images; run static, five service suites, protocol integrity, PostgreSQL checks and full live acceptance, including a real local-only Trivy scan.
+
+IMP-06 is already implemented as a named opt-in command/lineage contract with fixed-vocabulary argument descriptors and explicit profile activation. IMP-02 and IMP-07 remain separate sensor/model extensions; path hints will not be presented as observed permissions or package ownership, and new syscall records will not be inserted into the exec-only research stream.
+
+
+### Verification of local scanning and rare execution
+
+- **563 tests passed:** backend 259; collector 12; telemetry 24; responder 12; scanner 13; experiment/private-transport 243. The four PostgreSQL-only cases skipped in the SQLite suite were exercised separately.
+- **18 PostgreSQL checks passed** in disposable schemas, including cross-host queue identity, legacy key reuse, local provenance, concurrent scan completion, rare-policy persistence/replay and model-input isolation, alongside the preceding incident/response checks.
+- **Static verification, OpenAPI generation, Alembic upgrade SQL, protocol integrity and infrastructure passed.** Existing tables already store the explicit identity strings and policy configurations; this pass requires no new migration. The scanner acceptance wrapper's misplaced command substitution was repaired.
+- **Real local-image acceptance passed** on the final images: an untagged imported image with no `RepoDigests` and no deployed container completed a genuine Trivy scan, preserved verified image/host identity, produced 15 CycloneDX components, and reused the same scan for a duplicate request. Its disposable container, image and archive were removed. Database artifacts remain available.
+- Docker 29's containerd store was observed returning descriptor-based image IDs. Provenance now records the actual Docker ID, descriptor and platform metadata rather than asserting every ID is a config digest. A `local:5000/...` registry reference remains distinct from the exact `local:sha256:<64-hex>` marker.
+- **The complete live workflow passed:** ingestion, eBPF capture/outage replay, profiling, scoring, detection, allowlist/incident lifecycle, approved exact-target pause, idempotent approval, rollback and chronological audit evidence.
+- The rare-execution algorithm was also computed and replayed against the live captured observation. It produced a distinct idempotent score, retained the 0.70 policy in its configuration, excluded the incompatible legacy ML scale, and preserved the original default score and default public configuration.
+- All five running service source/test trees match their images. All eight services are healthy; response execution is restored to `disabled`, completion backlog is empty, and automatic retention remains disabled.
+- No commits, pushes, merges, branch changes or frozen research/presentation edits were made. Logs, source/image hashes, the local scan/SBOM hashes and live rare score are in [local/sparse validation results](../../artifacts/local/local-sparse-validation/results.json).
+
+From the latest supplied matrix, IMP-08 and IMP-15 are now implemented as explicit options; IMP-06 remains available through the existing command/lineage contract. IMP-02 (separate multi-syscall sensor data) and IMP-07 (trained structural ML inputs) remain open.

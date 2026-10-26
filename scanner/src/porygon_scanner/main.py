@@ -53,6 +53,8 @@ async def heartbeat_loop(app: FastAPI) -> None:
                     "version": settings.version,
                     "capability": "vulnerability-enrichment",
                     "trivy_version": settings.trivy_version,
+                    "docker_host_id": state.get("docker_host_id"),
+                    "docker_daemon_id": state.get("docker_daemon_id"),
                     "docker_connected": state["docker_connected"],
                     "last_claim_at": state["last_claim_at"],
                     "last_completion_at": state["last_completion_at"],
@@ -69,8 +71,6 @@ async def heartbeat_loop(app: FastAPI) -> None:
                 state["backend_last_error"] = f"{exc.__class__.__name__}: {exc}"
                 logger.warning("Scanner heartbeat failed: %s", exc.__class__.__name__)
             await asyncio.sleep(settings.heartbeat_interval_seconds)
-
-
 
 
 async def renew_scan_lease(
@@ -100,6 +100,7 @@ async def renew_scan_lease(
             state["lease_renewal_error"] = f"{exc.__class__.__name__}: {exc}"
             logger.warning("Scan lease renewal failed for %s: %s", scan_id, exc.__class__.__name__)
 
+
 async def scan_loop(app: FastAPI) -> None:
     base = settings.api_base_url.rstrip("/")
     headers = {"X-Porygon-Internal-Token": settings.internal_api_token.get_secret_value()}
@@ -110,6 +111,14 @@ async def scan_loop(app: FastAPI) -> None:
         while True:
             try:
                 await asyncio.to_thread(scanner.client.ping)
+                info = await asyncio.to_thread(scanner.client.info)
+                daemon_id = str(info.get("ID") or "")
+                if not daemon_id:
+                    raise ValueError("Docker daemon did not return an identity")
+                state["docker_daemon_id"] = daemon_id
+                state["docker_host_id"] = (
+                    daemon_id if settings.docker_host_id == "auto" else settings.docker_host_id
+                )
                 state["docker_connected"] = True
                 state["docker_last_error"] = None
             except Exception as exc:
@@ -124,6 +133,7 @@ async def scan_loop(app: FastAPI) -> None:
                     headers=headers,
                     json={
                         "scanner_instance_id": settings.scanner_instance_id,
+                        "docker_host_id": state["docker_host_id"],
                         "scanner_name": "trivy",
                         "scanner_version": settings.trivy_version,
                         "lease_seconds": settings.lease_seconds,
@@ -157,7 +167,11 @@ async def scan_loop(app: FastAPI) -> None:
                         headers=headers,
                         json={
                             "scanner_instance_id": settings.scanner_instance_id,
-                            "scanner_metadata": result.metadata,
+                            "scanner_metadata": {
+                                **result.metadata,
+                                "docker_host_id": state["docker_host_id"],
+                                "docker_daemon_id": state["docker_daemon_id"],
+                            },
                             "trivy_report": result.report,
                             "cyclonedx_sbom": result.sbom,
                             "vulnerability_intel": result.intel,
@@ -173,7 +187,10 @@ async def scan_loop(app: FastAPI) -> None:
                             "scanner_instance_id": settings.scanner_instance_id,
                             "error_code": exc.code,
                             "error_message": str(exc),
-                            "scanner_metadata": {"scanner": "trivy", "scanner_version": settings.trivy_version},
+                            "scanner_metadata": {
+                                "scanner": "trivy",
+                                "scanner_version": settings.trivy_version,
+                            },
                         },
                     )
                     failure.raise_for_status()
@@ -187,7 +204,10 @@ async def scan_loop(app: FastAPI) -> None:
                             "scanner_instance_id": settings.scanner_instance_id,
                             "error_code": "executor_internal_error",
                             "error_message": f"{exc.__class__.__name__}: {exc}",
-                            "scanner_metadata": {"scanner": "trivy", "scanner_version": settings.trivy_version},
+                            "scanner_metadata": {
+                                "scanner": "trivy",
+                                "scanner_version": settings.trivy_version,
+                            },
                         },
                     )
                     failure.raise_for_status()
@@ -260,9 +280,14 @@ def health_live() -> dict[str, str]:
 def health_ready(request: Request) -> dict[str, object]:
     state = request.app.state.scanner_state
     if not state["docker_connected"]:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Docker Engine is unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Docker Engine is unavailable"
+        )
     if state["backend_last_success_at"] is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No successful backend heartbeat yet")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No successful backend heartbeat yet",
+        )
     if not _heartbeat_is_fresh(
         state["backend_last_success_at"],
         settings.heartbeat_interval_seconds,

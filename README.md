@@ -157,6 +157,12 @@ Key settings:
 - `PORYGON_RAW_EVENT_RETENTION_DAYS`: Raw-event age cutoff (default `30`).
 - `PORYGON_RETENTION_MAX_DELETE_BATCH`: Maximum rows deleted per event table per tick (default `50000`).
 
+### Local images and rare execution
+
+Scans accept explicit `local:sha256:<64-hex-digits>` targets, including undeployed images, and bind requests, workers and exposure evidence to the Docker host. See [local image scanning](docs/local-image-scanning.md).
+
+Scoring can explicitly select `porygon.distance.rare-execution` to retain a rare shell signal against an entirely zero shell baseline. The policy has its own score identity and preserves existing defaults; see [rare execution scoring](docs/rare-execution-scoring.md).
+
 ### Command and lineage profiles
 
 Baseline builds can opt into `--feature-schema porygon.behaviour.command-lineage` for fixed-vocabulary command shapes and verified parent-linked sequences. Scoring uses the selected profile's contract, records command coverage, and retains existing profile defaults and historical scores. See [command and lineage scoring](docs/command-lineage-scoring.md) for selection, feature semantics and model compatibility.
