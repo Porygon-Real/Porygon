@@ -225,8 +225,10 @@ def test_gemini_keeps_system_policy_outside_untrusted_user_message():
     from porygon_api.ai_auditor import _call_gemini, SYSTEM_INSTRUCTION
 
     captured = []
+    captured_requests = []
 
     def open_response(request, timeout):
+        captured_requests.append(request)
         captured.append(json.loads(request.data))
         return BytesIO(
             json.dumps(
@@ -242,6 +244,9 @@ def test_gemini_keeps_system_policy_outside_untrusted_user_message():
     assert captured[0]["contents"] == [
         {"role": "user", "parts": [{"text": "untrusted evidence"}]}
     ]
+    assert captured_requests[0].headers.get("X-goog-api-key") == "secret"
+    assert "key=" not in captured_requests[0].full_url
+
 
 
 def test_well_formed_fabricated_command_is_rejected():

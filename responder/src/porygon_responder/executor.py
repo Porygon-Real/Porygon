@@ -50,6 +50,7 @@ class DockerResponseExecutor:
         labels = dict(config.get("Labels") or {})
         host_config = dict(container.attrs.get("HostConfig") or {})
         restart_policy = dict(host_config.get("RestartPolicy") or {})
+        auto_remove = bool(host_config.get("AutoRemove"))
         return {
             "container_id": container.id,
             "name": str(container.attrs.get("Name") or "").lstrip("/") or None,
@@ -63,6 +64,7 @@ class DockerResponseExecutor:
             "started_at": state.get("StartedAt"),
             "finished_at": state.get("FinishedAt"),
             "restart_policy": restart_policy,
+            "auto_remove": auto_remove,
             "labels": labels,
         }
 
@@ -179,6 +181,8 @@ class DockerResponseExecutor:
             container.unpause()
             return True
         if action_type == "stop_container":
+            if state.get("auto_remove"):
+                raise ValueError("cannot rollback stop on auto-remove container; container was removed upon exit")
             if state["running"]:
                 return False
             container.start()

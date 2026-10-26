@@ -109,7 +109,7 @@ FLAGS = SHELL_COMMAND_FLAGS | frozenset(
         "--max-time",
     }
 )
-OPERATORS = frozenset({"|", "||", "&&", ";", "&", ">", ">>", "<", "<<", "(", ")"})
+OPERATORS = frozenset({"|", "||", "&&", ";", "&", ">", ">>", "<", "<<", "<<<", "(", ")"})
 CONTRACT = {
     "argument_values": "fixed-categories-only",
     "unknown_flags": "opaque",
@@ -145,6 +145,10 @@ def _value_shape(value: str) -> str:
     if value.startswith("-"):
         return "value:opaque-option"
     return "value:opaque"
+
+
+def _clean_token(token: str) -> str:
+    return token.replace("'", "").replace('"', "").replace("\\", "")
 
 
 def command_shape_counts(command_line: str | None, *, depth: int = 0) -> Counter[str]:
@@ -193,26 +197,32 @@ def command_shape_counts(command_line: str | None, *, depth: int = 0) -> Counter
             continue
         if not quoted and token in OPERATORS:
             counts["operator:" + token] += 1
+            if token == "<<<" and program in SHELLS:
+                shell_payload = True
             command_position = token in {"|", "||", "&&", ";", "&", "("}
             continue
         if command_position:
-            program = token.rsplit("/", 1)[-1]
-            counts["program:" + (program if program in PROGRAMS else "opaque")] += 1
+            clean_token = _clean_token(token.rsplit("/", 1)[-1])
+            program = clean_token if clean_token in PROGRAMS else token.rsplit("/", 1)[-1]
+            counts["program:" + (clean_token if clean_token in PROGRAMS else "opaque")] += 1
             command_position = False
             continue
-        if program in {"busybox", "toybox"} and token in PROGRAMS:
-            counts["syntax:multicall"] += 1
-            program = token
-            counts["program:" + program] += 1
-            continue
+        if program in {"busybox", "toybox"}:
+            clean_sub = _clean_token(token)
+            if clean_sub in PROGRAMS:
+                counts["syntax:multicall"] += 1
+                program = clean_sub
+                counts["program:" + program] += 1
+                continue
         flag, separator, value = token.partition("=")
-        if flag in FLAGS:
-            counts["flag:" + flag] += 1
+        clean_flag = _clean_token(flag)
+        if clean_flag in FLAGS:
+            counts["flag:" + clean_flag] += 1
             if separator:
                 counts[_value_shape(value)] += 1
-            elif program in SHELLS and flag in SHELL_COMMAND_FLAGS:
+            elif program in SHELLS and clean_flag in SHELL_COMMAND_FLAGS:
                 shell_payload = True
-            elif flag in {"--header", "-H", "--user", "-u", "--password", "--token", "-A"}:
+            elif clean_flag in {"--header", "-H", "--user", "-u", "--password", "--token", "-A"}:
                 opaque_value = True
         else:
             counts[_value_shape(token)] += 1

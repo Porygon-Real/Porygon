@@ -207,6 +207,12 @@ def test_unknown_or_ambiguous_host_identity_is_not_grouped():
     )
     key = grouping_key(score, [CID], EVENTS, [], ["configuration"])
     assert key != grouping_key(score, [CID], EVENTS, [], ["different"])
+    short_cid = "123456abcdef"
+    short_events = [SimpleNamespace(container_id=short_cid, docker_host_id=None)]
+    short_key = grouping_key(score, [short_cid], short_events, [])
+    assert short_key is not None
+    assert len(short_key) == 64
+
 
 
 def recommendation(db, incident_id, run_id):

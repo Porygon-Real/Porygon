@@ -211,14 +211,29 @@ class TrivyScanner:
             str(output),
             image_id,
         ]
+        lock_file = Path(self.cache_dir) / ".trivy_cache.lock"
         try:
-            completed = subprocess.run(
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds + 30,
-            )
+            lock_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(lock_file, "w") as lock_fd:
+                try:
+                    import fcntl
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                except (ImportError, OSError):
+                    pass
+                try:
+                    completed = subprocess.run(
+                        command,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=self.timeout_seconds + 30,
+                    )
+                finally:
+                    try:
+                        import fcntl
+                        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    except (ImportError, OSError):
+                        pass
         except subprocess.TimeoutExpired as exc:
             raise ScanError("scanner_timeout", "Trivy exceeded its configured timeout") from exc
         if completed.returncode != 0:

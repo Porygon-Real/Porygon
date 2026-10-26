@@ -24,21 +24,34 @@ def utc(value: datetime) -> datetime:
     )
 
 
+import re
+
+CID_HEX = re.compile(r"^[0-9a-fA-F]{12,64}$")
+
+
 def grouping_key(
     score, container_ids, process_events, runtime_events, configuration=None
 ):
-    if not container_ids or any(len(cid) != 64 for cid in container_ids):
+    if not container_ids or any(not isinstance(cid, str) or not CID_HEX.match(cid) for cid in container_ids):
         return None
     scope = set()
     for cid in container_ids:
+        matching = [
+            event
+            for event in [*process_events, *runtime_events]
+            if getattr(event, "container_id", None) == cid
+        ]
+        if not matching:
+            return None
         hosts = {
             event.docker_host_id
-            for event in [*process_events, *runtime_events]
-            if event.container_id == cid and getattr(event, "docker_host_id", None)
+            for event in matching
+            if getattr(event, "docker_host_id", None)
         }
-        if len(hosts) != 1:
+        if len(hosts) > 1:
             return None
-        scope.add((next(iter(hosts)), cid))
+        host = next(iter(hosts)) if hosts else "local"
+        scope.add((host, cid.lower()))
     # Different profiles and detection configurations retain separate episodes.
     document = [score.image_digest, score.profile_id, sorted(scope), configuration]
     return hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
