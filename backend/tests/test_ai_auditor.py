@@ -277,3 +277,47 @@ def test_well_formed_fabricated_command_is_rejected():
                 provider="openai",
                 api_key="secret",
             )
+
+
+def test_audit_container_requires_operator_token_when_falling_back_to_server_key():
+    from fastapi import HTTPException
+    from porygon_api.main import audit_container, AiAuditIn
+    from porygon_api.models import ContainerIdentity
+    from porygon_api.config import get_settings
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from porygon_api.db import Base
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = Session(engine)
+    cid = "testcontainer123"
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    db.add(
+        ContainerIdentity(
+            container_id=cid,
+            docker_host_id="host-1",
+            image_id="img-1",
+            image_digest_status="resolved",
+            current_snapshot={},
+            first_seen_at=now,
+            last_seen_at=now,
+        )
+    )
+    db.commit()
+
+    settings = get_settings()
+    mock_secret = type("Secret", (), {"get_secret_value": lambda self: "mock-key"})()
+    with patch.object(settings, "ai_api_key", mock_secret):
+        payload = AiAuditIn(container_id=cid)
+        with pytest.raises(HTTPException) as exc:
+            audit_container(payload, x_porygon_ai_key=None, x_porygon_operator_token=None, db=db)
+        assert exc.value.status_code == 401
+        assert "Authentication required" in exc.value.detail
+
+        with pytest.raises(HTTPException) as exc:
+            audit_container(payload, x_porygon_ai_key=None, x_porygon_operator_token="wrong-token", db=db)
+        assert exc.value.status_code == 401
+        assert "Invalid operator token" in exc.value.detail
+

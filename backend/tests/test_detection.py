@@ -876,6 +876,30 @@ def test_ancestor_rules_reject_legacy_cross_container_links(child_container, par
     assert _ancestor_chain(child, {parent.event_id: parent}) == []
 
 
+def test_ancestor_rules_reject_acausal_and_cross_sensor_links():
+    from datetime import timedelta
+    from porygon_api.detection import _ancestor_chain
+    base_time = Score().window_start
+    # Parent in the future relative to child should be rejected
+    future_parent = ProcessEvent("parent_future", base_time + timedelta(seconds=10), "c1", "sh", "/bin/sh")
+    child = ProcessEvent("child", base_time, "c1", "tool", "/tmp/tool", parent_event_id=future_parent.event_id)
+    assert _ancestor_chain(child, {future_parent.event_id: future_parent}) == []
+
+    # Cross-sensor parent should be rejected
+    normal_parent = ProcessEvent("parent_normal", base_time - timedelta(seconds=2), "c1", "sh", "/bin/sh")
+    normal_parent.sensor_instance_id = "sensor-1"
+    child.parent_event_id = normal_parent.event_id
+    child.sensor_instance_id = "sensor-2"
+    assert _ancestor_chain(child, {normal_parent.event_id: normal_parent}) == []
+
+    # Valid causal same-sensor parent should be accepted
+    child.sensor_instance_id = "sensor-1"
+    chain = _ancestor_chain(child, {normal_parent.event_id: normal_parent})
+    assert len(chain) == 1
+    assert chain[0].event_id == normal_parent.event_id
+
+
+
 @pytest.mark.parametrize('field,value', [('executable_path','/tmp/busybox'),('parent_executable_path','/opt/toybox')])
 def test_multicall_path_fields_keep_raw_paths(field,value):
     from porygon_api.detection import evaluate_custom_condition

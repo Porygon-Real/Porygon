@@ -345,6 +345,18 @@ def _ancestor_chain(event: Any, events_by_id: dict[str, Any], *, max_depth: int 
         parent_host_id = getattr(parent, "docker_host_id", None)
         if host_id != parent_host_id:
             break
+        sensor_id = getattr(current, "sensor_instance_id", None)
+        parent_sensor_id = getattr(parent, "sensor_instance_id", None)
+        if sensor_id and parent_sensor_id and sensor_id != parent_sensor_id:
+            break
+        current_time = getattr(current, "occurred_at", None)
+        parent_time = getattr(parent, "occurred_at", None)
+        if current_time and parent_time and parent_time > current_time:
+            break
+        current_nano = getattr(current, "time_nano", None)
+        parent_nano = getattr(parent, "time_nano", None)
+        if current_nano is not None and parent_nano is not None and parent_nano > current_nano:
+            break
         chain.append(parent)
         seen.add(parent_id)
         current = parent

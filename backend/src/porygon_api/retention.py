@@ -95,9 +95,12 @@ def apply_retention(
     ).all()
     process_deleted = 0
     if process_ids:
-        process_deleted = db.query(ProcessExecEvent).filter(ProcessExecEvent.event_id.in_(process_ids)).delete(
-            synchronize_session=False
-        )
+        chunk_size = 500
+        for i in range(0, len(process_ids), chunk_size):
+            chunk = process_ids[i : i + chunk_size]
+            process_deleted += db.query(ProcessExecEvent).filter(
+                ProcessExecEvent.event_id.in_(chunk)
+            ).delete(synchronize_session=False)
 
     runtime_ids = db.scalars(
         select(RuntimeEvent.event_id)
@@ -107,9 +110,12 @@ def apply_retention(
     ).all()
     runtime_deleted = 0
     if runtime_ids:
-        runtime_deleted = db.query(RuntimeEvent).filter(RuntimeEvent.event_id.in_(runtime_ids)).delete(
-            synchronize_session=False
-        )
+        chunk_size = 500
+        for i in range(0, len(runtime_ids), chunk_size):
+            chunk = runtime_ids[i : i + chunk_size]
+            runtime_deleted += db.query(RuntimeEvent).filter(
+                RuntimeEvent.event_id.in_(chunk)
+            ).delete(synchronize_session=False)
 
     return RetentionResult(
         cutoff=cutoff,

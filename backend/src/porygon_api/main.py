@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from threading import BoundedSemaphore
@@ -2688,6 +2689,7 @@ def audit_container(
     payload: AiAuditIn,
     x_porygon_ai_key: str | None = Header(default=None, alias="X-Porygon-AI-Key"),
     x_porygon_ai_provider: str | None = Header(default=None, alias="X-Porygon-AI-Provider"),
+    x_porygon_operator_token: str | None = Header(default=None, alias="X-Porygon-Operator-Token"),
     db: Session = Depends(get_db),
 ) -> AiAuditOut:
     cid = payload.container_id.strip()
@@ -2706,13 +2708,25 @@ def audit_container(
         )
 
     api_key = payload.api_key or x_porygon_ai_key
-    if not api_key and settings.ai_api_key:
-        api_key = settings.ai_api_key.get_secret_value()
+    if not api_key:
+        if settings.ai_api_key:
+            if not x_porygon_operator_token:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required to use server AI credentials. Provide X-Porygon-Operator-Token or supply your own key via X-Porygon-AI-Key.",
+                )
+            expected = settings.operator_api_token.get_secret_value()
+            if not secrets.compare_digest(x_porygon_operator_token, expected):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid operator token",
+                )
+            api_key = settings.ai_api_key.get_secret_value()
 
     if not api_key or not api_key.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing AI API key. Provide your key via the X-Porygon-AI-Key header, request payload, or PORYGON_AI_API_KEY in .env",
+            detail="Missing AI API key. Provide your key via the X-Porygon-AI-Key header, request payload, or provide X-Porygon-Operator-Token to use server credentials",
         )
 
     provider = (
@@ -4274,10 +4288,18 @@ def complete_image_scan(
     now = datetime.now(timezone.utc)
     intel_payload = {item.cve_id: item for item in payload.vulnerability_intel}
     cve_ids = {str(item["cve_id"]) for item in findings}
+    existing_intel_list = (
+        db.scalars(
+            select(VulnerabilityIntel).where(VulnerabilityIntel.cve_id.in_(cve_ids))
+        ).all()
+        if cve_ids
+        else []
+    )
+    existing_intel = {item.cve_id: item for item in existing_intel_list}
     intel_records: dict[str, VulnerabilityIntel] = {}
     for cve_id in sorted(cve_ids):
         source = intel_payload.get(cve_id)
-        intel = db.get(VulnerabilityIntel, cve_id)
+        intel = existing_intel.get(cve_id)
         if intel is None:
             intel = VulnerabilityIntel(
                 cve_id=cve_id,
