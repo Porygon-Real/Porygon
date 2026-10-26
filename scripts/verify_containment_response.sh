@@ -9,7 +9,7 @@ if [[ -z "${PORYGON_VERIFY_BASE_URL:-}" ]]; then
 fi
 
 TARGET_NAME="porygon-containment-target"
-TARGET_IMAGE="alpine:3.20"
+TARGET_IMAGE="alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
 
 fail() {
   echo "[FAIL] $*" >&2
@@ -38,14 +38,21 @@ mkdir -p artifacts
 
 internal_token="$(grep -E '^PORYGON_INTERNAL_API_TOKEN=' .env | tail -1 | cut -d= -f2- || true)"
 operator_token="$(grep -E '^PORYGON_OPERATOR_API_TOKEN=' .env | tail -1 | cut -d= -f2- || true)"
-execution_mode="$(grep -E '^PORYGON_RESPONSE_EXECUTION_MODE=' .env | tail -1 | cut -d= -f2- || true)"
+execution_mode="${PORYGON_RESPONSE_EXECUTION_MODE:-$(grep -E '^PORYGON_RESPONSE_EXECUTION_MODE=' .env | tail -1 | cut -d= -f2- || true)}"
 [[ ${#internal_token} -ge 32 ]] || fail "PORYGON_INTERNAL_API_TOKEN is missing or too short"
 [[ ${#operator_token} -ge 32 ]] || fail "PORYGON_OPERATOR_API_TOKEN is missing or too short"
 [[ "$internal_token" != "$operator_token" ]] || fail "Internal and operator tokens must be different"
 [[ "$execution_mode" == "live" ]] || fail "Set PORYGON_RESPONSE_EXECUTION_MODE=live only for this controlled containment response acceptance test"
 
-./scripts/verify_detection_engine.sh
-pass "Detection engine verification completed"
+if [[ "${PORYGON_VERIFY_PREREQUISITES:-true}" == "true" ]]; then
+  ./scripts/verify_detection_engine.sh
+  pass "Detection engine verification completed"
+else
+  pass "Reusing the previously verified detection prerequisites"
+fi
+
+# Apply the explicit mode even when only rerunning this component's checks.
+docker compose up --detach --no-deps --wait backend responder
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
 backend_port="${backend_port:-8000}"
@@ -92,7 +99,7 @@ window_seconds="${profile_values[1]}"
 [[ "$window_seconds" =~ ^[0-9]+$ ]] || fail "Active profile window_seconds is invalid"
 
 cleanup_target
-docker pull "$TARGET_IMAGE" >/dev/null
+docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1 || docker pull "$TARGET_IMAGE" >/dev/null
 expected_repo_digest="$(docker image inspect "$TARGET_IMAGE" --format '{{index .RepoDigests 0}}')"
 [[ "$expected_repo_digest" == "$digest" ]] || fail "Target image digest changed since the baseline was built"
 docker run --detach \
@@ -104,11 +111,14 @@ full_container_id="$(docker inspect "$TARGET_NAME" --format '{{.Id}}')"
 
 container_ready=false
 for _ in $(seq 1 60); do
-  containers="$(curl --fail --silent --show-error "${base_url}/api/v1/containers?limit=500" || true)"
-  if CONTAINERS_JSON="$containers" TARGET_NAME="$TARGET_NAME" EXPECTED_DIGEST="$digest" EXPECTED_ID="$full_container_id" python3 - <<'PY'
+  mkdir -p artifacts/local
+  inventory_path="artifacts/local/containment-container-inventory.json"
+  curl --fail --silent --show-error --output "$inventory_path" "${base_url}/api/v1/containers?limit=500" || true
+  if CONTAINERS_PATH="$inventory_path" TARGET_NAME="$TARGET_NAME" EXPECTED_DIGEST="$digest" EXPECTED_ID="$full_container_id" python3 - <<'PY'
 import json, os, sys
 try:
-    items=json.loads(os.environ['CONTAINERS_JSON'])
+    with open(os.environ['CONTAINERS_PATH']) as source:
+        items=json.load(source)
 except (OSError, json.JSONDecodeError):
     sys.exit(1)
 match=next((item for item in items if item.get('container_name')==os.environ['TARGET_NAME']), None)

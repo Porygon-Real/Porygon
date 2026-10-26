@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -20,13 +21,18 @@ class OutboxStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         connection = sqlite3.connect(self.path, timeout=10.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
         connection.execute("PRAGMA busy_timeout=10000")
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -78,7 +84,9 @@ class OutboxStore:
                 changed = True
 
             raw_event = payload.get("raw_event")
-            raw_action = raw_event.get("Action") if isinstance(raw_event, dict) else None
+            raw_action = (
+                raw_event.get("Action") if isinstance(raw_event, dict) else None
+            )
             detail = action_detail(raw_action)
             if (
                 canonical in {"exec_create", "exec_start"}
@@ -124,30 +132,55 @@ class OutboxStore:
             )
 
     def enqueue(self, payload: dict[str, Any]) -> bool:
-        event_id = str(payload["event_id"])
-        serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        with self._connect() as connection:
-            existing = connection.execute(
-                "SELECT 1 FROM outbox WHERE event_id = ?",
-                (event_id,),
-            ).fetchone()
-            if existing:
-                return False
+        inserted, _ = self.enqueue_batch([payload])
+        return inserted == 1
 
-            count = connection.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
-            if count >= self.max_events:
+    def enqueue_batch(
+        self, payloads: list[dict[str, Any]], cursor: int | None = None
+    ) -> tuple[int, int]:
+        """Commit a bounded batch and its replay cursor together, or commit neither."""
+        serialized = {
+            str(payload["event_id"]): json.dumps(
+                payload, sort_keys=True, separators=(",", ":")
+            )
+            for payload in payloads
+        }
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            count = int(connection.execute("SELECT COUNT(*) FROM outbox").fetchone()[0])
+            existing: set[str] = set()
+            ids = list(serialized)
+            for offset in range(0, len(ids), 500):
+                chunk = ids[offset : offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                existing.update(
+                    row[0]
+                    for row in connection.execute(
+                        f"SELECT event_id FROM outbox WHERE event_id IN ({placeholders})",
+                        chunk,
+                    )
+                )
+            new = [
+                (key, value, time.time())
+                for key, value in serialized.items()
+                if key not in existing
+            ]
+            if count + len(new) > self.max_events:
                 raise SpoolFullError(
                     f"Durable outbox reached configured limit of {self.max_events} events"
                 )
-
-            connection.execute(
-                """
-                INSERT INTO outbox(event_id, payload, enqueued_at, attempts, next_attempt_at)
-                VALUES (?, ?, ?, 0, 0)
-                """,
-                (event_id, serialized, time.time()),
+            connection.executemany(
+                "INSERT INTO outbox(event_id, payload, enqueued_at) VALUES (?, ?, ?)",
+                new,
             )
-        return True
+            if cursor is not None:
+                connection.execute(
+                    """INSERT INTO metadata(key, value) VALUES ('last_event_time_nano', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    WHERE CAST(metadata.value AS INTEGER) < CAST(excluded.value AS INTEGER)""",
+                    (str(cursor),),
+                )
+        return len(new), count + len(new)
 
     def fetch_due(self, limit: int) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -173,7 +206,9 @@ class OutboxStore:
                 event_ids,
             )
 
-    def mark_failed(self, event_ids: list[str], error: str, max_retry_seconds: int) -> None:
+    def mark_failed(
+        self, event_ids: list[str], error: str, max_retry_seconds: int
+    ) -> None:
         if not event_ids:
             return
         now = time.time()
@@ -219,9 +254,7 @@ class OutboxStore:
         return str(row["value"]) if row else None
 
     def update_cursor(self, time_nano: int) -> None:
-        current = self.get_cursor()
-        if current is None or time_nano > current:
-            self.set_metadata("last_event_time_nano", str(time_nano))
+        self.enqueue_batch([], cursor=time_nano)
 
     def get_cursor(self) -> int | None:
         value = self.get_metadata("last_event_time_nano")

@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from private_api import open_api
+
 ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD_DIR = ROOT / "dashboard"
 PORT = 3000
@@ -238,7 +240,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     "X-Porygon-Internal-Token": internal_token
                 }
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with open_api(req, timeout=5) as resp:
                 return resp.status == 200
         except Exception as e:
             print(f"[!] Canary telemetry ingestion warning: {e}")

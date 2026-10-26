@@ -150,6 +150,38 @@ Key settings:
 - `PORYGON_RESPONSE_EXECUTION_MODE`: Set to `disabled` (safe default, approvals queued) or `live` (for active containment).
 - `PORYGON_LOG_LEVEL`: Logging verbosity (`DEBUG`, `INFO`, `WARNING`).
 - `PORYGON_OPERATOR_API_TOKEN`: Secret token used for operator actions in the dashboard and API.
+- `PORYGON_COMPLETION_MAX_OPERATIONS`: Maximum retained responder operation receipts (default `50000`); only acknowledged receipts are pruned when capacity is reached.
+- `PORYGON_AI_MAX_CONCURRENT_AUDITS`: Maximum simultaneous external AI calls per backend process (default `2`). Database connections are released before these calls.
+- `PORYGON_RETENTION_SCHEDULER_ENABLED`: Enable periodic raw-event pruning (default `false`).
+- `PORYGON_RETENTION_INTERVAL_SECONDS`: Delay between bounded retention batches (default `21600`).
+- `PORYGON_RAW_EVENT_RETENTION_DAYS`: Raw-event age cutoff (default `30`).
+- `PORYGON_RETENTION_MAX_DELETE_BATCH`: Maximum rows deleted per event table per tick (default `50000`).
+
+### Command and lineage profiles
+
+Baseline builds can opt into `--feature-schema porygon.behaviour.command-lineage` for fixed-vocabulary command shapes and verified parent-linked sequences. Scoring uses the selected profile's contract, records command coverage, and retains existing profile defaults and historical scores. See [command and lineage scoring](docs/command-lineage-scoring.md) for selection, feature semantics and model compatibility.
+
+### Incident episodes and response recovery
+
+Repeated findings for the same exact container/host scope, image, profile, and detection configuration update one active incident. Every detection run remains stored and linked to the incident; each appended evidence row includes its run ID. Closing an incident ends that episode. Unknown or ambiguous container identities do not group. Recommendations bind to the latest assessed window; generate a fresh recommendation after the evidence changes.
+
+The responder keeps an intent and completion journal in the `porygon_responder_state` named volume, using SQLite WAL with FULL durability. Pending completions are delivered before new Docker actions. Reclaimed operations replay their saved receipt; an interrupted operation with an unknown outcome requires operator review. Keep this volume across restarts and share it between workers using the same executor identity. The journal's exclusive worker lock coordinates processes sharing that filesystem; separate hosts need shared response ownership before scaling execution across them.
+
+Collector events and their replay cursor commit atomically in batches of up to 100 events or approximately 50 ms, retaining FULL durability. Spool capacity applies backpressure without advancing the cursor past uncommitted events. External AI audit evidence is escaped and isolated from system instructions; malformed assessments and invented command citations are rejected. AI suggestions remain advisory.
+
+### Internal administration and verification
+
+The public gateway rejects `/internal` and `/internal/*`. Internal services use the private Docker network. Local administrative commands use authenticated Docker-exec transport for internal routes, so the backend needs no published host port:
+
+```bash
+python3 scripts/porygon_baseline.py --help
+python3 scripts/porygon_score.py --help
+python3 scripts/porygon_detect.py --help
+```
+
+Public API reads and explicit remote URLs continue to use HTTP. Acceptance scripts manage their private transport automatically. To reuse images already built locally, set `PORYGON_VERIFY_BUILD=false` when running verification; the default still rebuilds images.
+
+Retention is opt-in because it removes raw evidence older than the configured cutoff. Each scheduled batch uses a short database session and a cross-worker lock. Existing profiles and recorded score documents are retained. See [improvement progress](docs/review/improvement-progress.md) for implemented fixes, regression coverage, and remaining work.
 
 ---
 

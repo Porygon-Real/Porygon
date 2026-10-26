@@ -3,7 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from porygon_api.calibrated_provenance import MIN_CALIBRATION_RUNS, validate_run_split
 from porygon_api.rule_expression import (
@@ -294,6 +301,9 @@ class SystemInfo(BaseModel):
 
 
 class BehaviorProfileBuildIn(BaseModel):
+    feature_schema_version: Literal["porygon.behaviour.v1", "porygon.behaviour.command-lineage"] = (
+        "porygon.behaviour.v1"
+    )
     image_digest: str = Field(
         min_length=72,
         max_length=255,
@@ -544,6 +554,7 @@ class DetectionRunOut(BaseModel):
         "no_findings",
         "findings_only",
         "incident_created",
+        "incident_updated",
     ]
     matches_count: int
     incident_created: bool
@@ -552,6 +563,7 @@ class DetectionRunOut(BaseModel):
 
 
 class IncidentOut(BaseModel):
+    latest_detection_run_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
 
     incident_id: str
@@ -751,6 +763,7 @@ class CustomDetectionRuleEnableIn(BaseModel):
 
 
 class ResponseRecommendationOut(BaseModel):
+    evidence_run_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
 
     recommendation_id: str
@@ -834,6 +847,8 @@ class ResponseClaimOut(BaseModel):
 
 
 class ResponseExecutionCompleteIn(BaseModel):
+    operation: Literal["execute", "rollback"] | None = None
+    operation_started_at: datetime | None = None
     executor_instance_id: str = Field(min_length=1, max_length=128)
     success: bool
     pre_state: dict[str, Any] = Field(default_factory=dict)
@@ -877,10 +892,14 @@ class ResponseAuditEventOut(BaseModel):
 
 
 class ImageScanCreateIn(BaseModel):
-    image_digest: str = Field(min_length=72, max_length=255, pattern=r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+    image_digest: str = Field(
+        min_length=72, max_length=255, pattern=r"^[^\s@]+@sha256:[0-9a-f]{64}$"
+    )
     requested_by: str = Field(min_length=1, max_length=128)
     docker_host_id: str | None = Field(default=None, max_length=128)
-    scan_reference: str = Field(default="initial", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    scan_reference: str = Field(
+        default="initial", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
+    )
     note: str | None = Field(default=None, max_length=4000)
     scanner_name: Literal["trivy"] = "trivy"
     scanner_version: str = Field(default="0.72.0", pattern=r"^\d+\.\d+\.\d+$", max_length=32)
@@ -1147,4 +1166,3 @@ class MLModelInfoOut(BaseModel):
     features: list[str]
     num_trees: int
     explainability_method: str
-

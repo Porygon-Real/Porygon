@@ -10,8 +10,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from private_api import open_api
 
-def _request(method: str, url: str, token: str | None = None, payload: dict | None = None) -> object:
+
+def _request(
+    method: str, url: str, token: str | None = None, payload: dict | None = None
+) -> object:
     body = None
     headers = {"Accept": "application/json"}
     if payload is not None:
@@ -21,7 +25,7 @@ def _request(method: str, url: str, token: str | None = None, payload: dict | No
         headers["X-Porygon-Internal-Token"] = token
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with open_api(request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
@@ -62,6 +66,11 @@ def main() -> int:
     build.add_argument("--approved-by", required=True)
     build.add_argument("--approval-reference")
     build.add_argument("--notes")
+    build.add_argument(
+        "--feature-schema",
+        choices=["porygon.behaviour.v1", "porygon.behaviour.command-lineage"],
+        default="porygon.behaviour.v1",
+    )
     build.add_argument("--window-seconds", type=int, default=60)
     build.add_argument("--minimum-process-events", type=int, default=20)
     build.add_argument("--minimum-nonempty-windows", type=int, default=3)
@@ -86,6 +95,7 @@ def main() -> int:
                 "training_start": args.start,
                 "training_end": args.end,
                 "window_seconds": args.window_seconds,
+                "feature_schema_version": args.feature_schema,
                 "minimum_process_events": args.minimum_process_events,
                 "minimum_nonempty_windows": args.minimum_nonempty_windows,
                 "approved_by": args.approved_by,

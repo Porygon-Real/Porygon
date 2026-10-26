@@ -7,35 +7,19 @@ original credentials. No backend ports or gateway exceptions are introduced.
 
 from __future__ import annotations
 
-import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import threading
+import urllib.error
+import urllib.request
+
+from private_api import open_backend
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BODY = 64 * 1024 * 1024
-BRIDGE = """
-import base64, json, sys, urllib.request, urllib.error
-request = json.load(sys.stdin)
-data = base64.b64decode(request['body']) if request['body'] else None
-req = urllib.request.Request('http://127.0.0.1:8000' + request['path'],
-    data=data, method=request['method'], headers=request['headers'])
-try:
-    response = urllib.request.urlopen(req, timeout=180)
-except urllib.error.HTTPError as exc:
-    response = exc
-with response:
-    body = response.read(64 * 1024 * 1024 + 1)
-    if len(body) > 64 * 1024 * 1024:
-        raise ValueError('verification response exceeds limit')
-    print(json.dumps({'status': response.status,
-        'content_type': response.headers.get('Content-Type', 'application/json'),
-        'body': base64.b64encode(body).decode('ascii')}))
-"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -55,34 +39,30 @@ class Handler(BaseHTTPRequestHandler):
         if not self.path.startswith("/") or self.path.startswith("//"):
             self.send_error(400)
             return
-        request = {
-            "path": self.path,
-            "method": self.command,
-            "headers": {
+        request = urllib.request.Request(
+            "http://127.0.0.1:8000" + self.path,
+            data=self.rfile.read(length) if length else None,
+            headers={
                 key: value
                 for key, value in self.headers.items()
                 if key.lower() in {"content-type", "accept"}
                 or key.lower().startswith("x-porygon-")
             },
-            "body": base64.b64encode(self.rfile.read(length)).decode("ascii"),
-        }
+            method=self.command,
+        )
         try:
-            result = subprocess.run(
-                ["docker", "compose", "exec", "-T", "backend", "python", "-c", BRIDGE],
-                input=json.dumps(request),
-                capture_output=True,
-                text=True,
-                timeout=190,
-                cwd=ROOT,
-                check=True,
-            )
-            response = json.loads(result.stdout)
-            body = base64.b64decode(response["body"])
-        except (subprocess.SubprocessError, ValueError, KeyError):
+            response = open_backend(request, timeout=180)
+        except urllib.error.HTTPError as exc:
+            response = exc
+        except urllib.error.URLError:
             self.send_error(502, "Private verification transport unavailable")
             return
-        self.send_response(response["status"])
-        self.send_header("Content-Type", response["content_type"])
+        with response:
+            body = response.read()
+            status = response.status
+            content_type = response.headers.get("Content-Type", "application/json")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

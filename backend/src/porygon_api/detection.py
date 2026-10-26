@@ -7,7 +7,7 @@ from pathlib import PurePosixPath
 from typing import Any, Iterable
 
 RULESET_VERSION = "porygon.detection.v1"
-MATCHER_REVISION = "porygon.detection.matcher.tool-scoped-allowlists"
+MATCHER_REVISION = "porygon.detection.matcher.raw-multicall-paths"
 CORRELATION_WINDOW_SECONDS = 120
 
 SHELL_NAMES = {"sh", "bash", "dash", "ash", "zsh", "ksh", "fish"}
@@ -337,6 +337,14 @@ def _ancestor_chain(event: Any, events_by_id: dict[str, Any], *, max_depth: int 
         parent = events_by_id.get(parent_id)
         if parent is None:
             break
+        # Old or imported links must obey the same boundary as new ingestion.
+        container_id = getattr(current, "container_id", None)
+        if not container_id or getattr(parent, "container_id", None) != container_id:
+            break
+        host_id = getattr(current, "docker_host_id", None)
+        parent_host_id = getattr(parent, "docker_host_id", None)
+        if host_id != parent_host_id:
+            break
         chain.append(parent)
         seen.add(parent_id)
         current = parent
@@ -358,9 +366,9 @@ def _process_chain_documents(event: Any, events_by_id: dict[str, Any]) -> list[d
 
 def _field_value(event: Any, field: str) -> Any:
     if field == "executable_path":
-        return _event_executable(event) or ""
+        return getattr(event, "executable", None) or ""
     if field == "parent_executable_path":
-        return _parent_executable(event) or ""
+        return getattr(event, "parent_executable", None) or ""
     if field == "executable":
         return _basename(event)
     if field == "parent_executable":
@@ -424,6 +432,8 @@ def _leaf_matches(leaf: dict[str, Any], event: Any) -> bool:
             return result if op == "in" else not result
         if op == "contains" and isinstance(expected, str) and "/" in expected:
             return expected in full_path
+    if field in {"executable_path", "parent_executable_path"} and op == "contains":
+        return isinstance(expected, str) and expected in value
     if field in NUMERIC_CONDITION_FIELDS:
         value = _coerce_numeric(value)
         if isinstance(expected, list):
@@ -627,11 +637,16 @@ def _apply_allowlists(
         if match["rule_id"] != "POR-DET-005":
             continue
         details = match.get("details", {})
-        # A maintenance-shell exception does not approve its subsequent tools.
-        # Only an exact allowlist match for this tool event suppresses the pair.
-        suppressor = suppressed_source_events.get(details.get("tool_event_id"))
-        if suppressor is not None:
-            suppressed.append({**match, "suppressed_by_allowlist_id": suppressor})
+        # Both concrete source events must have exact approved exceptions.
+        # Approval of either endpoint alone cannot exempt the whole sequence.
+        shell_approval = suppressed_source_events.get(details.get("shell_event_id"))
+        tool_approval = suppressed_source_events.get(details.get("tool_event_id"))
+        if shell_approval is not None and tool_approval is not None:
+            suppressed.append({
+                **match,
+                "suppressed_by_allowlist_id": tool_approval,
+                "suppressed_by_allowlist_ids": [shell_approval, tool_approval],
+            })
         else:
             active.append(match)
 

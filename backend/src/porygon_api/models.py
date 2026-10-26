@@ -99,7 +99,11 @@ class ImageIdentity(Base):
 class ContainerIdentity(Base):
     __tablename__ = "container_identities"
     __table_args__ = (
-        UniqueConstraint("docker_host_id", "container_id", name="uq_container_identity_host_container"),
+        UniqueConstraint(
+            "docker_host_id",
+            "container_id",
+            name="uq_container_identity_host_container",
+        ),
         Index("ix_container_identities_name", "container_name"),
         Index("ix_container_identities_image_digest", "image_digest"),
         Index("ix_container_identities_last_seen_at", "last_seen_at"),
@@ -129,6 +133,11 @@ class ProcessExecEvent(Base):
         Index("ix_process_exec_events_pid", "docker_host_id", "process_pid", "occurred_at"),
         Index("ix_process_exec_events_parent_event", "parent_event_id"),
         Index("ix_process_exec_events_correlation", "correlation_status"),
+        Index(
+            "ix_process_exec_events_pending_parent",
+            "received_at",
+            postgresql_where=text("parent_event_id IS NULL AND container_id IS NOT NULL"),
+        ),
     )
 
     event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -239,9 +248,15 @@ class CalibratedRarityModel(Base):
             "status IN ('draft', 'active', 'retired')",
             name="ck_calibrated_rarity_models_status",
         ),
-        CheckConstraint("min_calibration_runs >= 1", name="ck_calibrated_rarity_models_min_calibration"),
+        CheckConstraint(
+            "min_calibration_runs >= 1",
+            name="ck_calibrated_rarity_models_min_calibration",
+        ),
         CheckConstraint("fit_run_count >= 0", name="ck_calibrated_rarity_models_fit_count"),
-        CheckConstraint("calibration_run_count >= 1", name="ck_calibrated_rarity_models_calibration_count"),
+        CheckConstraint(
+            "calibration_run_count >= 1",
+            name="ck_calibrated_rarity_models_calibration_count",
+        ),
         UniqueConstraint("model_key", name="uq_calibrated_rarity_models_model_key"),
         Index("ix_calibrated_rarity_models_scope_status", "profile_scope_id", "status"),
         Index("ix_calibrated_rarity_models_protocol", "protocol_id"),
@@ -271,7 +286,9 @@ class CalibratedRarityModel(Base):
 class CalibratedModelRun(Base):
     __tablename__ = "calibrated_model_runs"
     __table_args__ = (
-        CheckConstraint("split_role IN ('fit', 'calibration')", name="ck_calibrated_model_runs_role"),
+        CheckConstraint(
+            "split_role IN ('fit', 'calibration')", name="ck_calibrated_model_runs_role"
+        ),
         UniqueConstraint("model_id", "run_id", name="uq_calibrated_model_runs_model_run"),
         Index("ix_calibrated_model_runs_model_role", "model_id", "split_role"),
         Index("ix_calibrated_model_runs_run", "run_id"),
@@ -279,7 +296,9 @@ class CalibratedModelRun(Base):
 
     model_run_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     model_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"), nullable=False
+        String(36),
+        ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"),
+        nullable=False,
     )
     run_id: Mapped[str] = mapped_column(String(128), nullable=False)
     split_role: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -300,7 +319,9 @@ class CalibrationBlock(Base):
 
     block_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     model_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"), nullable=False
+        String(36),
+        ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"),
+        nullable=False,
     )
     run_id: Mapped[str] = mapped_column(String(128), nullable=False)
     block_statistic_id: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -334,7 +355,9 @@ class CalibratedRarityScore(Base):
     score_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
     model_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"), nullable=False
+        String(36),
+        ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"),
+        nullable=False,
     )
     protocol_id: Mapped[str] = mapped_column(String(64), nullable=False)
     profile_scope_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -442,7 +465,9 @@ class DetectionAllowlist(Base):
 class CustomDetectionRule(Base):
     __tablename__ = "custom_detection_rules"
     __table_args__ = (
-        CheckConstraint("target IN ('process', 'runtime')", name="ck_custom_detection_rules_target"),
+        CheckConstraint(
+            "target IN ('process', 'runtime')", name="ck_custom_detection_rules_target"
+        ),
         CheckConstraint(
             "severity_weight >= 0 AND severity_weight <= 1",
             name="ck_custom_detection_rules_severity_range",
@@ -485,7 +510,7 @@ class DetectionRun(Base):
     __tablename__ = "detection_runs"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('insufficient_data', 'no_findings', 'findings_only', 'incident_created')",
+            "status IN ('insufficient_data', 'no_findings', 'findings_only', 'incident_created', 'incident_updated')",
             name="ck_detection_runs_status",
         ),
         UniqueConstraint("run_key", name="uq_detection_runs_run_key"),
@@ -553,6 +578,13 @@ class Incident(Base):
         UniqueConstraint("detection_run_id", name="uq_incidents_detection_run"),
         Index("ix_incidents_image_digest_first_seen", "image_digest", "first_seen_at"),
         Index("ix_incidents_status", "status"),
+        Index(
+            "uq_incidents_active_group",
+            "grouping_key",
+            unique=True,
+            postgresql_where=text("grouping_key IS NOT NULL AND status IN ('open','acknowledged')"),
+            sqlite_where=text("grouping_key IS NOT NULL AND status IN ('open','acknowledged')"),
+        ),
         Index("ix_incidents_severity", "severity_score"),
         Index("ix_incidents_created_at", "created_at"),
     )
@@ -562,6 +594,12 @@ class Incident(Base):
         String(36),
         ForeignKey("detection_runs.run_id", ondelete="RESTRICT"),
         nullable=False,
+    )
+    grouping_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latest_detection_run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("detection_runs.run_id", ondelete="RESTRICT"),
+        nullable=True,
     )
     score_id: Mapped[str] = mapped_column(
         String(36),
@@ -588,6 +626,21 @@ class Incident(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     closure_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class DetectionIncidentLink(Base):
+    __tablename__ = "detection_incident_links"
+    detection_run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("detection_runs.run_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    incident_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("incidents.incident_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
 
 class IncidentEvidence(Base):
@@ -648,6 +701,11 @@ class ResponseRecommendation(Base):
         ForeignKey("incidents.incident_id", ondelete="RESTRICT"),
         nullable=False,
     )
+    evidence_run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("detection_runs.run_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     target_container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
     policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -699,7 +757,9 @@ class ResponseExecution(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
     executor_instance_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     pre_state: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     post_state: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
@@ -709,11 +769,17 @@ class ResponseExecution(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    rollback_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rollback_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     rollback_requested_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     rollback_note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    rollback_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    rollback_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rollback_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rollback_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class ResponseAuditEvent(Base):
@@ -772,7 +838,9 @@ class ImageScan(Base):
     requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
     request_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     scanner_instance_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -792,7 +860,9 @@ class SbomArtifact(Base):
 
     artifact_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     scan_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("image_scans.scan_id", ondelete="CASCADE"), nullable=False
+        String(36),
+        ForeignKey("image_scans.scan_id", ondelete="CASCADE"),
+        nullable=False,
     )
     image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
     format: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -813,7 +883,9 @@ class VulnerabilityReportArtifact(Base):
 
     artifact_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     scan_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("image_scans.scan_id", ondelete="CASCADE"), nullable=False
+        String(36),
+        ForeignKey("image_scans.scan_id", ondelete="CASCADE"),
+        nullable=False,
     )
     image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
     format: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -828,8 +900,14 @@ class VulnerabilityReportArtifact(Base):
 class VulnerabilityIntel(Base):
     __tablename__ = "vulnerability_intel"
     __table_args__ = (
-        CheckConstraint("epss_score IS NULL OR (epss_score >= 0 AND epss_score <= 1)", name="ck_vulnerability_intel_epss_score"),
-        CheckConstraint("epss_percentile IS NULL OR (epss_percentile >= 0 AND epss_percentile <= 1)", name="ck_vulnerability_intel_epss_percentile"),
+        CheckConstraint(
+            "epss_score IS NULL OR (epss_score >= 0 AND epss_score <= 1)",
+            name="ck_vulnerability_intel_epss_score",
+        ),
+        CheckConstraint(
+            "epss_percentile IS NULL OR (epss_percentile >= 0 AND epss_percentile <= 1)",
+            name="ck_vulnerability_intel_epss_percentile",
+        ),
         Index("ix_vulnerability_intel_kev", "kev"),
         Index("ix_vulnerability_intel_epss", "epss_score"),
     )
@@ -854,7 +932,12 @@ class VulnerabilityFinding(Base):
     __tablename__ = "vulnerability_findings"
     __table_args__ = (
         UniqueConstraint(
-            "scan_id", "cve_id", "target", "package_type", "package_name", "installed_version",
+            "scan_id",
+            "cve_id",
+            "target",
+            "package_type",
+            "package_name",
+            "installed_version",
             name="uq_vulnerability_findings_identity",
         ),
         Index("ix_vulnerability_findings_scan", "scan_id"),
@@ -865,11 +948,15 @@ class VulnerabilityFinding(Base):
 
     finding_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     scan_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("image_scans.scan_id", ondelete="CASCADE"), nullable=False
+        String(36),
+        ForeignKey("image_scans.scan_id", ondelete="CASCADE"),
+        nullable=False,
     )
     image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
     cve_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("vulnerability_intel.cve_id", ondelete="RESTRICT"), nullable=False
+        String(32),
+        ForeignKey("vulnerability_intel.cve_id", ondelete="RESTRICT"),
+        nullable=False,
     )
     target: Mapped[str] = mapped_column(Text, nullable=False)
     class_name: Mapped[str] = mapped_column(String(64), nullable=False)

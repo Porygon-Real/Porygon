@@ -10,7 +10,7 @@ fi
 
 RUN_ID="${PORYGON_VERIFY_RUN_ID:-$(date -u +%Y%m%dt%H%M%Sz)-$$}"
 PROBE_NAME="porygon-scoring-${RUN_ID}"
-PROBE_IMAGE="alpine:3.20"
+PROBE_IMAGE="alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
 CONTAINERS_PATH="artifacts/local/scoring-${RUN_ID}-containers.json"
 
 fail() {
@@ -81,9 +81,55 @@ profile_id="${profile_values[0]}"
 window_seconds="${profile_values[1]}"
 training_start="${profile_values[2]}"
 [[ "$window_seconds" =~ ^[0-9]+$ ]] || fail "Active profile window_seconds is invalid"
+# Validate the opt-in extractor against this run's real captured training data.
+# Keep it a draft so the active legacy profile and downstream checks retain
+# their recorded scoring contract.
+curl --fail --silent --show-error --get \
+  --data-urlencode 'feature_schema_version=porygon.behaviour.command-lineage' \
+  "${base_url}/api/v1/anomaly-scores/config" > artifacts/scoring-command-config.json
+python3 - <<'PY'
+import json
+profile=json.load(open('artifacts/scoring-active-profile.json'))
+payload={key:profile[key] for key in ('image_digest','training_start','training_end','window_seconds')}
+payload.update(feature_schema_version='porygon.behaviour.command-lineage',
+               minimum_process_events=1,minimum_nonempty_windows=1,
+               approved_by='verification',approval_reference='scripts/verify_anomaly_scoring.sh')
+open('artifacts/scoring-command-profile-payload.json','w').write(json.dumps(payload))
+PY
+command_profile_code="$(curl --silent --show-error --output artifacts/scoring-command-profile.json --write-out '%{http_code}' \
+  -X POST -H 'Content-Type: application/json' -H "X-Porygon-Internal-Token: ${token}" \
+  --data-binary @artifacts/scoring-command-profile-payload.json \
+  "${base_url}/internal/v1/baselines/build")"
+if [[ "$command_profile_code" == "409" ]]; then
+  existing_profile_id="$(python3 - <<'PY'
+import json,re
+text=json.load(open('artifacts/scoring-command-profile.json')).get('detail','')
+match=re.fullmatch(r'Identical profile already exists as ([0-9a-f-]{36})',text)
+assert match,text
+print(match.group(1))
+PY
+)"
+  curl --fail --silent --show-error "${base_url}/api/v1/baselines/${existing_profile_id}" > artifacts/scoring-command-profile.json
+else
+  [[ "$command_profile_code" == "201" ]] || fail "Command-lineage profile build returned HTTP $command_profile_code"
+fi
+python3 - <<'PY' || fail "Real telemetry did not satisfy the command-lineage profile contract"
+import json
+profile=json.load(open('artifacts/scoring-command-profile.json'))
+config=json.load(open('artifacts/scoring-command-config.json'))
+assert profile['feature_schema_version']=='porygon.behaviour.command-lineage'
+assert profile['status']=='draft'
+assert profile['quality']['passed']
+assert profile['features']['categorical_distributions']['command_shape']
+assert profile['training_manifest']['observation_coverage']['command_event_fraction']>=0.8
+assert config['algorithm_version']=='porygon.distance.command-lineage'
+assert len(profile['features']['extractor_contract_sha256'])==64
+PY
+pass "Real captured commands built a quality-passing opt-in draft without changing the active profile"
+
 
 cleanup_probe
-docker pull "$PROBE_IMAGE" >/dev/null
+docker image inspect "$PROBE_IMAGE" >/dev/null 2>&1 || docker pull "$PROBE_IMAGE" >/dev/null
 expected_repo_digest="$(docker image inspect "$PROBE_IMAGE" --format '{{index .RepoDigests 0}}')"
 [[ "$expected_repo_digest" == "$digest" ]] || fail "Probe image digest changed between profiling and scoring"
 docker run --detach \

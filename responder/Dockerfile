@@ -14,7 +14,8 @@ COPY src ./src
 COPY tests ./tests
 
 RUN pip install --no-cache-dir ".[test]" \
-    && chown -R porygon:porygon /app
+    && mkdir -p /var/lib/porygon \
+    && chown -R porygon:porygon /app /var/lib/porygon
 
 USER 10004:10004
 

@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     version: str = "0.7.0"
+    completion_store_path: str = "/var/lib/porygon/completions.sqlite"
+    completion_max_operations: int = Field(default=50000, ge=100, le=1000000)
 
 
 @lru_cache

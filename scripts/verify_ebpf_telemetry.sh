@@ -10,7 +10,7 @@ fi
 
 RUN_ID="${PORYGON_VERIFY_RUN_ID:-$(date -u +%Y%m%dt%H%M%Sz)-$$}"
 PROBE_NAME="porygon-telemetry-${RUN_ID}"
-PROBE_IMAGE="alpine:3.20"
+PROBE_IMAGE="alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
 LOCAL_ARTIFACT_DIR="artifacts/local"
 CONTAINERS_PATH="${LOCAL_ARTIFACT_DIR}/telemetry-${RUN_ID}-containers.json"
 PROCESS_EVENTS_PATH="${LOCAL_ARTIFACT_DIR}/telemetry-${RUN_ID}-process.json"
@@ -68,7 +68,12 @@ mkdir -p "$EVIDENCE_DIR"
 docker compose config --quiet
 pass "Compose configuration is valid"
 
-docker compose up --detach --build --wait
+# A caller may prebuild images separately (for example with a local build network).
+build_options=()
+if [[ "${PORYGON_VERIFY_BUILD:-true}" == "true" ]]; then
+  build_options+=(--build)
+fi
+docker compose up --detach "${build_options[@]}" --wait
 pass "PostgreSQL, backend, Docker collector, telemetry adapter, and Falco started"
 
 falco_id="$(docker compose ps -q falco)"
@@ -92,7 +97,7 @@ telemetry_mounts="$(docker inspect "$(docker compose ps -q telemetry)" --format 
 [[ "$telemetry_mounts" != *"docker.sock"* ]] || fail "Telemetry adapter must not have Docker socket access"
 pass "Docker and kernel privileges are isolated from the backend and telemetry adapter"
 
-docker pull "$PROBE_IMAGE" >/dev/null
+docker image inspect "$PROBE_IMAGE" >/dev/null 2>&1 || docker pull "$PROBE_IMAGE" >/dev/null
 expected_repo_digest="$(docker image inspect "$PROBE_IMAGE" --format '{{index .RepoDigests 0}}')"
 [[ "$expected_repo_digest" == *@sha256:* ]] || fail "Could not resolve a repository digest for $PROBE_IMAGE"
 

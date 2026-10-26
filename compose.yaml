@@ -276,6 +276,7 @@ services:
       PORYGON_HEARTBEAT_INTERVAL_SECONDS: ${RESPONDER_HEARTBEAT_INTERVAL_SECONDS:-10}
       PORYGON_POLL_SECONDS: ${PORYGON_RESPONSE_POLL_SECONDS:-1}
       PORYGON_LEASE_SECONDS: ${PORYGON_RESPONSE_LEASE_SECONDS:-30}
+      PORYGON_COMPLETION_MAX_OPERATIONS: ${PORYGON_COMPLETION_MAX_OPERATIONS:-50000}
       PORYGON_DOCKER_BASE_URL: unix:///var/run/docker.sock
       PORYGON_DOCKER_TIMEOUT_SECONDS: ${PORYGON_DOCKER_TIMEOUT_SECONDS:-10}
       PORYGON_STOP_TIMEOUT_SECONDS: ${PORYGON_STOP_TIMEOUT_SECONDS:-10}
@@ -290,6 +291,7 @@ services:
     group_add:
       - "${DOCKER_GID:?Set DOCKER_GID to the group ID owning the Docker socket}"
     volumes:
+      - porygon_responder_state:/var/lib/porygon
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro
     healthcheck:
       test:
@@ -450,4 +452,5 @@ volumes:
   porygon_collector_data:
   porygon_telemetry_data:
   porygon_falco_events:
+  porygon_responder_state:
   porygon_trivy_cache:

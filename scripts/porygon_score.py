@@ -10,6 +10,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from private_api import open_api
+
 
 def _request(method: str, url: str, token: str | None = None, payload: dict | None = None) -> object:
     body = None
@@ -21,7 +23,7 @@ def _request(method: str, url: str, token: str | None = None, payload: dict | No
         headers["X-Porygon-Internal-Token"] = token
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with open_api(request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")

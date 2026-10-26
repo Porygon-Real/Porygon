@@ -597,6 +597,9 @@ class PorygonThreatClassifier:
         drift_score: float | None = None,
     ) -> MLThreatClassificationResult:
         """Classify a Porygon FeatureDocument observation window."""
+        for document in (observation_features, baseline_features):
+            if document and document.get("schema_version") not in {None, "porygon.behaviour.v1"}:
+                raise ValueError("The classifier requires the porygon.behaviour.v1 feature contract")
         fvec = extract_features_from_document(observation_features, baseline_features, drift_score)
         return self.predict_vector(fvec)
 

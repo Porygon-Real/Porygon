@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import queue
+import sqlite3
 import threading
 import time
 from contextlib import suppress
@@ -18,7 +20,9 @@ logger = logging.getLogger("porygon.collector.docker")
 
 
 class DockerEventSource:
-    def __init__(self, settings: Settings, state: CollectorState, store: OutboxStore) -> None:
+    def __init__(
+        self, settings: Settings, state: CollectorState, store: OutboxStore
+    ) -> None:
         self.settings = settings
         self.state = state
         self.store = store
@@ -52,7 +56,11 @@ class DockerEventSource:
         client.ping()
         info = client.info()
         daemon_id = str(info.get("ID") or "unknown-docker-daemon")
-        host_id = daemon_id if self.settings.docker_host_id == "auto" else self.settings.docker_host_id
+        host_id = (
+            daemon_id
+            if self.settings.docker_host_id == "auto"
+            else self.settings.docker_host_id
+        )
         self.state.set(
             docker_connected=True,
             effective_docker_host_id=host_id,
@@ -93,31 +101,89 @@ class DockerEventSource:
             decode=True,
             filters={"type": ["container", "network"]},
         )
-        for raw_event in stream:
-            if self.stop_event.is_set():
-                return False
-            event = normalize_event(client, self.store, host_id, raw_event)
-            try:
-                inserted = self.store.enqueue(event)
-            except SpoolFullError as exc:
-                self.state.increment(spool_overflow_count=1)
-                self.state.set(docker_last_error=str(exc))
-                logger.error("%s", exc)
-                self.stop_event.wait(1.0)
-                return False
+        # A bounded reader lets sparse streams flush without waiting for Docker's
+        # window to end. Its queue applies backpressure when the disk spool is full.
+        incoming: queue.Queue = queue.Queue(maxsize=200)
+        cancelled = threading.Event()
+        done = object()
 
-            self.store.update_cursor(int(event["time_nano"]))
-            self.state.set(
-                docker_last_success_at=datetime.now(timezone.utc),
-                last_event_at=datetime.now(timezone.utc),
-                queue_depth=self.store.count(),
-                docker_last_error=None,
-            )
-            if inserted:
-                self.state.increment(events_enqueued=1)
-            else:
-                self.state.increment(duplicate_events_ignored=1)
-        return True
+        def offer(value) -> None:
+            while not cancelled.is_set() and not self.stop_event.is_set():
+                try:
+                    incoming.put(value, timeout=0.05)
+                    return
+                except queue.Full:
+                    continue
+
+        def read() -> None:
+            try:
+                for raw in stream:
+                    if cancelled.is_set() or self.stop_event.is_set():
+                        break
+                    offer(raw)
+            except Exception as exc:
+                offer(exc)
+            finally:
+                offer(done)
+
+        reader = threading.Thread(target=read, name="porygon-event-reader", daemon=True)
+        reader.start()
+        batch: list[dict] = []
+        deadline = time.monotonic() + 0.05
+        batch_limit = min(100, self.store.max_events)
+
+        def flush() -> bool:
+            nonlocal deadline
+            if not batch:
+                deadline = time.monotonic() + 0.05
+                return True
+            while not self.stop_event.is_set():
+                try:
+                    inserted, depth = self.store.enqueue_batch(
+                        batch, cursor=max(int(event["time_nano"]) for event in batch)
+                    )
+                    self.state.increment(
+                        events_enqueued=inserted,
+                        duplicate_events_ignored=len(batch) - inserted,
+                    )
+                    self.state.set(
+                        docker_last_success_at=datetime.now(timezone.utc),
+                        last_event_at=datetime.now(timezone.utc),
+                        queue_depth=depth,
+                        docker_last_error=None,
+                    )
+                    batch.clear()
+                    deadline = time.monotonic() + 0.05
+                    return True
+                except SpoolFullError as exc:
+                    self.state.increment(spool_overflow_count=1)
+                    self.state.set(docker_last_error=str(exc))
+                    self.stop_event.wait(1.0)
+            return False
+
+        try:
+            while not self.stop_event.is_set():
+                try:
+                    raw = incoming.get(timeout=max(0.001, deadline - time.monotonic()))
+                except queue.Empty:
+                    if not flush():
+                        return False
+                    continue
+                if raw is done:
+                    return flush()
+                if isinstance(raw, Exception):
+                    flush()
+                    raise raw
+                batch.append(normalize_event(client, self.store, host_id, raw))
+                if len(batch) >= batch_limit or time.monotonic() >= deadline:
+                    if not flush():
+                        return False
+            return False
+        finally:
+            cancelled.set()
+            with suppress(Exception):
+                stream.close()
+            reader.join(timeout=1)
 
     def _run(self) -> None:
         reconnect_delay = 1
@@ -148,7 +214,7 @@ class DockerEventSource:
                         docker_last_error=None,
                     )
 
-            except (DockerException, OSError, ValueError) as exc:
+            except (DockerException, OSError, ValueError, sqlite3.Error) as exc:
                 self.state.set(
                     docker_connected=False,
                     event_stream_connected=False,

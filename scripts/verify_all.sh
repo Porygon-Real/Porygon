@@ -260,7 +260,9 @@ PY
   for script_path in scripts/*.sh backend/entrypoint.sh; do
     bash -n "$script_path" || return $?
   done
-  docker compose build backend || return $?
+  if [[ "${PORYGON_VERIFY_BUILD:-true}" == "true" ]]; then
+    docker compose build backend || return $?
+  fi
   docker compose run --rm --no-deps --entrypoint python backend -c \
     'from porygon_api.main import app; schema=app.openapi(); assert len(schema["paths"]) >= 60; print("openapi_paths=" + str(len(schema["paths"])))' || return $?
   docker compose run --rm --no-deps --entrypoint alembic backend upgrade head --sql >/dev/null || return $?
@@ -274,10 +276,14 @@ PY
 unit_checks() {
   local service_name
   for service_name in backend collector telemetry responder scanner; do
-    docker compose run --rm --no-deps --build --entrypoint pytest "$service_name" -q || return $?
+    local build_options=()
+    if [[ "${PORYGON_VERIFY_BUILD:-true}" == "true" ]]; then
+      build_options+=(--build)
+    fi
+    docker compose run --rm --no-deps "${build_options[@]}" --entrypoint pytest "$service_name" -q || return $?
   done
   # The experiment harness is stdlib-only and runs on the host rather than in a service image.
-  python3 -m pytest experiments/tests -q || return $?
+  python3 -m pytest experiments/tests scripts/tests -q || return $?
 }
 
 live_safe_checks() {

@@ -43,7 +43,7 @@ BACKEND_SRC = ROOT / "backend/src/porygon_api"
 EXPERIMENTS_DIR = ROOT / "experiments"
 
 SERVICE_NAMES = ("backend", "collector", "telemetry", "responder", "scanner", "gateway", "postgres")
-SCORING_FILES = ("scoring.py", "calibrated_rarity.py", "detection.py", "rule_expression.py")
+SCORING_FILES = ("baseline.py", "command_shapes.py", "scoring.py", "calibrated_rarity.py", "detection.py", "rule_expression.py")
 COMPOSE_PROJECT_DEFAULT = "porygon"
 DOCKER_TIMEOUT = 30
 

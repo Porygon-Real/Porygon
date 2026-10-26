@@ -156,3 +156,19 @@ def test_late_parent_repairs_only_same_container_without_starvation() -> None:
         assert child.parent_event_id == parent.event_id
         assert missing.parent_event_id is None
         assert unrelated.parent_event_id is None
+
+
+def test_automatic_parent_repair_bounds_recent_work_but_manual_repair_can_recover_old_events():
+    from porygon_api.main import _reconcile_process_parents
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    ProcessExecEvent.__table__.create(engine)
+    now = datetime(2026, 7, 21, 12, 0, tzinfo=timezone.utc)
+    with Session(engine) as db:
+        parent = _event("e" * 64, now - timedelta(seconds=1), 42)
+        child = _event("f" * 64, now, 43)
+        child.process_ppid = 42
+        db.add_all([parent, child])
+        db.commit()
+        assert _reconcile_process_parents(db, since=now + timedelta(days=1)) == 0
+        assert _reconcile_process_parents(db) == 1
+        assert child.parent_event_id == parent.event_id

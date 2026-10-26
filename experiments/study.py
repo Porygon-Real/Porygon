@@ -17,6 +17,8 @@ even if this orchestrator is bypassed.
 
 from __future__ import annotations
 
+from scripts.private_api import open_api
+
 import json
 import shutil
 import subprocess
@@ -299,7 +301,7 @@ def _post(base_url: str, path: str, payload: dict, token: str) -> Any:
         headers={"Content-Type": "application/json", "X-Porygon-Internal-Token": token},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
+    with open_api(request, timeout=120) as response:
         return json.loads(response.read())
 
 
@@ -387,6 +389,7 @@ def stage_analysis(ctx: dict) -> dict:
                 run = detection.get("run", {})
                 entry["rule_matches"] = run.get("matches_count")
                 entry["incident_created"] = run.get("incident_created")
+                entry["incident_detected"] = detection.get("incident") is not None
                 entry["detection_status"] = run.get("status")
             except urllib.error.HTTPError as error:
                 entry["detection_error"] = error.read().decode("utf-8", "replace")[:200]

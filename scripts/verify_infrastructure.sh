@@ -26,7 +26,12 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is not installed"
 docker compose config --quiet
 pass "Compose configuration is valid"
 
-docker compose up --detach --build --wait
+# A caller may prebuild images separately (for example with a local build network).
+build_options=()
+if [[ "${PORYGON_VERIFY_BUILD:-true}" == "true" ]]; then
+  build_options+=(--build)
+fi
+docker compose up --detach "${build_options[@]}" --wait
 pass "All infrastructure services reached healthy state"
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
@@ -73,6 +78,19 @@ secret_prefixes = ("PORYGON_", "POSTGRES_")
 assert not any(item.startswith(secret_prefixes) for item in gateway["Config"]["Env"])
 PY
 pass "Loopback gateway exposes no backend port or service credentials"
+
+# Replacing only the backend must not leave the running gateway bound to an old IP.
+docker compose up --detach --no-deps --force-recreate --wait backend
+for attempt in {1..15}; do
+  if curl --fail --silent "${base_url}/health/ready" >/dev/null; then
+    break
+  fi
+  sleep 1
+done
+curl --fail --silent --show-error "${base_url}/health/ready" >/dev/null
+[[ "$(docker compose ps --quiet gateway)" == "$gateway_id" ]] || fail "Gateway was unexpectedly replaced"
+pass "Gateway recovered after backend replacement without restarting"
+
 
 sleep 2
 services_before="$(curl --fail --silent --show-error "${base_url}/api/v1/services")"

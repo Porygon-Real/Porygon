@@ -330,7 +330,7 @@ def test_insufficient_score_never_creates_an_incident() -> None:
 
 def test_ruleset_and_run_keys_are_deterministic_and_versioned() -> None:
     assert RULESET_VERSION == "porygon.detection.v1"
-    assert MATCHER_REVISION == "porygon.detection.matcher.tool-scoped-allowlists"
+    assert MATCHER_REVISION == "porygon.detection.matcher.raw-multicall-paths"
     assert len(ruleset_hash()) == 64
     empty_hash = allowlist_set_hash([])
     first = build_detection_run_key("00000000-0000-0000-0000-000000000001", empty_hash)
@@ -842,15 +842,15 @@ def test_custom_rules_match_full_paths_without_breaking_basename_rules(field,op,
     assert evaluate_custom_condition(condition,event,{}) is expected
 
 
-@pytest.mark.parametrize("allow_tool", [False, True])
-def test_shell_exception_does_not_allowlist_unknown_child_tools(allow_tool: bool) -> None:
+@pytest.mark.parametrize("allow_shell,allow_tool", [(False, False), (True, False), (False, True), (True, True)])
+def test_shell_exception_does_not_allowlist_unknown_child_tools(allow_shell: bool, allow_tool: bool) -> None:
     score = Score()
     shell = ProcessEvent("shell", score.window_start, "c1", "sh", "/bin/sh")
     tool = ProcessEvent("tool", score.window_start + timedelta(seconds=1),
                         "c1", "helper", "/tmp/helper", parent_executable="/bin/sh")
     other = ProcessEvent("other", score.window_start + timedelta(seconds=2),
                          "c1", "unknown", "/tmp/unknown", parent_executable="/bin/sh")
-    allowlists = [Allowlist("shell-exception", "s" * 64, "POR-DET-002", "/bin/sh")]
+    allowlists = [Allowlist("shell-exception", "s" * 64, "POR-DET-002", "/bin/sh")] if allow_shell else []
     if allow_tool:
         allowlists.append(Allowlist("tool-exception", "t" * 64, "POR-DET-004", "/tmp/helper"))
     result = evaluate_detection(anomaly_score=score, profile=Profile(),
@@ -858,10 +858,41 @@ def test_shell_exception_does_not_allowlist_unknown_child_tools(allow_tool: bool
                                 allowlists=allowlists)
     sequences = {item["details"]["tool_event_id"] for item in result["matches"]
                  if item["rule_id"] == "POR-DET-005"}
-    assert sequences == ({"other"} if allow_tool else {"tool", "other"})
+    assert sequences == ({"other"} if allow_shell and allow_tool else {"tool", "other"})
     assert result["incident_eligible"] is True
     suppressed_sequences = [item for item in result["suppressed_matches"]
                             if item["rule_id"] == "POR-DET-005"]
-    assert len(suppressed_sequences) == int(allow_tool)
-    if allow_tool:
+    assert len(suppressed_sequences) == int(allow_shell and allow_tool)
+    if allow_shell and allow_tool:
         assert suppressed_sequences[0]["suppressed_by_allowlist_id"] == "tool-exception"
+
+
+@pytest.mark.parametrize("child_container,parent_container", [(None, None), ("c1", "c2")])
+def test_ancestor_rules_reject_legacy_cross_container_links(child_container, parent_container):
+    from porygon_api.detection import _ancestor_chain
+    parent = ProcessEvent("parent", Score().window_start, parent_container, "sh", "/bin/sh")
+    child = ProcessEvent("child", Score().window_start, child_container, "tool", "/tmp/tool",
+                         parent_event_id=parent.event_id)
+    assert _ancestor_chain(child, {parent.event_id: parent}) == []
+
+
+@pytest.mark.parametrize('field,value', [('executable_path','/tmp/busybox'),('parent_executable_path','/opt/toybox')])
+def test_multicall_path_fields_keep_raw_paths(field,value):
+    from porygon_api.detection import evaluate_custom_condition
+    event = ProcessEvent('p',Score().window_start,'container','busybox','/tmp/busybox',
+        command_line='busybox nc -l',parent_name='toybox',parent_executable='/opt/toybox')
+    # Parent command lines are present on persisted events; add it to this older test fixture.
+    event.parent_command_line = 'toybox sh'
+    assert evaluate_custom_condition({'field':field,'op':'equals','value':value},event,{})
+    assert evaluate_custom_condition({'field':'executable','op':'equals','value':'nc'},event,{})
+    assert evaluate_custom_condition({'field':'parent_executable','op':'equals','value':'sh'},event,{})
+
+
+def test_explicit_path_contains_is_case_sensitive_and_does_not_invent_missing_paths():
+    from porygon_api.detection import evaluate_custom_condition
+    event = ProcessEvent('p',Score().window_start,'container','busybox','/tmp/busybox',
+        command_line='busybox nc')
+    assert not evaluate_custom_condition({'field':'executable_path','op':'contains','value':'/TMP/'},event,{})
+    assert evaluate_custom_condition({'field':'executable','op':'contains','value':'/tmp/'},event,{})
+    event.executable = None
+    assert not evaluate_custom_condition({'field':'executable_path','op':'equals','value':'busybox'},event,{})
