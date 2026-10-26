@@ -187,6 +187,65 @@ class ProcessExecEvent(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class KernelRuntimeEvent(Base):
+    __tablename__ = "kernel_runtime_events"
+    __table_args__ = (
+        CheckConstraint(
+            "runtime_action IN ('net_outbound','memfd_create','file_write_open','file_write')",
+            name="ck_kernel_events_action",
+        ),
+        CheckConstraint(
+            "correlation_status IN ('resolved','unresolved','ambiguous')",
+            name="ck_kernel_events_correlation",
+        ),
+        Index(
+            "ix_kernel_events_host_container_time", "docker_host_id", "container_id", "time_nano"
+        ),
+        Index("ix_kernel_events_action_time", "runtime_action", "occurred_at"),
+        Index("ix_kernel_events_image_time", "image_digest", "occurred_at"),
+        Index(
+            "ix_kernel_events_pending_identity",
+            "received_at",
+            postgresql_where=text("image_id IS NULL OR image_digest IS NULL"),
+        ),
+    )
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sensor_instance_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sensor_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    rule_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[str] = mapped_column(String(32), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    time_nano: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_number: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_action: Mapped[str] = mapped_column(String(32), nullable=False)
+    return_value: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reported_docker_host_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reported_container_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    docker_host_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    container_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    image_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    image_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_digest: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    correlation_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    process_pid: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    process_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    executable: Mapped[str | None] = mapped_column(Text, nullable=True)
+    command_line: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_uid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    remote_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    remote_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    local_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    local_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    memory_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_fields: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    raw_event: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class BehaviorProfile(Base):
     __tablename__ = "behavior_profiles"
     __table_args__ = (

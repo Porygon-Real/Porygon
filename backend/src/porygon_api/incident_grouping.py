@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -24,15 +25,13 @@ def utc(value: datetime) -> datetime:
     )
 
 
-import re
-
 CID_HEX = re.compile(r"^[0-9a-fA-F]{12,64}$")
 
 
-def grouping_key(
-    score, container_ids, process_events, runtime_events, configuration=None
-):
-    if not container_ids or any(not isinstance(cid, str) or not CID_HEX.match(cid) for cid in container_ids):
+def grouping_key(score, container_ids, process_events, runtime_events, configuration=None):
+    if not container_ids or any(
+        not isinstance(cid, str) or not CID_HEX.match(cid) for cid in container_ids
+    ):
         return None
     scope = set()
     for cid in container_ids:
@@ -44,9 +43,7 @@ def grouping_key(
         if not matching:
             return None
         hosts = {
-            event.docker_host_id
-            for event in matching
-            if getattr(event, "docker_host_id", None)
+            event.docker_host_id for event in matching if getattr(event, "docker_host_id", None)
         }
         if len(hosts) > 1:
             return None
@@ -64,9 +61,7 @@ def attach_incident(db, run, score, result, process_events, runtime_events, now)
         matches = list(result["matches"])
         incident_matches = [item for item in matches if item["incident_eligible"]]
         times = [datetime.fromisoformat(item["occurred_at"]) for item in matches]
-        container_ids = sorted(
-            {item["container_id"] for item in matches if item["container_id"]}
-        )
+        container_ids = sorted({item["container_id"] for item in matches if item["container_id"]})
         leading = max(
             incident_matches,
             key=lambda item: (
@@ -152,11 +147,7 @@ def attach_incident(db, run, score, result, process_events, runtime_events, now)
                 "incident_grouped": True,
             }
         db.flush()
-        db.add(
-            DetectionIncidentLink(
-                detection_run_id=run.run_id, incident_id=incident.incident_id
-            )
-        )
+        db.add(DetectionIncidentLink(detection_run_id=run.run_id, incident_id=incident.incident_id))
 
         evidence_documents = [
             {

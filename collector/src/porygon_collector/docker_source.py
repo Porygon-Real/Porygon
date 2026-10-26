@@ -69,14 +69,14 @@ class DockerEventSource:
         )
         return client, host_id
 
-    def _warm_container_cache(self, client: docker.APIClient) -> None:
+    def _warm_container_cache(self, client: docker.APIClient, host_id: str) -> None:
         for summary in client.containers(all=True):
             container_id = summary.get("Id")
             if not container_id:
                 continue
             try:
                 snapshot = build_container_snapshot(client, str(container_id))
-                self.store.cache_container(str(container_id), snapshot)
+                self.store.cache_container(str(container_id), snapshot, docker_host_id=host_id)
             except (APIError, DockerException):
                 logger.debug("Could not cache container %s", str(container_id)[:12])
 
@@ -190,7 +190,7 @@ class DockerEventSource:
         while not self.stop_event.is_set():
             try:
                 self.client, host_id = self._connect()
-                self._warm_container_cache(self.client)
+                self._warm_container_cache(self.client, host_id)
                 reconnect_delay = 1
 
                 while not self.stop_event.is_set():

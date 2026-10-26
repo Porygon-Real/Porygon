@@ -44,6 +44,12 @@ document.addEventListener('alpine:init', () => {
     },
     processSummary: null,
     runtimeSummary: null,
+    kernelEvents: [],
+    kernelActionFilter: '',
+    kernelHostFilter: '',
+    kernelLoading: false,
+    kernelError: '',
+    kernelRequestId: 0,
 
     // Behavioural Anomaly & Distance
     scores: [],
@@ -172,7 +178,7 @@ document.addEventListener('alpine:init', () => {
         icon: 'ph-cpu',
         tag: 'KERNEL HOOK',
         badgeColor: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
-        summary: 'Falco\'s modern-eBPF driver attaches to process-execution tracepoints without modifying container binaries or kernel source. It observes execve/execveat only in v1 -- no network, file, or socket syscalls are captured (see docs/research/threat-model.md).',
+        summary: 'Falco\'s modern-eBPF driver attaches to process-execution tracepoints without modifying container binaries or kernel source. Execve/execveat feed behavioral scoring. Outbound connections, memory-backed file creation, and sensitive-path writes are stored separately as typed kernel evidence.',
         technicalHook: 'evt.type in (execve, execveat)  [falco/porygon_rules.yaml]',
         inputSource: 'Process-execution syscalls from containerized processes.',
         outputArtifact: 'Process-exec records (process name, executable path, full command line, ppid, uid/gid, parent context) -- see falco/porygon_rules.yaml for the exact output fields.',
@@ -319,7 +325,7 @@ document.addEventListener('alpine:init', () => {
         icon: 'ph-funnel',
         tag: 'REACHABILITY ENGINE',
         badgeColor: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
-        summary: 'Cross-correlates static CVE manifests against live kernel execution memory to prove whether a vulnerability is reachable or dormant dead-code.',
+        summary: 'Correlates package inventories with deployment, process execution, and published-port evidence to prioritize vulnerability review.',
         technicalHook: 'Evidence Ladder:\n1. Package Present -> 2. Deployed -> 3. Runtime Observed -> 4. Port Published',
         inputSource: 'CycloneDX SBOM packages (Tier 1) intersected with eBPF execve telemetry (Tier 1).',
         outputArtifact: 'Vulnerability findings partitioned by evidence stage (package present / deployed / runtime-observed / port-published); no aggregate noise-reduction percentage has been measured.',
@@ -712,6 +718,7 @@ document.addEventListener('alpine:init', () => {
       await this.fetchRules();
       await this.fetchCustomRules();
       await this.refreshAllData();
+      await this.fetchKernelEvents();
       this.initCharts();
       // after DOM for charts, init reveal again for bento
       if (typeof window.initReveal === 'function') window.initReveal();
@@ -755,6 +762,7 @@ document.addEventListener('alpine:init', () => {
       // Auto-refresh interval every 3 seconds (lightweight polling without heavy summaries)
       setInterval(() => {
         this.pollLiveTelemetry();
+        if (this.activeTab === 'telemetry') this.fetchKernelEvents();
       }, 3000);
       // heavier refresh for system info every 10s
       setInterval(() => { this.fetchSystemInfo(); this.fetchAnomalyScores(); }, 10000);
@@ -1044,6 +1052,49 @@ document.addEventListener('alpine:init', () => {
         this.containers = [];
         this.showToast('Container inventory is unavailable', 'warn');
       }
+    },
+
+    async fetchKernelEvents() {
+      const requestId = ++this.kernelRequestId;
+      this.kernelLoading = true;
+      this.kernelError = '';
+      const query = new URLSearchParams({ limit: '100' });
+      if (this.kernelActionFilter) query.set('runtime_action', this.kernelActionFilter);
+      if (this.kernelHostFilter.trim()) query.set('docker_host_id', this.kernelHostFilter.trim());
+      if (this.selectedContainer) query.set('container_id', this.selectedContainer);
+      try {
+        const response = await fetch(`/api/v1/kernel-events?${query}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const events = await response.json();
+        if (!Array.isArray(events)) throw new Error('Invalid kernel event response');
+        if (requestId === this.kernelRequestId) this.kernelEvents = events;
+      } catch (error) {
+        if (requestId === this.kernelRequestId) {
+          this.kernelEvents = [];
+          this.kernelError = 'Kernel activity is unavailable. Refresh to retry.';
+        }
+      } finally {
+        if (requestId === this.kernelRequestId) this.kernelLoading = false;
+      }
+    },
+
+    kernelActionLabel(event) {
+      return ({ net_outbound: 'Outbound connection', memfd_create: 'Memory-backed file',
+        file_write_open: 'Writable file open', file_write: 'File write' })[event.runtime_action] || event.runtime_action;
+    },
+
+    kernelTarget(event) {
+      if (event.remote_address) {
+        const address = event.remote_address.includes(':') ? `[${event.remote_address}]` : event.remote_address;
+        return `${address}:${event.remote_port}`;
+      }
+      return event.file_path || event.memory_name || '—';
+    },
+
+    kernelOutcome(event) {
+      if (event.runtime_action === 'net_outbound') return event.return_value < 0 ? 'In progress' : 'Connected';
+      if (event.runtime_action === 'file_write') return `${event.return_value} bytes`;
+      return `fd ${event.return_value}`;
     },
 
     async fetchEvents() {

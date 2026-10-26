@@ -13,6 +13,7 @@ This module is deliberately pure with respect to session control: callers
 own the transaction (commit or rollback), so a caller can run this inside a
 dry-run session, a scheduled job, or an API request.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from porygon_api.models import ProcessExecEvent, RuntimeEvent
+from porygon_api.models import ProcessExecEvent, RuntimeEvent, KernelRuntimeEvent
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class RetentionPlan:
     cutoff: datetime
     process_exec_events_eligible: int
     runtime_events_eligible: int
+    kernel_runtime_events_eligible: int = 0
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,7 @@ class RetentionResult:
     process_exec_events_deleted: int
     runtime_events_deleted: int
     dry_run: bool
+    kernel_runtime_events_deleted: int = 0
 
 
 def _cutoff(retention_days: int, *, now: datetime | None = None) -> datetime:
@@ -46,19 +49,35 @@ def _cutoff(retention_days: int, *, now: datetime | None = None) -> datetime:
     return reference - timedelta(days=retention_days)
 
 
-def plan_retention(db: Session, *, retention_days: int, now: datetime | None = None) -> RetentionPlan:
+def plan_retention(
+    db: Session, *, retention_days: int, now: datetime | None = None
+) -> RetentionPlan:
     """Report how many rows are eligible for deletion, without deleting anything."""
     cutoff = _cutoff(retention_days, now=now)
-    process_count = db.scalar(
-        select(func.count()).select_from(ProcessExecEvent).where(ProcessExecEvent.occurred_at < cutoff)
-    ) or 0
-    runtime_count = db.scalar(
-        select(func.count()).select_from(RuntimeEvent).where(RuntimeEvent.occurred_at < cutoff)
-    ) or 0
+    process_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(ProcessExecEvent)
+            .where(ProcessExecEvent.occurred_at < cutoff)
+        )
+        or 0
+    )
+    runtime_count = (
+        db.scalar(
+            select(func.count()).select_from(RuntimeEvent).where(RuntimeEvent.occurred_at < cutoff)
+        )
+        or 0
+    )
     return RetentionPlan(
         cutoff=cutoff,
         process_exec_events_eligible=process_count,
         runtime_events_eligible=runtime_count,
+        kernel_runtime_events_eligible=db.scalar(
+            select(func.count())
+            .select_from(KernelRuntimeEvent)
+            .where(KernelRuntimeEvent.occurred_at < cutoff)
+        )
+        or 0,
     )
 
 
@@ -76,6 +95,8 @@ def apply_retention(
     backlog cannot hold a long-running transaction or an unbounded lock. Call
     repeatedly (e.g. from a scheduled job) until the counts reach zero.
     """
+    if max_delete_batch < 1:
+        raise ValueError("max_delete_batch must be positive")
     cutoff = _cutoff(retention_days, now=now)
 
     if dry_run:
@@ -85,6 +106,9 @@ def apply_retention(
             process_exec_events_deleted=min(plan.process_exec_events_eligible, max_delete_batch),
             runtime_events_deleted=min(plan.runtime_events_eligible, max_delete_batch),
             dry_run=True,
+            kernel_runtime_events_deleted=min(
+                plan.kernel_runtime_events_eligible, max_delete_batch
+            ),
         )
 
     process_ids = db.scalars(
@@ -98,9 +122,11 @@ def apply_retention(
         chunk_size = 500
         for i in range(0, len(process_ids), chunk_size):
             chunk = process_ids[i : i + chunk_size]
-            process_deleted += db.query(ProcessExecEvent).filter(
-                ProcessExecEvent.event_id.in_(chunk)
-            ).delete(synchronize_session=False)
+            process_deleted += (
+                db.query(ProcessExecEvent)
+                .filter(ProcessExecEvent.event_id.in_(chunk))
+                .delete(synchronize_session=False)
+            )
 
     runtime_ids = db.scalars(
         select(RuntimeEvent.event_id)
@@ -113,13 +139,30 @@ def apply_retention(
         chunk_size = 500
         for i in range(0, len(runtime_ids), chunk_size):
             chunk = runtime_ids[i : i + chunk_size]
-            runtime_deleted += db.query(RuntimeEvent).filter(
-                RuntimeEvent.event_id.in_(chunk)
-            ).delete(synchronize_session=False)
+            runtime_deleted += (
+                db.query(RuntimeEvent)
+                .filter(RuntimeEvent.event_id.in_(chunk))
+                .delete(synchronize_session=False)
+            )
+
+    kernel_ids = db.scalars(
+        select(KernelRuntimeEvent.event_id)
+        .where(KernelRuntimeEvent.occurred_at < cutoff)
+        .order_by(KernelRuntimeEvent.occurred_at, KernelRuntimeEvent.event_id)
+        .limit(max_delete_batch)
+    ).all()
+    kernel_deleted = 0
+    for offset in range(0, len(kernel_ids), 500):
+        kernel_deleted += (
+            db.query(KernelRuntimeEvent)
+            .filter(KernelRuntimeEvent.event_id.in_(kernel_ids[offset : offset + 500]))
+            .delete(synchronize_session=False)
+        )
 
     return RetentionResult(
         cutoff=cutoff,
         process_exec_events_deleted=process_deleted,
         runtime_events_deleted=runtime_deleted,
         dry_run=False,
+        kernel_runtime_events_deleted=kernel_deleted,
     )

@@ -81,7 +81,15 @@ def normalize_falco_event(
 ) -> dict[str, Any] | None:
     rule_name = _text(raw_event.get("rule"), 255)
     if rule_name != expected_rule:
-        return None
+        # Lazy import avoids a module cycle while sharing existing timestamp and
+        # cleaning helpers. Existing exec identities and queued payloads are unchanged.
+        from porygon_telemetry.kernel import normalize_kernel_event
+
+        return normalize_kernel_event(
+            raw_event,
+            sensor_instance_id=sensor_instance_id,
+            reported_docker_host_id=reported_docker_host_id,
+        )
 
     source = _text(raw_event.get("source"), 32) or "syscall"
     if source != "syscall":
@@ -91,6 +99,8 @@ def normalize_falco_event(
     if not isinstance(fields_value, dict):
         raise ValueError("Falco output_fields must be a JSON object")
     fields = {str(key): value for key, value in fields_value.items()}
+    if fields.get("evt.type", "execve") not in {"execve", "execveat"}:
+        raise ValueError("Exec telemetry cannot contain other syscalls")
 
     time_nano, occurred_at = _event_time(raw_event, fields)
     process_pid = _nonnegative_int(fields.get("proc.pid"))
@@ -134,9 +144,7 @@ def normalize_falco_event(
         "reported_image_ref": _image_ref(fields),
         "process_pid": process_pid,
         "process_ppid": _nonnegative_int(fields.get("proc.ppid")),
-        "process_vpid": _nonnegative_int(
-            fields.get("proc.vpid", fields.get("thread.vpid"))
-        ),
+        "process_vpid": _nonnegative_int(fields.get("proc.vpid", fields.get("thread.vpid"))),
         "process_name": _text(fields.get("proc.name"), 255),
         "executable": _text(fields.get("proc.exepath")),
         "command_line": _text(fields.get("proc.cmdline")),

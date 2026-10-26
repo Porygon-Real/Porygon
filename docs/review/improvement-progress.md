@@ -145,3 +145,14 @@ IMP-06 is already implemented as a named opt-in command/lineage contract with fi
 - No commits, pushes, merges, branch changes or frozen research/presentation edits were made. Logs, source/image hashes, the local scan/SBOM hashes and live rare score are in [local/sparse validation results](../../artifacts/local/local-sparse-validation/results.json).
 
 From the latest supplied matrix, IMP-08 and IMP-15 are now implemented as explicit options; IMP-06 remains available through the existing command/lineage contract. IMP-02 (separate multi-syscall sensor data) and IMP-07 (trained structural ML inputs) remain open.
+
+
+## Kernel runtime telemetry architecture pass
+
+- [ ] High — Add typed kernel-runtime storage, migration and authenticated batch ingestion plus query/summary APIs. Keep new syscalls outside exec and Docker-lifecycle feature streams.
+- [ ] High — Extend Falco collection and the durable outbox/delivery protocol for outbound connections, memfd creation and sensitive file-write activity; retain atomic checkpoints, retries and compatibility for queued exec events.
+- [ ] High — Move deferred identity/parent repair off ingestion requests into a bounded, recoverable worker shared by process and kernel evidence.
+- [ ] High — Validate security boundaries, replay isolation, sensor/host identity, worker ownership, migrations and real syscall capture under adapter/backend outages.
+- [ ] High — Rebuild affected services, execute all five active-container suites, protocol integrity and complete live acceptance, preserving frozen artifacts and concurrent user changes.
+
+Scope: backend models/schemas/routes and reconciliation lifecycle, telemetry normalization/spool/delivery, Falco runtime rules, focused tests, verification and capability documentation. Out of scope: frozen research/presentation files, changing existing score/model semantics, automatic containment from a single syscall, git publication, and the concurrently edited `.gitignore` / `AUDIT_IMPROVEMENTS.md`. Done criteria include authenticated kernel batch replay with zero duplicate row growth, real non-loopback socket/memfd/sensitive-write capture, successful queued-exec compatibility, and the full service/live workflow. Source evidence already shows SEC-01 and PERF-01 implemented; those supplied reports are stale and will be regression-checked instead of reimplemented.

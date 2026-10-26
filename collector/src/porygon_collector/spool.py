@@ -260,7 +260,10 @@ class OutboxStore:
         value = self.get_metadata("last_event_time_nano")
         return int(value) if value is not None else None
 
-    def cache_container(self, container_id: str, snapshot: dict[str, Any]) -> None:
+    def cache_container(
+        self, container_id: str, snapshot: dict[str, Any], *, docker_host_id: str | None = None
+    ) -> None:
+        container_id = self._container_cache_key(container_id, docker_host_id)
         serialized = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
         with self._connect() as connection:
             connection.execute(
@@ -273,10 +276,25 @@ class OutboxStore:
                 (container_id, serialized, time.time()),
             )
 
-    def get_cached_container(self, container_id: str) -> dict[str, Any] | None:
+    @staticmethod
+    def _container_cache_key(container_id: str, docker_host_id: str | None) -> str:
+        # Structured JSON prevents collisions even with custom host names.
+        return json.dumps([docker_host_id, container_id]) if docker_host_id is not None else container_id
+
+    def get_cached_container(
+        self, container_id: str, *, docker_host_id: str | None = None,
+        max_age_seconds: float | None = None,
+    ) -> dict[str, Any] | None:
+        container_id = self._container_cache_key(container_id, docker_host_id)
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT snapshot FROM container_cache WHERE container_id = ?",
+                "SELECT snapshot, updated_at FROM container_cache WHERE container_id = ?",
                 (container_id,),
             ).fetchone()
-        return json.loads(row["snapshot"]) if row else None
+        if row is None:
+            return None
+        age = time.time() - float(row["updated_at"])
+        # Clock rollback must not turn an old snapshot into an indefinitely fresh one.
+        if max_age_seconds is not None and not 0 <= age < max_age_seconds:
+            return None
+        return json.loads(row["snapshot"])

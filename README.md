@@ -175,6 +175,10 @@ The responder keeps an intent and completion journal in the `porygon_responder_s
 
 Collector events and their replay cursor commit atomically in batches of up to 100 events or approximately 50 ms, retaining FULL durability. Spool capacity applies backpressure without advancing the cursor past uncommitted events. External AI audit evidence is escaped and isolated from system instructions; malformed assessments and invented command citations are rejected. AI suggestions remain advisory.
 
+### Kernel runtime evidence and background identity repair
+
+Outbound connections, memory-backed file creation, and sensitive-path writable opens and actual writes are stored separately from exec scoring. The telemetry tab provides host and activity filters. Durable mixed-channel delivery, replay-safe storage, background identity repair, and verification commands are documented in [Kernel runtime telemetry](docs/kernel-runtime-telemetry.md). Configure the worker with `PORYGON_RECONCILIATION_ENABLED` (default `true`), `PORYGON_RECONCILIATION_INTERVAL_SECONDS` (default `5`), and `PORYGON_RECONCILIATION_BATCH_SIZE` (default `500`).
+
 ### Internal administration and verification
 
 The public gateway rejects `/internal` and `/internal/*`. Internal services use the private Docker network. Local administrative commands use authenticated Docker-exec transport for internal routes, so the backend needs no published host port:

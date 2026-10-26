@@ -35,6 +35,7 @@ class RetentionRunOut(BaseModel):
     cutoff: datetime
     process_exec_events_deleted: int
     runtime_events_deleted: int
+    kernel_runtime_events_deleted: int = 0
     dry_run: bool
 
 
@@ -120,7 +121,7 @@ class ProcessExecEventIn(BaseModel):
     occurred_at: datetime
     time_nano: int = Field(ge=0)
     event_number: int | None = Field(default=None, ge=0)
-    event_type: str = Field(min_length=1, max_length=64)
+    event_type: Literal["execve", "execveat"]
 
     reported_docker_host_id: str | None = Field(default=None, max_length=128)
     reported_container_id: str | None = Field(default=None, max_length=128)
@@ -231,6 +232,107 @@ class ProcessEventSummary(BaseModel):
     by_process_name: dict[str, int]
 
 
+class KernelRuntimeEventIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sensor_instance_id: str = Field(min_length=1, max_length=128)
+    sensor_hostname: str | None = Field(default=None, max_length=255)
+    source: Literal["falco"] = "falco"
+    rule_name: str = Field(min_length=1, max_length=255)
+    priority: str = Field(min_length=1, max_length=32)
+    occurred_at: datetime
+    time_nano: int = Field(ge=0)
+    event_number: int | None = Field(default=None, ge=0)
+    event_type: Literal[
+        "connect",
+        "memfd_create",
+        "open",
+        "openat",
+        "openat2",
+        "write",
+        "writev",
+        "pwrite",
+        "pwritev",
+    ]
+    runtime_action: Literal["net_outbound", "memfd_create", "file_write_open", "file_write"]
+    return_value: int
+    reported_docker_host_id: str | None = Field(default=None, max_length=128)
+    reported_container_id: str = Field(pattern=r"^[0-9a-f]{12,64}$")
+    process_pid: int = Field(ge=0)
+    process_name: str | None = Field(default=None, max_length=255)
+    executable: str | None = None
+    command_line: str | None = None
+    user_uid: int | None = Field(default=None, ge=0)
+    remote_address: str | None = Field(default=None, max_length=45)
+    remote_port: int | None = Field(default=None, ge=1, le=65535)
+    local_address: str | None = Field(default=None, max_length=45)
+    local_port: int | None = Field(default=None, ge=0, le=65535)
+    file_path: str | None = None
+    memory_name: str | None = None
+    output_fields: dict[str, Any] = Field(default_factory=dict)
+    raw_event: dict[str, Any]
+
+    @field_validator("occurred_at")
+    @classmethod
+    def timezone_required(cls, value):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Kernel timestamps require a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_syscall(self):
+        from ipaddress import ip_address
+
+        expected = {
+            "net_outbound": {"connect"},
+            "memfd_create": {"memfd_create"},
+            "file_write_open": {"open", "openat", "openat2"},
+            "file_write": {"write", "writev", "pwrite", "pwritev"},
+        }
+        if self.event_type not in expected[self.runtime_action]:
+            raise ValueError("Kernel action does not match its syscall")
+        if self.return_value < 0 and not (
+            self.runtime_action == "net_outbound" and self.return_value == -115
+        ):
+            raise ValueError("Unsupported failed syscall outcome")
+        if self.runtime_action == "net_outbound":
+            remote = ip_address(self.remote_address or "")
+            if (
+                remote.is_loopback
+                or remote.is_unspecified
+                or (
+                    getattr(remote, "ipv4_mapped", None) is not None
+                    and remote.ipv4_mapped.is_loopback
+                )
+                or self.remote_port is None
+            ):
+                raise ValueError("Outbound telemetry requires a non-loopback peer and port")
+            self.remote_address = str(remote)
+            if self.local_address is not None:
+                self.local_address = str(ip_address(self.local_address))
+        if self.runtime_action in {"file_write_open", "file_write"} and not self.file_path:
+            raise ValueError("File activity requires an observed path")
+        if self.runtime_action == "file_write" and self.return_value <= 0:
+            raise ValueError("File write evidence requires positive written bytes")
+        return self
+
+
+class KernelRuntimeEventOut(KernelRuntimeEventIn):
+    model_config = ConfigDict(from_attributes=True)
+    docker_host_id: str | None
+    container_id: str | None
+    container_name: str | None
+    image_id: str | None
+    image_ref: str | None
+    image_digest: str | None
+    correlation_status: Literal["resolved", "unresolved", "ambiguous"]
+    received_at: datetime
+
+
+class KernelRuntimeBatchIn(BaseModel):
+    events: list[KernelRuntimeEventIn] = Field(min_length=1, max_length=250)
+
+
 class ImageIdentityOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -278,6 +380,7 @@ class SystemInfo(BaseModel):
     registered_services: int
     runtime_events: int
     process_exec_events: int
+    kernel_runtime_events: int = 0
     known_containers: int
     known_images: int
     behavior_profiles: int

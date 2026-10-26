@@ -17,18 +17,14 @@ _RETENTION_LOCK = 728164092
 
 
 class RetentionWorker:
-    def __init__(
-        self, settings: Settings, session_factory: Callable[[], Session]
-    ) -> None:
+    def __init__(self, settings: Settings, session_factory: Callable[[], Session]) -> None:
         self.settings = settings
         self.session_factory = session_factory
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
 
     def start(self) -> None:
-        self.thread = threading.Thread(
-            target=self._run, name="porygon-retention", daemon=True
-        )
+        self.thread = threading.Thread(target=self._run, name="porygon-retention", daemon=True)
         self.thread.start()
 
     def stop(self) -> None:
@@ -56,9 +52,10 @@ class RetentionWorker:
             )
             db.commit()
             logger.info(
-                "Retention batch completed: process=%d runtime=%d cutoff=%s",
+                "Retention batch completed: process=%d runtime=%d kernel=%d cutoff=%s",
                 result.process_exec_events_deleted,
                 result.runtime_events_deleted,
+                result.kernel_runtime_events_deleted,
                 result.cutoff.isoformat(),
             )
             return True
@@ -70,6 +67,4 @@ class RetentionWorker:
             except Exception:
                 # Session context rollback/close releases the transaction lock.
                 # Keep the worker alive for the next interval after an outage.
-                logger.exception(
-                    "Retention batch failed; retrying at the next interval"
-                )
+                logger.exception("Retention batch failed; retrying at the next interval")

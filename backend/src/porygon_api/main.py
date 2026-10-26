@@ -34,6 +34,8 @@ from porygon_api.run_calibration import build_calibration_artifact, score_test_b
 from porygon_api.retention import apply_retention
 from porygon_api.incident_grouping import attach_incident
 from porygon_api.maintenance import RetentionWorker
+from porygon_api.reconciliation import IdentityReconciliationWorker
+from porygon_api.kernel_events import router as kernel_router, reconcile_kernel_identities
 from porygon_api.config import get_settings
 from porygon_api.detection import (
     CORRELATION_WINDOW_SECONDS,
@@ -47,6 +49,7 @@ from porygon_api.detection import (
     evaluate_detection,
     ruleset_hash,
 )
+from porygon_api.identity import resolve_container_identity as _resolve_container_identity
 from porygon_api.db import SessionLocal, get_db
 from porygon_api.models import (
     AnomalyScore,
@@ -64,6 +67,7 @@ from porygon_api.models import (
     ImageIdentity,
     ProcessExecEvent,
     RuntimeEvent,
+    KernelRuntimeEvent,
     ServiceHeartbeat,
     ImageScan,
     SbomArtifact,
@@ -198,11 +202,22 @@ audit_slots = BoundedSemaphore(settings.ai_max_concurrent_audits)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     worker = RetentionWorker(settings, SessionLocal)
+    repair = IdentityReconciliationWorker(
+        SessionLocal,
+        lambda db, limit: _reconcile_process_identities(db, limit=limit, commit=False),
+        reconcile_kernel_identities,
+        interval=settings.reconciliation_interval_seconds,
+        batch_size=settings.reconciliation_batch_size,
+    )
+    app.state.identity_reconciliation = repair
     if settings.retention_scheduler_enabled:
         worker.start()
+    if settings.reconciliation_enabled:
+        repair.start()
     try:
         yield
     finally:
+        repair.stop()
         worker.stop()
 
 
@@ -215,6 +230,18 @@ app = FastAPI(
         "explainable scoring, incidents, human-approved response, and evidence-staged vulnerability enrichment."
     ),
 )
+
+
+app.include_router(kernel_router)
+
+
+@app.get("/api/v1/reconciliation/status", tags=["system"])
+def reconciliation_status():
+    repair = getattr(app.state, "identity_reconciliation", None)
+    return {
+        "enabled": settings.reconciliation_enabled,
+        **(repair.snapshot() if repair else {"running": False}),
+    }
 
 
 @app.get("/", include_in_schema=False)
@@ -500,15 +527,17 @@ def ingest_runtime_events(
             values["received_at"] = received_at
 
             statement = pg_insert(RuntimeEvent).values(**values)
-            result = db.execute(statement.on_conflict_do_nothing(index_elements=["event_id"]))
-            inserted += int(result.rowcount or 0)
+            result = db.execute(statement.on_conflict_do_nothing(index_elements=["event_id"]).returning(RuntimeEvent.event_id))
+            inserted += int(result.scalar_one_or_none() is not None)
 
             observed_at = min(values["occurred_at"], received_at)
             _upsert_image_identity(db, event, observed_at)
             _upsert_container_identity(db, event, observed_at)
 
         db.commit()
-        _reconcile_process_identities(db)
+        repair = getattr(app.state, "identity_reconciliation", None)
+        if repair is not None:
+            repair.notify()
     except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("Runtime event batch failed")
@@ -522,31 +551,6 @@ def ingest_runtime_events(
         inserted=inserted,
         duplicates=len(payload.events) - inserted,
     )
-
-
-def _resolve_container_identity(
-    db: Session,
-    reported_container_id: str | None,
-    reported_docker_host_id: str | None,
-) -> tuple[str, ContainerIdentity | None]:
-    if not reported_container_id or reported_container_id == "host":
-        return "unresolved", None
-
-    statement = select(ContainerIdentity).where(
-        or_(
-            ContainerIdentity.container_id == reported_container_id,
-            ContainerIdentity.container_id.startswith(reported_container_id),
-        )
-    )
-    if reported_docker_host_id:
-        statement = statement.where(ContainerIdentity.docker_host_id == reported_docker_host_id)
-
-    candidates = list(db.scalars(statement.order_by(desc(ContainerIdentity.last_seen_at)).limit(2)))
-    if len(candidates) == 1:
-        return "resolved", candidates[0]
-    if len(candidates) > 1:
-        return "ambiguous", None
-    return "unresolved", None
 
 
 def _find_parent_event_id(
@@ -582,12 +586,12 @@ def _find_parent_event_id(
     return db.scalar(statement.order_by(desc(ProcessExecEvent.time_nano)).limit(1))
 
 
-def _reconcile_process_identities(db: Session, limit: int = 1000) -> int:
+def _reconcile_process_identities(db: Session, limit: int = 1000, *, commit: bool = True) -> int:
     """Repair out-of-order telemetry once one unambiguous identity is committed.
 
-    Both ingestion paths call this after committing their batch. The second
-    committer therefore sees the first even when lifecycle and exec ingestion
-    race. Unmatchable records do not consume the bounded repair batch.
+    The background repair worker and explicit operator repair call this after
+    ingestion commits. Lifecycle and exec batches can therefore arrive in either
+    order. Unmatchable records do not consume the bounded repair batch.
     """
     matching = (
         select(func.count())
@@ -665,7 +669,8 @@ def _reconcile_process_identities(db: Session, limit: int = 1000) -> int:
         since=datetime.now(timezone.utc)
         - timedelta(seconds=settings.parent_correlation_lookback_seconds),
     )
-    db.commit()
+    if commit:
+        db.commit()
     return repaired
 
 
@@ -806,11 +811,13 @@ def ingest_process_events(
             )
 
             statement = pg_insert(ProcessExecEvent).values(**values)
-            result = db.execute(statement.on_conflict_do_nothing(index_elements=["event_id"]))
-            inserted += int(result.rowcount or 0)
+            result = db.execute(statement.on_conflict_do_nothing(index_elements=["event_id"]).returning(ProcessExecEvent.event_id))
+            inserted += int(result.scalar_one_or_none() is not None)
 
         db.commit()
-        _reconcile_process_identities(db)
+        repair = getattr(app.state, "identity_reconciliation", None)
+        if repair is not None:
+            repair.notify()
     except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("Process event batch failed")
@@ -3217,6 +3224,7 @@ def system_info(db: Session = Depends(get_db)) -> SystemInfo:
         environment=settings.environment,
         registered_services=registered_services,
         runtime_events=runtime_events,
+        kernel_runtime_events=db.scalar(select(func.count()).select_from(KernelRuntimeEvent)) or 0,
         process_exec_events=process_exec_events,
         known_containers=known_containers,
         known_images=known_images,
@@ -4289,9 +4297,7 @@ def complete_image_scan(
     intel_payload = {item.cve_id: item for item in payload.vulnerability_intel}
     cve_ids = {str(item["cve_id"]) for item in findings}
     existing_intel_list = (
-        db.scalars(
-            select(VulnerabilityIntel).where(VulnerabilityIntel.cve_id.in_(cve_ids))
-        ).all()
+        db.scalars(select(VulnerabilityIntel).where(VulnerabilityIntel.cve_id.in_(cve_ids))).all()
         if cve_ids
         else []
     )

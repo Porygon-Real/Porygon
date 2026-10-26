@@ -388,6 +388,48 @@
         </div>
 
       </div>
+      <section id="kernel-runtime-panel" class="border-2 border-[#111111] bg-white p-5 mt-6" aria-labelledby="kernel-runtime-title">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#111111] pb-3 mb-4">
+          <div>
+            <h2 id="kernel-runtime-title" class="font-body font-bold text-xl text-[#111111]">Kernel runtime activity</h2>
+            <p class="text-xs text-neutral-600">Connections, memory-backed files and sensitive-path writes. Showing the latest 100 matching records.</p>
+          </div>
+          <button id="kernel-runtime-refresh" type="button" class="btn-news-secondary text-xs px-3 py-2" @click="fetchKernelEvents()" :disabled="kernelLoading">Refresh activity</button>
+        </div>
+        <div class="flex flex-wrap gap-4 mb-4">
+          <div>
+            <label for="kernel-runtime-action" class="text-xs font-bold block mb-1">Activity</label>
+            <select id="kernel-runtime-action" class="border border-[#111111] p-2 text-sm bg-white" x-model="kernelActionFilter" @change="fetchKernelEvents()">
+              <option value="">All activity</option><option value="net_outbound">Outbound connections</option>
+              <option value="memfd_create">Memory-backed files</option><option value="file_write_open">Writable file opens</option><option value="file_write">File writes</option>
+            </select>
+          </div>
+          <div>
+            <label for="kernel-runtime-host" class="text-xs font-bold block mb-1">Docker host ID</label>
+            <input id="kernel-runtime-host" type="text" maxlength="128" class="border border-[#111111] p-2 text-sm font-mono" x-model="kernelHostFilter" @input.debounce.400ms="fetchKernelEvents()" placeholder="All hosts">
+          </div>
+        </div>
+        <p id="kernel-runtime-error" class="text-sm text-red-700 mb-3" role="status" x-show="kernelError" x-text="kernelError"></p>
+        <p class="font-mono text-xs text-neutral-500 mb-2" x-show="kernelLoading" role="status">Loading kernel activity…</p>
+        <div class="overflow-x-auto">
+          <table id="kernel-runtime-table" class="w-full text-left text-xs">
+            <thead><tr class="border-b border-[#111111] text-neutral-600"><th class="p-2">Time</th><th class="p-2">Activity</th><th class="p-2">Container / host</th><th class="p-2">Process</th><th class="p-2">Target</th><th class="p-2">Result</th></tr></thead>
+            <tbody>
+              <template x-for="event in kernelEvents" :key="event.event_id">
+                <tr class="border-b border-neutral-200 align-top">
+                  <td class="p-2 font-mono whitespace-nowrap" x-text="event.occurred_at"></td>
+                  <td class="p-2 font-bold" x-text="kernelActionLabel(event)"></td>
+                  <td class="p-2 font-mono"><span x-text="event.container_name || event.reported_container_id"></span><br><span class="text-neutral-500" x-text="event.docker_host_id || event.sensor_instance_id"></span></td>
+                  <td class="p-2 font-mono" x-text="(event.executable || event.process_name || 'unknown') + ' / pid ' + event.process_pid"></td>
+                  <td class="p-2 font-mono break-all" x-text="kernelTarget(event)"></td>
+                  <td class="p-2 font-mono whitespace-nowrap" x-text="kernelOutcome(event)"></td>
+                </tr>
+              </template>
+              <tr x-show="!kernelLoading && !kernelError && kernelEvents.length === 0"><td colspan="6" class="p-5 text-neutral-500">No captured kernel activity in this selection.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </main>
 
     <!-- ======================================================================
