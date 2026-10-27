@@ -149,10 +149,24 @@ From the latest supplied matrix, IMP-08 and IMP-15 are now implemented as explic
 
 ## Kernel runtime telemetry architecture pass
 
-- [ ] High — Add typed kernel-runtime storage, migration and authenticated batch ingestion plus query/summary APIs. Keep new syscalls outside exec and Docker-lifecycle feature streams.
-- [ ] High — Extend Falco collection and the durable outbox/delivery protocol for outbound connections, memfd creation and sensitive file-write activity; retain atomic checkpoints, retries and compatibility for queued exec events.
-- [ ] High — Move deferred identity/parent repair off ingestion requests into a bounded, recoverable worker shared by process and kernel evidence.
-- [ ] High — Validate security boundaries, replay isolation, sensor/host identity, worker ownership, migrations and real syscall capture under adapter/backend outages.
-- [ ] High — Rebuild affected services, execute all five active-container suites, protocol integrity and complete live acceptance, preserving frozen artifacts and concurrent user changes.
+- [x] High — Add typed kernel-runtime storage, migration and authenticated batch ingestion plus query/summary APIs. Keep new syscalls outside exec and Docker-lifecycle feature streams.
+- [x] High — Extend Falco collection and the durable outbox/delivery protocol for outbound connections, memfd creation and sensitive file-write activity; retain atomic checkpoints, retries and compatibility for queued exec events.
+- [x] High — Move deferred identity/parent repair off ingestion requests into a bounded, recoverable worker shared by process and kernel evidence.
+- [x] High — Validate security boundaries, replay isolation, sensor/host identity, worker ownership, migrations and real syscall capture under adapter/backend outages.
+- [x] High — Rebuild affected services, execute all five active-container suites, protocol integrity and complete live acceptance, preserving frozen artifacts and concurrent user changes.
 
 Scope: backend models/schemas/routes and reconciliation lifecycle, telemetry normalization/spool/delivery, Falco runtime rules, focused tests, verification and capability documentation. Out of scope: frozen research/presentation files, changing existing score/model semantics, automatic containment from a single syscall, git publication, and the concurrently edited `.gitignore` / `AUDIT_IMPROVEMENTS.md`. Done criteria include authenticated kernel batch replay with zero duplicate row growth, real non-loopback socket/memfd/sensitive-write capture, successful queued-exec compatibility, and the full service/live workflow. Source evidence already shows SEC-01 and PERF-01 implemented; those supplied reports are stale and will be regression-checked instead of reimplemented.
+
+
+### Verification of kernel runtime evidence and deferred repair
+
+- **381 active-container tests passed:** backend 283, telemetry 44, collector 28, responder 13, scanner 13. Six PostgreSQL-only checks skipped in the default backend suite were exercised in the PostgreSQL integration run.
+- **40 PostgreSQL integration checks passed** in disposable schemas: full migration upgrade/downgrade/re-upgrade, nonempty-table downgrade refusal, host ambiguity, atomic failure rollback, local identity enrichment, replica ownership, background recovery, and exact inserted/duplicate acknowledgements across all three ingestion paths, alongside existing scoring/incident/scan regressions.
+- **243 experiment and transport tests passed.** Static validation, OpenAPI generation, offline migration SQL, protocol integrity, infrastructure, lifecycle ingestion, eBPF replay/correlation, profiling, scoring, detection, approved exact-target pause, idempotent approval, rollback, and audit chronology passed.
+- **Real multi-syscall acceptance passed:** four typed events per probe (outbound connection, memory-backed file, writable open, positive file write), repeated through adapter and backend outages. Replaying the four normalized events inserted zero rows; loopback was excluded and the exec table retained only exec events.
+- The production-size retention regression processes 50,000 rows per legacy table with a 999-parameter SQLite limit, preserves the remaining row, covers kernel retention and dry-run reporting, and uses an in-memory synthetic database within the production container's small temporary-filesystem budget.
+- Live testing verified that Falco requires `base_syscalls.all=true` for these write-family rules. Network exclusions use the network field rather than an address field. Non-Docker cgroup labels are excluded from the Docker-ID kernel channel. Historical dead letters remain stored; the final exec gate recorded zero new malformed records and zero replay row growth.
+- All five service source and test trees match their active images. The shared scanner source was also rebuilt and retested to close an image mismatch. All eight services are healthy. Response execution and automatic retention are disabled, no response operation is pending, and the identity worker is running without an error.
+- Evidence: [kernel acceptance](../../artifacts/local/kernel-runtime-validation/acceptance.json), [source/image hashes and test results](../../artifacts/local/kernel-runtime-validation/verification.json), [headless dashboard checks](../../artifacts/local/kernel-runtime-validation/dashboard-check.json), and [capture integrity](../../artifacts/ebpf-capture-integrity.json). See [kernel telemetry operations](../kernel-runtime-telemetry.md) for endpoints and configuration.
+
+IMP-02 is implemented as a separate multi-syscall evidence channel. Trained structural ML inputs (IMP-07) remain outside this pass. Existing behavioral feature and scoring contracts, frozen research protocols, and presentation artifacts were preserved. No git publication or branch change was performed by this work.

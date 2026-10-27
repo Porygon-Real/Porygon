@@ -59,8 +59,8 @@ Porygon operates across three interconnected layers: the **Kernel & Ingestion Pl
  |  +--------------------------------+          +---------------------------------------+  |
  |  |    Statistical Baseline Profiler|          |   Explainable ML Threat Classifier    |  |
  |  | - Digest-bound training windows |          | - 12-feature runtime window extractor |  |
- |  | - Frequency rarity scoring      |          | - Tree Ensemble (Random Forest)       |  |
- |  | - Parent-child lineage tracking |          | - TreeSHAP local feature attribution  |  |
+ |  | - Frequency rarity scoring      |          | - Hand-authored heuristic trees       |  |
+ |  | - Parent-child lineage tracking |          | - Raw tree-path feature deltas        |  |
  |  +----------------+---------------+          +-------------------+-------------------+  |
  |                   |                                              |                      |
  |                   +----------------------+-----------------------+                      |
@@ -81,7 +81,7 @@ Porygon operates across three interconnected layers: the **Kernel & Ingestion Pl
  |   +------------------------------------+       +------------------------------------+   |
  |   |        porygon-dashboard           |       |         porygon-responder          |   |
  |   |  - Real-time Newsprint UI          |       |  - Cryptographic token validation  |   |
- |   |  - Visual TreeSHAP explanations    | <---> |  - Docker socket interface         |   |
+ |   |  - Raw tree-path explanations      | <---> |  - Docker socket interface         |   |
  |   |  - Containment authorization queue |       |  - Pause / Stop / Network Isolate  |   |
  |   +------------------------------------+       +------------------------------------+   |
  +-----------------------------------------------------------------------------------------+
@@ -114,8 +114,8 @@ Porygon operates across three interconnected layers: the **Kernel & Ingestion Pl
 
 ### 2. Behavioral Baseline & ML Threat Scoring
 1. **Statistical Profiler:** Evaluates whether the executed binary, command arguments, and parent-child process relationship were observed during the container's approved baseline training window.
-2. **Explainable ML Classifier:** Extracts 12 continuous metrics over rolling 60-second observation windows (e.g., shell command ratios, privilege escalation indicators, compiler executions, Jensen-Shannon distribution drift).
-3. The Tree Ensemble classifies activity into one of 5 MITRE tactics (`benign`, `reconnaissance`, `privilege_escalation`, `shell_escape`, `suspicious_tooling`) and calculates TreeSHAP feature attributions explaining *why* the prediction was made.
+2. **Explainable ML Classifier:** Extracts 12 continuous metrics from caller-selected observation windows or event sets (e.g., shell command ratios, privilege escalation indicators, compiler executions, Jensen-Shannon distribution drift).
+3. The hand-authored tree ensemble assigns one of 5 operational labels (`benign`, `reconnaissance`, `privilege_escalation`, `shell_escape`, `suspicious_tooling`) and reports tree-path deltas that reconstruct its raw class outputs before fixed score sharpening.
 
 ### 3. Vulnerability Reachability Correlation
 1. Concurrently, `porygon-scanner` runs static SBOM analysis and CVE vulnerability assessment via Aqua Security Trivy (v0.72.0), enriched by FIRST EPSS and CISA KEV intelligence on the container's immutable image digest.
@@ -125,6 +125,6 @@ Porygon operates across three interconnected layers: the **Kernel & Ingestion Pl
 ### 4. Human-Approved Containment
 1. If an incident exceeds threat thresholds, the Incident Correlation Engine issues a **Containment Recommendation** (`pause_container`, `stop_container`, or `observe_only`).
 2. The recommendation is queued in `porygon-dashboard`.
-3. An authorized human operator reviews the behavioral evidence, TreeSHAP attributions, and CVE reachability graph.
+3. An authorized human operator reviews the behavioral evidence, raw tree-path deltas, and CVE reachability graph.
 4. The operator approves the action using a cryptographically validated lease token.
 5. `porygon-responder` receives the signed action, verifies the clearance, and executes the containment action via the Docker daemon socket.

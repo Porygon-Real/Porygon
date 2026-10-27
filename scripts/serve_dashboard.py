@@ -92,6 +92,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def _dispatch_demo_route(self) -> None:
+        if os.environ.get("PORYGON_ACCESS_MODE", "local") != "local":
+            self.send_error(403, "Local demo routes are unavailable in authenticated mode")
+            return
         if os.environ.get(DEMO_MODE_ENV) != "1":
             self.send_error(
                 403,
@@ -143,12 +146,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length) if length > 0 else None
         headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "content-length")}
-        # Automatically inject operator token from local environment for proxied operator routes
-        # when running in local development / demo mode so secrets never leak into client code.
-        token = os.environ.get(OPERATOR_TOKEN_ENV, "")
-        if token and (OPERATOR_TOKEN_HEADER not in headers or headers[OPERATOR_TOKEN_HEADER] in ("dev-operator-clearance", "")):
-            headers[OPERATOR_TOKEN_HEADER] = token
-
+        # Forward caller authentication exactly; never synthesize a shared identity.
         req = urllib.request.Request(url, data=body, headers=headers, method=self.command)
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:

@@ -81,7 +81,7 @@ async def deliver_completions(
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 409:
                 current = await client.get(
-                    f"{base}/api/v1/response-executions/{row['execution_id']}"
+                    f"{base}/api/v1/response-executions/{row['execution_id']}", headers=headers
                 )
                 current.raise_for_status()
                 document = current.json()
@@ -215,6 +215,7 @@ async def process_claim(
                 executor.execute,
                 action_type=str(execution["action_type"]),
                 target_container_id=execution.get("target_container_id"),
+                target_docker_host_id=execution.get("target_docker_host_id"),
                 operation=operation,
             )
         except Exception as exc:
@@ -251,6 +252,7 @@ async def lifespan(app: FastAPI):
         timeout_seconds=settings.docker_timeout_seconds,
         stop_timeout_seconds=settings.stop_timeout_seconds,
         protected_label=settings.protected_label,
+        authenticated=settings.access_mode == "authenticated",
     )
     app.state.executor = executor
     app.state.completion_store = CompletionStore(

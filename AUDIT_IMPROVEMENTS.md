@@ -12,15 +12,29 @@ Porygon possesses strong core security engineering fundamentals:
 - **Mathematically Grounded Drift Detection**: Jensen-Shannon behavioral distance and calibrated rarity scoring prevent the alert fatigue common to naive allowlists ([`scoring.py:1-120`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/scoring.py#L1-L120)).
 - **Idempotent Containment State Machine**: Automated containment actions enforce state preconditions, cryptographic leases, and rollback verifications ([`executor.py:32-151`](file:///home/anuruprkris/Project/final_yeat_work/responder/src/porygon_responder/executor.py#L32-L151), [`response.py:1-75`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/response.py#L1-L75)).
 
-However, **Porygon today is a single-host research system**. No cloud-native enterprise or Fortune 500 platform security team could deploy it in its current state without encountering production outages, Kubernetes controller conflicts, or severe telemetry blind spots.
+However, **Porygon's original baseline was a single-host research system**. No cloud-native enterprise or Fortune 500 platform security team could deploy it in that state without encountering production outages, Kubernetes controller conflicts, or severe telemetry blind spots.
 
-This roadmap details the concrete architectural evolution required to transform Porygon into a production Cloud Workload Protection Platform (CWPP) ready for enterprise clusters.
+This document details the concrete architectural evolution, tracks the completed multi-syscall and performance implementations landed in commit [`b04aaea`](file:///home/anuruprkris/Project/final_yeat_work), and defines the remaining implementation pathway toward an enterprise-ready Cloud Workload Protection Platform (CWPP).
 
 ---
 
-## 1. Verified Remediations (Completed in Baseline)
+## 1. Verified Remediations (Completed & Landed in Codebase)
 
-The following simple, high-leverage findings have been resolved, covered with regression test suites, and verified inside active container environments:
+The following findings and architectural gaps have been resolved, covered with regression test suites, and verified inside active container environments:
+
+### Multi-Syscall & Asynchronous Architecture (Landed in Commit `b04aaea`)
+
+- **`[SEC-02]` Multi-Syscall Kernel Runtime Telemetry Pipeline (IMP-02)**:
+  - *Fix*: Extended [`falco/porygon_rules.yaml`](file:///home/anuruprkris/Project/final_yeat_work/falco/porygon_rules.yaml) with rules for non-loopback outbound socket connections (`connect`), in-memory anonymous execution (`memfd_create`), and sensitive file modifications (`open`, `openat`). Implemented kernel event normalization in [`telemetry/src/porygon_telemetry/kernel.py`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/src/porygon_telemetry/kernel.py), dual-channel outbox spooling and batch draining in [`telemetry/src/porygon_telemetry/spool.py`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/src/porygon_telemetry/spool.py), Alembic database migration [`backend/alembic/versions/kernel_runtime_events.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/alembic/versions/kernel_runtime_events.py), authenticated batch ingestion (`/internal/v1/kernel-events/batch`) and query endpoints in [`backend/src/porygon_api/kernel_events.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/kernel_events.py), and interactive telemetry viewer tabs in [`dashboard/app.js`](file:///home/anuruprkris/Project/final_yeat_work/dashboard/app.js) and [`dashboard/index.html`](file:///home/anuruprkris/Project/final_yeat_work/dashboard/index.html).
+  - *Verification*: Verified via [`backend/tests/test_kernel_events.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_kernel_events.py), [`telemetry/tests/test_kernel_channels.py`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/tests/test_kernel_channels.py), and [`scripts/verify_kernel_runtime.py`](file:///home/anuruprkris/Project/final_yeat_work/scripts/verify_kernel_runtime.py). Documented in [`docs/kernel-runtime-telemetry.md`](file:///home/anuruprkris/Project/final_yeat_work/docs/kernel-runtime-telemetry.md).
+- **`[PERF-03]` Inverted Collector Container Inspection Cache (Prevents Docker Socket Storms)**:
+  - *Fix*: Inverted container metadata inspection logic in [`collector/src/porygon_collector/normalizer.py`](file:///home/anuruprkris/Project/final_yeat_work/collector/src/porygon_collector/normalizer.py) to query the SQLite cache first before invoking synchronous Docker socket `inspect` calls. Real-time Docker daemon queries are strictly gated to lifecycle events (`start`, `die`, `stop`, `destroy`) or cache misses, eliminating socket storms during event bursts.
+  - *Verification*: Verified via 16 unit tests in [`collector/tests/test_container_cache.py`](file:///home/anuruprkris/Project/final_yeat_work/collector/tests/test_container_cache.py) and documented in [`docs/review/collector-inspection-cache.md`](file:///home/anuruprkris/Project/final_yeat_work/docs/review/collector-inspection-cache.md).
+- **`[PERF-04]` Decoupled Identity Reconciliation from Ingestion Request Path**:
+  - *Fix*: Removed the synchronous invocation of `_reconcile_process_identities(db)` from `ingest_process_events` in [`backend/src/porygon_api/main.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/main.py). Offloaded identity resolution and parent-process repair to a dedicated background reconciliation worker in [`backend/src/porygon_api/reconciliation.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/reconciliation.py) with endpoints `/api/v1/reconciliation/status` and `/api/v1/reconciliation/trigger`.
+  - *Verification*: Verified across backend suite and live acceptance checks.
+
+### Core Security & Query Optimization (Landed in Commit `3270f61`)
 
 - **`[SEC-01]` Operator Authentication on AI Audit Fallback**:
   - *Fix*: Added `X-Porygon-Operator-Token` header verification on `/api/v1/ai/audit` when callers fall back to server-configured AI credentials ([`main.py:2706-2725`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/main.py#L2706-L2725)).
@@ -36,20 +50,23 @@ The following simple, high-leverage findings have been resolved, covered with re
 
 ---
 
-## 2. The 5 Production Chasms (Gap Analysis Grounded in Code)
+## 2. The 5 Production Chasms: Status & Evolution
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 THE 5 PRODUCTION CHASMS                                │
-├───────────────────────────────┬────────────────────────────────────────────────────────┤
-│ CURRENT CODEBASE REALITY      │ ENTERPRISE PRODUCTION REQUIREMENT                      │
-├───────────────────────────────┼────────────────────────────────────────────────────────┤
-│ 1. Single-Host Docker Socket  │ Multi-Node Kubernetes DaemonSet (containerd / CRI-O)   │
-│ 2. Telemetry Blind to Net/Mem │ Multi-Syscall Fabric (Network Sockets, memfd, Files)   │
-│ 3. Destructive Docker Pauses  │ Non-Destructive K8s Network Isolation & Blast Caps     │
-│ 4. Sync Database Ingestion    │ Distributed Streaming Queue (Kafka/NATS) with Windows  │
-│ 5. Shared Env API Tokens      │ OIDC / SAML SSO, Granular RBAC, SIEM & SOAR Webhooks   │
-└───────────────────────────────┴────────────────────────────────────────────────────────┘
+│                              PRODUCTION GAP EVOLUTION STATUS                           │
+├───────────────────────────────┬──────────────────────────────────┬─────────────────────┤
+│ PRODUCTION REQUIREMENT        │ INITIAL STATE (BASELINE)         │ CURRENT STATE       │
+├───────────────────────────────┼──────────────────────────────────┼─────────────────────┤
+│ 1. Multi-Syscall Fabric       │ execve-only; all others dropped  │ [RESOLVED] in b04aa │
+│ 2. Collector Efficiency       │ Sync Docker socket query storms  │ [RESOLVED] in b04aa │
+│ 3. Background Reconciliation  │ Sync request handler blocking    │ [RESOLVED] in b04aa │
+│ 4. SecOps Webhooks & SIEM     │ Incidents trapped in DB tables   │ [ACTIVE] Track 01   │
+│ 5. Vulnerability-Threat Corr. │ Detection blind to KEV/EPSS CVEs │ [ACTIVE] Track 02   │
+│ 6. Safe K8s Network Isolation │ Destructive Docker pause/stop    │ [ACTIVE] Track 03   │
+│ 7. OIDC / RBAC Governance     │ Static shared env tokens         │ [ACTIVE] Track 04   │
+│ 8. Kubernetes DaemonSet Agent │ Single-host Docker socket bind   │ [ACTIVE] Track 05   │
+└───────────────────────────────┴──────────────────────────────────┴─────────────────────┘
 ```
 
 ### Chasm 1: Node Agent vs. Centralized Fleet Topology
@@ -60,27 +77,12 @@ The following simple, high-leverage findings have been resolved, covered with re
 * **Production Reality**:
   - Enterprise workloads run on Kubernetes (EKS, GKE, AKS, OpenShift) where Docker Engine was removed (Dockershim deprecation). The underlying runtime is **`containerd`** or **`CRI-O`** accessed via `/run/containerd/containerd.sock`.
   - Enterprises operate dozens or hundreds of nodes. Running the full Porygon stack on every node is impossible.
-* **Architecture Change**:
+* **Target Architecture**:
   - Decouple Porygon into a **Lightweight Node Agent** (`porygon-agent` DaemonSet packaging Falco eBPF + CRI lifecycle stream) and a **Centralized Control Plane** (`porygon-control-plane` deployment running FastAPI, PostgreSQL, and background scoring workers).
   - Agents stream events upstream to the control plane over gRPC with mutual TLS (`mTLS`).
 
-### Chasm 2: Telemetry Depth Beyond `execve`
-* **Evidence in Code**:
-  - [`falco/porygon_rules.yaml:3-6`](file:///home/anuruprkris/Project/final_yeat_work/falco/porygon_rules.yaml#L3-L6) filters exclusively on `evt.type in (execve, execveat)`.
-  - [`telemetry/src/porygon_telemetry/normalizer.py:82-89`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/src/porygon_telemetry/normalizer.py#L82-L89) drops any Falco rule other than `"Porygon Container Process Execution"`.
-  - **Dormant Architecture**: The backend data model [`models.py:190-245`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/models.py#L190-L245) **already contains** `KernelRuntimeEvent` with constraint:
-    ```sql
-    runtime_action IN ('net_outbound', 'memfd_create', 'file_write_open', 'file_write')
-    ```
-    and fields `remote_address`, `remote_port`, `local_address`, `local_port`, `file_path`, and `memory_name`.
-* **Production Reality**:
-  - Advanced adversaries do not merely spawn shell binaries; they use:
-    1. **Reverse shells / C2 sockets**: Established inside long-running application runtimes without executing a separate binary.
-    2. **Fileless malware**: In-memory execution using `memfd_create` + `fexecve`.
-    3. **Credential harvesting**: Reading `/var/run/secrets/kubernetes.io/serviceaccount/token` or `/etc/shadow`.
-* **Architecture Change**:
-  - Activate the dormant `KernelRuntimeEvent` pipeline in Falco rules and `porygon_telemetry/normalizer.py`.
-  - Multiplex network socket connections, in-memory allocations, and sensitive file operations alongside process executions.
+### Chasm 2: Telemetry Depth Beyond `execve` (RESOLVED in `b04aaea`)
+* Multi-syscall kernel events (`connect`, `memfd_create`, `openat`) are now normalized, spooled in a durable outbox, ingested via `/internal/v1/kernel-events/batch`, and queryable at `/api/v1/kernel-events`.
 
 ### Chasm 3: Safe Cloud-Native Containment & Blast-Radius Governance
 * **Evidence in Code**:
@@ -88,19 +90,13 @@ The following simple, high-leverage findings have been resolved, covered with re
 * **Production Reality**:
   - **Pausing Containers in Kubernetes**: Freezing cgroups pauses the application's liveness probe server. Kubelet marks the pod unready, kills it, and schedules a replacement pod.
   - **Stopping Containers in Kubernetes**: Terminating a pod causes the `ReplicaSet` controller to immediately spawn an identical pod, restarting the attacker while destroying volatile memory evidence.
-* **Architecture Change**:
+* **Target Architecture**:
   - **Dynamic Kubernetes NetworkPolicy Quarantine**: Instead of terminating pods, apply a dynamic `NetworkPolicy` targeting the pod label (`porygon.io/isolation: isolated`), cutting off ingress/egress while leaving memory intact for live forensic memory acquisition (`gcore`).
   - **Fleet Blast-Radius Rate Limiter**: Enforce limits preventing automated containment from ever isolating more than 1 pod per Deployment or 5% of cluster capacity per hour, with strict blacklisting of system namespaces (`kube-system`, `istio-system`, `porygon`).
 
 ### Chasm 4: Ingestion Throughput & Streaming Event Architecture
-* **Evidence in Code**:
-  - [`collector/src/porygon_collector/spool.py`](file:///home/anuruprkris/Project/final_yeat_work/collector/src/porygon_collector/spool.py) and [`telemetry/src/porygon_telemetry/spool.py`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/src/porygon_telemetry/spool.py) push HTTP batches to [`backend/src/porygon_api/main.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/main.py) which issues synchronous PostgreSQL transactions.
-* **Production Reality**:
-  - In a 100-node cluster running 3,000 microservices, eBPF telemetry produces 50,000+ syscall events/second during traffic spikes.
-  - Synchronous database transactions saturate PostgreSQL connection pools and exhaust disk write IOPS.
-* **Architecture Change**:
-  - Deploy a streaming buffer (Redis Streams or NATS JetStream) between the ingest gateway and backend detection workers.
-  - Ingestion acknowledges in `< 2ms`; anomaly scoring and baseline calculations consume from consumer groups asynchronously.
+* With collector cache inversion (`[PERF-03]`) and background reconciliation (`[PERF-04]`) resolved in `b04aaea`, ingestion overhead on the API server dropped dramatically.
+* The remaining scale challenge for high-density 100+ node clusters is buffering events between node agents and the API server using Redis Streams or NATS JetStream.
 
 ### Chasm 5: Enterprise Governance, Identity (RBAC/OIDC) & Ecosystem Integration
 * **Evidence in Code**:
@@ -109,78 +105,54 @@ The following simple, high-leverage findings have been resolved, covered with re
 * **Production Reality**:
   - Enterprise compliance (SOC 2 Type II, ISO 27001) forbids shared static credentials. SecOps requires Single Sign-On (SSO via Okta, Azure AD, or Google Workspace) with Role-Based Access Control (`Viewer`, `SecOps Analyst`, `Incident Responder`, `Platform Admin`).
   - Security analysts do not monitor a standalone UI 24/7; they require real-time alerts dispatched to **Splunk HEC**, **Datadog Security Monitoring**, **Slack**, and **PagerDuty**.
-* **Architecture Change**:
+* **Target Architecture**:
   - Implement JWT verification against enterprise OIDC providers.
   - Implement an asynchronous Webhook / SIEM Forwarding engine with HMAC signatures and exponential retry backoff.
 
 ---
 
-## 3. Prioritized Leverage Matrix
+## 3. Prioritized Leverage Matrix (Active & Remaining Tracks)
 
 Applying the Senior Advisor formula:
 $$\text{Leverage} = \frac{\text{Impact}}{\text{Effort}} \times \text{Confidence}$$
 
-| ID | Title | Category | Impact | Effort | Risk | Confidence | Leverage |
-|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **[SEC-02]** | Activate Multi-Syscall Telemetry Pipeline in Falco & Telemetry | Security | CRITICAL | M | LOW | HIGH | **2.0** |
-| **[DIR-03]** | Enterprise Incident Webhook & SIEM Forwarding Engine | Direction / DX | HIGH | S | LOW | HIGH | **2.0** |
-| **[DIR-02]** | Unified Vulnerability (CISA KEV / EPSS) & Runtime Threat Correlation | Direction / Det | HIGH | M | LOW | HIGH | **1.5** |
-| **[PERF-03]** | Invert Collector Container Cache Checks to Prevent Docker Socket Storms | Performance | HIGH | M | LOW | HIGH | **1.5** |
-| **[ARCH-01]** | Augment ML Classifier with Behavioral Path & Inode Indicators (IMP-07) | Architecture | HIGH | M | LOW | HIGH | **1.5** |
-| **[SEC-03]** | Enterprise OIDC Authentication & Role-Based Access Control (RBAC) | Security / Auth | HIGH | M | LOW | HIGH | **1.33** |
-| **[DIR-04]** | Kubernetes Dynamic NetworkPolicy Containment & Blast-Radius Engine | Direction / Resp | HIGH | L | MED | HIGH | **1.2** |
-| **[PERF-04]** | Decouple Synchronous Identity Reconciliation from Ingestion Request Path | Performance | MED | M | LOW | HIGH | **1.0** |
-| **[ARCH-02]** | Distributed Event Streaming Bus (NATS JetStream / Redis Streams) | Architecture | HIGH | L | MED | MED | **0.8** |
-| **[OPS-01]** | Helm Chart Packaging for Multi-Node Kubernetes DaemonSet | Operations | HIGH | L | LOW | HIGH | **0.8** |
+| ID | Title | Category | Impact | Effort | Risk | Confidence | Leverage | Status |
+|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **[SEC-02]** | Multi-Syscall Kernel Runtime Telemetry Pipeline | Security | CRITICAL | M | LOW | HIGH | **2.0** | **RESOLVED (`b04aaea`)** |
+| **[PERF-03]** | Invert Collector Container Cache Checks | Performance | HIGH | M | LOW | HIGH | **1.5** | **RESOLVED (`b04aaea`)** |
+| **[PERF-04]** | Decouple Sync Identity Reconciliation | Performance | MED | M | LOW | HIGH | **1.0** | **RESOLVED (`b04aaea`)** |
+| **[DIR-03]** | Enterprise Incident Webhook & SIEM Forwarding Engine | Direction / DX | HIGH | S | LOW | HIGH | **2.0** | **ACTIVE (Next Target)** |
+| **[DIR-02]** | Unified Vulnerability (CISA KEV / EPSS) Threat Correlation | Direction / Det | HIGH | M | LOW | HIGH | **1.5** | **ACTIVE** |
+| **[ARCH-01]** | Augment ML Classifier with Behavioral Path & Inode Indicators | Architecture | HIGH | M | LOW | HIGH | **1.5** | **ACTIVE** |
+| **[SEC-03]** | Enterprise OIDC Authentication & Role-Based Access Control | Security / Auth | HIGH | M | LOW | HIGH | **1.33** | **ACTIVE** |
+| **[DIR-04]** | Kubernetes Dynamic NetworkPolicy Containment & Blast-Radius | Direction / Resp | HIGH | L | MED | HIGH | **1.2** | **ACTIVE** |
+| **[ARCH-02]** | Distributed Event Streaming Bus (NATS JetStream / Redis Streams) | Architecture | HIGH | L | MED | MED | **0.8** | **ACTIVE** |
+| **[OPS-01]** | Helm Chart Packaging for Multi-Node Kubernetes DaemonSet | Operations | HIGH | L | LOW | HIGH | **0.8** | **ACTIVE** |
 
 ---
 
 ## 4. Phase-by-Phase Master Engineering Pathway
 
-```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                             5-PHASE ENTERPRISE PATHWAY                            │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ Phase 1: Telemetry & Threat Fabric (Multi-syscall eBPF + CVE/KEV correlation)     │
-│ Phase 2: SecOps Ecosystem & Governance (SIEM/SOAR webhooks + OIDC/RBAC)          │
-│ Phase 3: Cloud-Native Non-Destructive Containment (K8s NetworkPolicy + Blast Caps)│
-│ Phase 4: High-Throughput Stream Ingestion (NATS/Redis Stream buffer)             │
-│ Phase 5: Production Fleet Topology (Helm Chart + Kubernetes DaemonSet Node Agent)│
-└──────────────────────────────────────────────────────────────────────────────────┘
-```
-
 ---
 
 ### Phase 1: Telemetry & Threat Fabric
 
-#### Task 1.1: Multi-Syscall Telemetry Pipeline Activation (`[SEC-02]`)
-* **Evidence**: [`falco/porygon_rules.yaml:3-6`](file:///home/anuruprkris/Project/final_yeat_work/falco/porygon_rules.yaml#L3-L6) and [`telemetry/src/porygon_telemetry/normalizer.py:82-89`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/src/porygon_telemetry/normalizer.py#L82-L89).
-* **Implementation**:
-  1. Add Falco rules in `falco/porygon_rules.yaml` for:
-     - `Porygon Container Outbound Network Connection` on `evt.type = connect and fd.type = ipv4 and evt.dir = >`.
-     - `Porygon Container In-Memory Execution` on `evt.type = memfd_create`.
-     - `Porygon Container Sensitive File Modification` on `evt.type in (open, openat) and fd.name startswith "/etc/" and evt.rawres >= 0`.
-  2. In `telemetry/src/porygon_telemetry/normalizer.py`, replace strict rule check with multi-rule dispatcher:
-     ```python
-     if rule_name == "Porygon Container Process Execution":
-         return normalize_process_event(raw_event, ...)
-     elif rule_name in KERNEL_RULE_MAP:
-         return normalize_kernel_event(raw_event, ...)
-     ```
-  3. In `telemetry/src/porygon_telemetry/file_source.py`, route kernel events to existing endpoint `POST /api/v1/kernel-events`.
-* **Done Criteria**:
-  ```bash
-  docker compose exec -T telemetry pytest tests/test_normalizer.py
-  docker compose exec -T backend pytest tests/test_kernel_events.py
-  ```
+#### Task 1.1: Multi-Syscall Telemetry Pipeline Activation (`[SEC-02]`) — **[COMPLETED in commit `b04aaea`]**
+* **Delivered**:
+  - Falco rules for network connections, in-memory execution, and sensitive file writes in [`falco/porygon_rules.yaml`](file:///home/anuruprkris/Project/final_yeat_work/falco/porygon_rules.yaml).
+  - Normalization engine in [`telemetry/src/porygon_telemetry/kernel.py`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/src/porygon_telemetry/kernel.py).
+  - Dual-channel spool outbox in [`telemetry/src/porygon_telemetry/spool.py`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/src/porygon_telemetry/spool.py).
+  - Backend API endpoints and Postgres migration [`backend/src/porygon_api/kernel_events.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/kernel_events.py).
+  - Dashboard viewer tab in [`dashboard/app.js`](file:///home/anuruprkris/Project/final_yeat_work/dashboard/app.js).
 
-#### Task 1.2: Unified Vulnerability & Behavioral Threat Correlation (`[DIR-02]`)
-* **Evidence**: [`backend/src/porygon_api/detection.py:16-80`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/detection.py#L16-L80) runs independently of vulnerability data in [`vulnerability.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/vulnerability.py).
-* **Implementation**:
+#### Task 1.2: Unified Vulnerability & Behavioral Threat Correlation (`[DIR-02]`) — **[ACTIVE ROADMAP]**
+* **Evidence**: [`backend/src/porygon_api/detection.py:16-80`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/detection.py#L16-L80) evaluates process and runtime anomalies in isolation from vulnerability intelligence in [`vulnerability.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/vulnerability.py).
+* **Implementation Blueprint**:
   1. Add rule `POR-DET-008: Exploited Vulnerability Runtime Execution` in `backend/src/porygon_api/detection.py`:
      - Severity: 0.98, Confidence: 0.95.
      - Description: Process or network anomaly detected inside a container image harboring actively exploited CVEs (CISA KEV or EPSS > 0.50).
   2. Enrich detection run context with active `VulnerabilityFinding` records for the container's `image_digest`.
+  3. When an anomaly matches a container with an active CISA KEV finding, escalate severity score to critical.
 * **Done Criteria**:
   ```bash
   docker compose exec -T backend pytest tests/test_detection.py
@@ -190,13 +162,13 @@ $$\text{Leverage} = \frac{\text{Impact}}{\text{Effort}} \times \text{Confidence}
 
 ### Phase 2: SecOps Ecosystem & Governance
 
-#### Task 2.1: Enterprise Webhook & SIEM Forwarding Engine (`[DIR-03]`)
+#### Task 2.1: Enterprise Webhook & SIEM Forwarding Engine (`[DIR-03]`) — **[ACTIVE ROADMAP - HIGHEST LEVERAGE]**
 * **Evidence**: Zero external dispatch mechanisms exist when [`backend/src/porygon_api/incident_grouping.py:94`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/incident_grouping.py#L94) creates an `Incident`.
-* **Implementation**:
+* **Implementation Blueprint**:
   1. Create `backend/src/porygon_api/webhooks.py`:
      - Implements `dispatch_incident_webhook(incident: Incident)`.
      - Supports generic JSON webhooks, Slack incoming webhooks, and Splunk HTTP Event Collector (HEC).
-     - Signs payloads using HMAC-SHA256 headers (`X-Porygon-Signature`).
+     - Signs payloads using HMAC-SHA256 headers (`X-Porygon-Signature: sha256=<hex>`).
      - Dispatches asynchronously with 3-attempt exponential backoff.
   2. Trigger dispatch in `attach_incident` ([`incident_grouping.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/incident_grouping.py)) upon incident creation or severity escalation.
 * **Done Criteria**:
@@ -204,9 +176,9 @@ $$\text{Leverage} = \frac{\text{Impact}}{\text{Effort}} \times \text{Confidence}
   docker compose exec -T backend pytest tests/test_webhooks.py
   ```
 
-#### Task 2.2: Enterprise OIDC & Role-Based Access Control (`[SEC-03]`)
+#### Task 2.2: Enterprise OIDC & Role-Based Access Control (`[SEC-03]`) — **[ACTIVE ROADMAP]**
 * **Evidence**: [`backend/src/porygon_api/security.py:10-24`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/security.py#L10-L24) verifies static shared tokens.
-* **Implementation**:
+* **Implementation Blueprint**:
   1. Add optional OIDC JWT bearer verification (Okta, Azure AD, Keycloak) using `python-jose` and JWKS caching.
   2. Define role hierarchy:
      - `Viewer`: Read-only access to incidents, metrics, and profiles.
@@ -223,12 +195,12 @@ $$\text{Leverage} = \frac{\text{Impact}}{\text{Effort}} \times \text{Confidence}
 
 ### Phase 3: Cloud-Native Non-Destructive Containment
 
-#### Task 3.1: Kubernetes Dynamic NetworkPolicy Quarantine (`[DIR-04]`)
+#### Task 3.1: Kubernetes Dynamic NetworkPolicy Quarantine (`[DIR-04]`) — **[ACTIVE ROADMAP]**
 * **Evidence**: [`responder/src/porygon_responder/executor.py:158-171`](file:///home/anuruprkris/Project/final_yeat_work/responder/src/porygon_responder/executor.py#L158-L171) executes `docker pause` and `docker stop`.
-* **Implementation**:
+* **Implementation Blueprint**:
   1. Add `KubernetesResponseExecutor` in `responder/src/porygon_responder/k8s_executor.py`:
      - Uses official `kubernetes` Python client.
-     - Operation `isolate_pod_network`: Dynamically creates a Kubernetes `NetworkPolicy` targeting the compromised pod label, dropping ingress and egress.
+     - Operation `isolate_pod_network`: Dynamically creates a Kubernetes `NetworkPolicy` targeting the compromised pod label, dropping ingress and egress while keeping the container alive for live forensic dump.
      - Operation `rollback`: Deletes the generated quarantine `NetworkPolicy`.
   2. Implement Fleet Blast-Radius Limiter:
      - Hard limit: Maximum 1 pod isolated per Deployment in a rolling 1-hour window.
@@ -242,31 +214,27 @@ $$\text{Leverage} = \frac{\text{Impact}}{\text{Effort}} \times \text{Confidence}
 
 ### Phase 4: High-Throughput Stream Ingestion & Collector Optimization
 
-#### Task 4.1: Invert Collector Container Cache Checks (`[PERF-03]`)
-* **Evidence**: [`collector/src/porygon_collector/normalizer.py:218-222`](file:///home/anuruprkris/Project/final_yeat_work/collector/src/porygon_collector/normalizer.py#L218-L222) and [`collector/src/porygon_collector/docker_source.py:177`](file:///home/anuruprkris/Project/final_yeat_work/collector/src/porygon_collector/docker_source.py#L177) trigger synchronous Docker socket inspections on every raw event.
-* **Implementation**:
-  - Invert logic to query `store.get_cached_container(container_id)` first.
-  - Re-inspect container metadata from the Docker daemon only on lifecycle events (`start`, `die`, `stop`, `destroy`) or after cache TTL expiration (30 seconds).
-* **Done Criteria**:
-  ```bash
-  docker compose exec -T collector pytest tests/test_normalizer.py
-  ```
+#### Task 4.1: Invert Collector Container Cache Checks (`[PERF-03]`) — **[COMPLETED in commit `b04aaea`]**
+* **Delivered**: Inverted inspection logic in [`collector/src/porygon_collector/normalizer.py`](file:///home/anuruprkris/Project/final_yeat_work/collector/src/porygon_collector/normalizer.py) to check local cache first. Verified with 16 tests in [`collector/tests/test_container_cache.py`](file:///home/anuruprkris/Project/final_yeat_work/collector/tests/test_container_cache.py).
 
-#### Task 4.2: Decouple Synchronous Identity Reconciliation (`[PERF-04]`)
-* **Evidence**: [`backend/src/porygon_api/main.py:811-812`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/main.py#L811-L812) invokes `_reconcile_process_identities(db)` synchronously within every incoming ingestion POST handler.
-* **Implementation**:
-  - Move identity reconciliation into a periodic background task (running every 5 seconds) or trigger it only when the unreconciled queue exceeds a defined batch threshold.
+#### Task 4.2: Decouple Synchronous Identity Reconciliation (`[PERF-04]`) — **[COMPLETED in commit `b04aaea`]**
+* **Delivered**: Background worker loop in [`backend/src/porygon_api/reconciliation.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/reconciliation.py) decoupling parent and container identity repairs from ingestion requests in [`backend/src/porygon_api/main.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/main.py).
+
+#### Task 4.3: ML Classifier Behavioral Indicators (`[ARCH-01]`) — **[ACTIVE ROADMAP]**
+* **Evidence**: [`backend/src/porygon_api/ml_classifier.py:42-81`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/ml_classifier.py#L42-L81) uses static basename sets vulnerable to path evasion (e.g. copying binaries to `/tmp`).
+* **Implementation Blueprint**:
+  - Incorporate behavioral signals into feature extraction: execution from writable directories (`/tmp`, `/dev/shm`), unlinked executables (`(deleted)` inode suffix), and argument entropy.
 * **Done Criteria**:
   ```bash
-  docker compose exec -T backend pytest tests/test_process_events.py
+  docker compose exec -T backend pytest tests/test_ml_classifier.py
   ```
 
 ---
 
 ### Phase 5: Production Fleet Topology & Kubernetes Packaging
 
-#### Task 5.1: Helm Chart & Kubernetes DaemonSet Deployment (`[OPS-01]`)
-* **Implementation**:
+#### Task 5.1: Helm Chart & Kubernetes DaemonSet Deployment (`[OPS-01]`) — **[ACTIVE ROADMAP]**
+* **Implementation Blueprint**:
   1. Author production Helm chart `deploy/helm/porygon`:
      - `porygon-agent` DaemonSet: Runs `falco` with `modern_ebpf` and CRI watcher on every worker node. Uses `hostPID: true`, privileged container security context, and mounts `/run/containerd/containerd.sock`.
      - `porygon-control-plane` Deployment: Replicated FastAPI backend workers behind a Kubernetes ClusterIP Service and Ingress.

@@ -152,3 +152,10 @@ def test_one_failed_channel_does_not_repeat_or_drop_the_acknowledged_channel(tmp
         assert db.execute("SELECT event_id FROM outbox").fetchone()[0] == kernel["event_id"]
         db.execute("UPDATE outbox SET next_attempt_at=0")
     assert store.get_file_cursor() == (1, 200)
+
+
+@pytest.mark.parametrize('container_id', ['system.slice', 'user.slice', 'kubepods', 'host'])
+def test_non_docker_cgroups_are_outside_the_kernel_evidence_scope(container_id):
+    event = raw()
+    event['output_fields']['container.id'] = container_id
+    assert normalized(event) is None

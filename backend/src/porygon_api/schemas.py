@@ -114,6 +114,14 @@ class RuntimeEventOut(RuntimeEventIn):
 class ProcessExecEventIn(BaseModel):
     event_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     sensor_instance_id: str = Field(min_length=1, max_length=128)
+    exec_return_value: int | None = Field(default=None,ge=-9223372036854775808,le=9223372036854775807)
+    event_direction: Literal['<','>'] | None = None
+    sensor_epoch: str | None = Field(default=None,min_length=1,max_length=128)
+    process_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    parent_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    pid_namespace_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    exe_from_memfd: bool | None = None
+    exe_writable: bool | None = None
     sensor_hostname: str | None = Field(default=None, max_length=255)
     source: Literal["falco"]
     rule_name: str = Field(min_length=1, max_length=255)
@@ -177,6 +185,14 @@ class ProcessExecEventOut(BaseModel):
 
     event_id: str
     sensor_instance_id: str
+    exec_return_value: int | None = Field(default=None,ge=-9223372036854775808,le=9223372036854775807)
+    event_direction: Literal['<','>'] | None = None
+    sensor_epoch: str | None = Field(default=None,min_length=1,max_length=128)
+    process_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    parent_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    pid_namespace_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    exe_from_memfd: bool | None = None
+    exe_writable: bool | None = None
     sensor_hostname: str | None
     source: str
     rule_name: str
@@ -236,6 +252,12 @@ class KernelRuntimeEventIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     sensor_instance_id: str = Field(min_length=1, max_length=128)
+    sensor_epoch: str | None = Field(default=None,min_length=1,max_length=128)
+    process_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    parent_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    pid_namespace_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    exe_from_memfd: bool | None = None
+    exe_writable: bool | None = None
     sensor_hostname: str | None = Field(default=None, max_length=255)
     source: Literal["falco"] = "falco"
     rule_name: str = Field(min_length=1, max_length=255)
@@ -600,7 +622,7 @@ class AnomalyScoreComputeIn(BaseModel):
     image_digest: str = Field(
         min_length=72,
         max_length=255,
-        pattern=r"^[^\s@]+@sha256:[0-9a-f]{64}$",
+        pattern=r"^(?:[^\s@]+@sha256:|local:sha256:)[0-9a-f]{64}$",
     )
     window_start: datetime
     profile_id: str | None = Field(default=None, min_length=36, max_length=36)
@@ -686,7 +708,7 @@ class IncidentOut(BaseModel):
     image_digest: str
     title: str
     status: Literal["open", "acknowledged", "resolved", "dismissed"]
-    anomaly_score: float
+    anomaly_score: float | None
     severity_score: float
     severity_level: Literal["low", "medium", "high", "critical"]
     confidence_score: float
@@ -883,6 +905,7 @@ class ResponseRecommendationOut(BaseModel):
     recommendation_id: str
     recommendation_key: str
     incident_id: str
+    target_docker_host_id: str | None = None
     target_container_id: str | None
     policy_version: str
     policy_hash: str
@@ -919,6 +942,7 @@ class ResponseExecutionOut(BaseModel):
     execution_id: str
     recommendation_id: str
     incident_id: str
+    target_docker_host_id: str | None = None
     target_container_id: str | None
     action_type: Literal["observe_only", "pause_container", "stop_container"]
     status: Literal[
@@ -1278,6 +1302,19 @@ class MLFeatureContributionOut(BaseModel):
     explanation: str
 
 
+class MLModelMetadataOut(BaseModel):
+    model_config = ConfigDict(frozen=True, from_attributes=True)
+
+    model_kind: str
+    training_status: str
+    calibration_status: str
+    explanation_method: str
+    explanation_output_space: str
+    feature_contract: str
+    input_document_schema: str
+    model_artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class MLThreatClassificationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -1296,6 +1333,10 @@ class MLThreatClassificationOut(BaseModel):
     summary: str
     model_version: str
     classified_at: datetime
+    model_metadata: MLModelMetadataOut
+    explanation_base_values: dict[str, float]
+    raw_output_values: dict[str, float]
+    full_feature_contributions: dict[str, dict[str, float]]
 
 
 class MLClassifyEventsIn(BaseModel):
@@ -1318,3 +1359,4 @@ class MLModelInfoOut(BaseModel):
     features: list[str]
     num_trees: int
     explainability_method: str
+    model_metadata: MLModelMetadataOut

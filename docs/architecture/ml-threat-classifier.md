@@ -1,102 +1,72 @@
-# Explainable Machine Learning Threat Classifier
+# Heuristic Threat Classifier
 
-> **Component:** `backend/src/porygon_api/ml_classifier.py`  
-> **Model Identifier:** `porygon.ml.rf.v1`  
-> **Architecture:** Pure-Python Explainable Tree Ensemble (Random Forest) with TreeSHAP Local Feature Attribution
+Component: `backend/src/porygon_api/ml_classifier.py`. The historical identifier `porygon.ml.rf.v1` is retained for replay compatibility. The default implementation consists of five hand-authored specialist decision trees, averaged in raw class-output space, followed by a fixed score transform.
 
----
+## 1. Model metadata and provenance
 
-## 1. Why Explainable ML in Container Runtime Security?
+Every prediction, its `to_dict()` representation used in stored score explanations, and the model-info API expose the same `model_metadata` contract:
 
-Traditional deep learning or black-box classifiers output raw probabilities (e.g., `P(malicious) = 0.94`) without explaining *why* a workload was flagged. In production infrastructure, this creates severe friction:
+| Field | Default value |
+|---|---|
+| `model_kind` | `heuristic` |
+| `training_status` | `hand_authored` |
+| `calibration_status` | `unvalidated` |
+| `explanation_method` | `tree_path_delta` |
+| `explanation_output_space` | `raw_ensemble_probability` |
+| `feature_contract` | `porygon.ml.features.exec-taxonomy` |
+| `input_document_schema` | `porygon.behaviour.v1` |
+| `model_artifact_sha256` | Canonical SHA-256 of ensemble, classes, ordered feature names, contract and score transform |
 
-- System administrators will not authorize container termination based on an opaque score.
-- Security analysts cannot discern whether an alert was triggered by an authorized developer debugging a service or an actual malware dropper.
-
-Porygon solves this by pairing a **Tree Ensemble (Random Forest)** with **TreeSHAP (SHapley Additive exPlanations)** to generate human-interpretable reasons for every security verdict.
-
----
+Custom supplied trees report `model_kind=tree_ensemble` and `training_status=unspecified`; supplying tree data alone does not establish training or validation provenance. Metadata is immutable for a returned prediction. The content hash is independent of dictionary key ordering and changes when tree contents change.
 
 ## 2. The 12 Runtime Window Features
 
-Rather than evaluating isolated syscalls, Porygon computes a rolling feature vector over a **60-second observation window** (or evaluates raw process execution streams):
+The classifier derives 12 numerical features from supplied process events or a compatible feature document. API callers choose the event set; the classifier does not schedule a rolling window itself.
 
 | # | Feature Name | Computation Formula / Meaning | Associated MITRE Tactic |
 |---|---|---|---|
 | 1 | `shell_ratio` | $\frac{\text{count}(exec \in \text{SHELL\_BINARIES})}{\text{total\_events}}$ | Execution / Shell Escape |
 | 2 | `root_ratio` | $\frac{\text{count}(uid == 0)}{\text{total\_events}}$ | Privilege Escalation |
-| 3 | `recon_ratio` | $\frac{\text{count}(exec \in \text{RECON\_TOOLS})}{\text{total\_events}}$ (`whoami`, `id`, `uname`, `ip`) | Discovery / Reconnaissance |
-| 4 | `tooling_ratio` | $\frac{\text{count}(exec \in \text{DOWNLOAD\_TOOLS})}{\text{total\_events}}$ (`curl`, `wget`, `nc`, `nmap`) | Ingress Tool Transfer |
-| 5 | `priv_escalation_ratio` | Executions of `sudo`, `su`, `chmod +s`, `nsenter` | Privilege Escalation |
+| 3 | `recon_ratio` | $\frac{\text{count}(exec \in \text{RECON\_BINARIES})}{\text{total\_events}}$ (`whoami`, `id`, `uname`, `ip`) | Discovery / Reconnaissance |
+| 4 | `tooling_ratio` | $\frac{\text{count}(exec \in \text{SUSPICIOUS\_TOOLS})}{\text{total\_events}}$ (`curl`, `wget`, `nc`, `nmap`) | Ingress Tool Transfer |
+| 5 | `priv_escalation_ratio` | Basename matches such as `sudo`, `su`, `chmod` and `nsenter`; arguments do not affect this ratio | Privilege Escalation |
 | 6 | `compiler_miner_ratio` | Executions of `gcc`, `make`, `xmrig`, `minerd` | Defense Evasion / Impact |
-| 7 | `distinct_proc_count` | Number of distinct binary paths executed in window | Anomaly Indicator |
+| 7 | `distinct_proc_count` | Number of distinct executable basenames in supplied events | Anomaly Indicator |
 | 8 | `event_count` | Total volume of process events in window | Burst / Flood Indicator |
-| 9 | `unseen_executable_ratio` | Proportion of executions not present in baseline | Statistical Novelty |
-| 10| `parent_shim_ratio` | Container escape shims (`runc`, `containerd-shim`, `nsenter`) | Escape / Lateral Movement |
-| 11| `suspicious_sequence_ratio`| Sequences matching known attack chains (e.g., `curl -> chmod -> exec`) | Attack Pipeline |
+| 9 | `unseen_executable_ratio` | Fraction of distinct observed executable/name strings absent from baseline support | Statistical Novelty |
+| 10| `parent_shim_ratio` | Recognized runtime-shim parent names | Escape / Lateral Movement |
+| 11| `suspicious_sequence_ratio`| Adjacent input-record transitions matching fixed name categories | Attack Pipeline |
 | 12| `jensen_shannon_drift` | Statistical divergence $D_{JS}$ from baseline distribution | Process Drift |
 
----
 
-## 3. Decision Forest Classification
+## 3. Classification and score transform
 
-The classification engine maps the 12-dimensional continuous feature vector to one of five target attack classes:
+Each tree selects one leaf using fixed feature thresholds. The engine averages leaf values for the five operational labels: benign, reconnaissance, privilege escalation, shell escape and suspicious tooling. The existing `class_probabilities` mapping applies a log-probability softmax with a fixed temperature of 0.35; `confidence` is the largest transformed class score. These API names and numeric values remain compatible with historical outputs.
 
-```
-                                  [Input Feature Vector]
-                                             |
-                   +-------------------------+-------------------------+
-                   |                         |                         |
-                   v                         v                         v
-              [Tree 1]                   [Tree 2]                  [Tree N]
-           /            \             /            \            /            \
-      [shell > 0.1]    ...       [recon > 0.3]    ...      [root > 0.5]     ...
-         /        \                 /        \                /        \
-     Class A    Class B         Class A    Class C        Class B    Class A
-                   \                         |                         /
-                    +------------------------+------------------------+
-                                             | Majority Voting / Averaged Probs
-                                             v
-               +--------------------------------------------------------------+
-               |                  Final Tactical Verdict                      |
-               |  - Predicted Class: "privilege_escalation"                   |
-               |  - Confidence: 0.942                                         |
-               |  - TreeSHAP Local Attributions:                              |
-               |    * root_ratio: +0.42                                       |
-               |    * shell_ratio: +0.31                                      |
-               |    * priv_escalation_ratio: +0.18                            |
-               |    * compiler_miner_ratio: -0.05                             |
-               +--------------------------------------------------------------+
-```
+The transform is fixed score sharpening. No calibration fit or training dataset is attached to the default trees. Operational labels provide a repeatable heuristic comparator for later model evaluation. Existing response approval rules operate separately.
 
-### Pure-Python Implementation Design
-Unlike traditional machine learning stacks that require heavy C-extensions (`scikit-learn`, `numpy`, `scipy`), Porygon's `ml_classifier.py` is implemented entirely in standard Python:
-- Zero external pip requirements for ML inference.
-- Eliminates native binary dependencies and shared library vulnerabilities.
-- Sub-millisecond evaluation latency per observation window.
+The implementation uses standard Python for inference. Runtime latency and resource claims require a benchmark identifying the event set and hardware.
 
----
+## 4. Tree-path feature deltas
 
-## 4. TreeSHAP Local Feature Attribution
+At each traversed split, the algorithm assigns the difference between the child and parent class-output vectors to the split feature. It then averages these deltas across trees. For each class:
 
-For every classification, Porygon computes exact Shapley values across the decision forest paths:
+$$f_c^{\mathrm{raw}}(x) = b_c + \sum_{i=1}^{12} \Delta_{i,c}(x)$$
 
-$$\phi_i(x) = \sum_{S \subseteq F \setminus \{i\}} \frac{|S|! (|F| - |S| - 1)!}{|F|!} \left[ f(S \cup \{i\}) - f(S) \right]$$
+Here `b_c` is the average root value, and each delta is the change along the path actually traversed. The response includes all three parts:
 
-This mathematical guarantee provides operators with an exact contribution breakdown:
-- "The container was classified as **shell_escape** primarily because `parent_shim_ratio` (+0.38) and `shell_ratio` (+0.29) elevated the score, while `compiler_miner_ratio` (-0.02) had negligible impact."
+- `explanation_base_values`: one raw base value per class;
+- `raw_output_values`: average leaf outputs before sharpening;
+- `full_feature_contributions`: every feature's raw delta for every class.
 
----
+The equation reconstructs the raw output. It does not reconstruct the transformed `class_probabilities` values. The method is tree-path decomposition rather than Shapley-value estimation; it does not evaluate feature coalitions. `top_contributing_features` keeps the existing rounded top-five display and is a partial view of the full raw decomposition.
 
-## 5. Dashboard Integration
+## 5. Dashboard and API integration
 
-On the Newsprint operator dashboard, TreeSHAP values are visualized as an interactive horizontal attribution bar chart:
+The dashboard labels the implementation **Heuristic Trees + Path Deltas**, the transformed values **Class Score**, and the contribution table **Top Raw-space Drivers**. It displays existing class/risk values without relabelling them as validated attack probabilities.
 
-```
-[TACTIC: PRIVILEGE ESCALATION (94.2%)]
-root_ratio              ████████████████████ (+0.42)
-shell_ratio             ███████████████ (+0.31)
-priv_escalation_ratio   ████████ (+0.18)
-unseen_executable_ratio ███ (+0.06)
-compiler_miner_ratio    ▌ (-0.05)
-```
+The `/api/v1/ml/model-info`, `/api/v1/ml/classify`, `/api/v1/ml/classify-container/{container_id}` and `/api/v1/ml/classify-features` routes carry consistent model metadata. The legacy feature-document schema remains accepted; incompatible document contracts continue to be rejected. Separate calibrated-rarity APIs retain their own documented semantics.
+
+## 6. Verification
+
+`backend/tests/test_model_contracts.py` characterizes unchanged scores for benign, shell, reconnaissance, privilege and tooling fixtures. It verifies immutable provenance, canonical artifact hashes, custom-tree unknown provenance, raw-space additivity and consistent metadata in every API constructor and serialized explanation. Existing classifier tests retain feature-extraction and class behavior coverage.

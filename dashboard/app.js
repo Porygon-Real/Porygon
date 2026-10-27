@@ -22,6 +22,7 @@ document.addEventListener('alpine:init', () => {
 
     // System & Health Data
     systemInfo: {},
+    assessmentStatus: null,
     services: [],
     containers: [],
     selectedContainer: null,
@@ -429,22 +430,10 @@ document.addEventListener('alpine:init', () => {
     showDocsModal: false,
     docsTab: 'mental_model',
 
-    // Operator token (stored in localStorage)
-    get operatorToken() {
-      try {
-        const stored = localStorage.getItem('porygon_operator_token');
-        if (stored) return stored;
-        return 'dev-operator-clearance';
-      } catch (e) {
-        return 'dev-operator-clearance';
-      }
-    },
-    set operatorToken(v) {
-      try {
-        if (v) localStorage.setItem('porygon_operator_token', v);
-        else localStorage.removeItem('porygon_operator_token');
-      } catch (e) { }
-    },
+    // Human credentials remain in memory for this tab only.
+    _humanToken: '',
+    get operatorToken() { return this._humanToken; },
+    set operatorToken(value) { this._humanToken = value || ''; },
 
     // Styled operator-token entry modal — replaces window.prompt() everywhere a
     // human operator needs to authorize a write. Returns the entered token (or
@@ -466,6 +455,7 @@ document.addEventListener('alpine:init', () => {
       const value = (this.tokenModal.value || '').trim();
       const resolve = this.tokenModal.resolve;
       this.tokenModal.show = false;
+      this.tokenModal.value = '';
       this.tokenModal.resolve = null;
       if (resolve) resolve(value || null);
     },
@@ -473,6 +463,7 @@ document.addEventListener('alpine:init', () => {
     cancelTokenModal() {
       const resolve = this.tokenModal.resolve;
       this.tokenModal.show = false;
+      this.tokenModal.value = '';
       this.tokenModal.resolve = null;
       if (resolve) resolve(null);
     },
@@ -545,7 +536,7 @@ document.addEventListener('alpine:init', () => {
       this.aiAuditModal.show = true;
 
       try {
-        const resp = await fetch('/api/v1/ai/audit', {
+        const resp = await this._apiFetch('/api/v1/ai/audit', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -584,7 +575,7 @@ document.addEventListener('alpine:init', () => {
 
       try {
         const cid = container.container_id || container.id;
-        const resp = await fetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
+        const resp = await this._apiFetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -623,7 +614,7 @@ document.addEventListener('alpine:init', () => {
           const cid = c.container_id || c.id;
           if (!cid) return;
           try {
-            const resp = await fetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
+            const resp = await this._apiFetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
             });
@@ -765,19 +756,35 @@ document.addEventListener('alpine:init', () => {
         if (this.activeTab === 'telemetry') this.fetchKernelEvents();
       }, 3000);
       // heavier refresh for system info every 10s
-      setInterval(() => { this.fetchSystemInfo(); this.fetchAnomalyScores(); }, 10000);
+      setInterval(() => { this.fetchSystemInfo(); this.fetchAnomalyScores(); this.fetchAssessmentStatus(); }, 10000);
     },
 
     // helpers
-    _apiFetch(path, opts = {}) {
-      // attach operator token if present for operator routes
+    _authPrompt: null,
+    _authPromptShown: false,
+    async _apiFetch(path, opts = {}) {
+      // Attach the tab credential to same-origin API reads and writes.
       const headers = Object.assign({}, opts.headers || {});
       const token = this.operatorToken;
-      if (token && path.includes('/operator/')) {
+      if (token && path.startsWith('/')) {
         headers['X-Porygon-Operator-Token'] = token;
       }
       // for demo route via dashboard server, keep same host
-      return fetch(path, Object.assign({}, opts, { headers }));
+      let response = await fetch(path, Object.assign({}, opts, { headers }));
+      if (response.status === 401 && !token && !this._authPromptShown) {
+        this._authPromptShown = true;
+        this._authPrompt = this.requestOperatorToken('Enter your enrolled human access token to load this deployment.', 'Access token required');
+      }
+      if (response.status === 401 && !token && this._authPrompt) {
+        const entered = await this._authPrompt;
+        if (entered) this.operatorToken = entered;
+        if (this.operatorToken) {
+          headers['X-Porygon-Operator-Token'] = this.operatorToken;
+          response = await fetch(path, Object.assign({}, opts, { headers }));
+        }
+        this._authPrompt = null;
+      }
+      return response;
     },
 
     formatCompactNumber(num) {
@@ -791,7 +798,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchProcessSummary() {
       try {
-        const res = await fetch('/api/v1/process-events/summary');
+        const res = await this._apiFetch('/api/v1/process-events/summary');
         if (res.ok) {
           this.processSummary = await res.json();
         }
@@ -844,7 +851,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchRules() {
       try {
-        const res = await fetch('/api/v1/detection-rules/config');
+        const res = await this._apiFetch('/api/v1/detection-rules/config');
         if (res.ok) {
           const data = await res.json();
           this.rules = data.rules || [];
@@ -858,14 +865,14 @@ document.addEventListener('alpine:init', () => {
         console.warn('Could not load detection rules config:', err);
       }
       try {
-        const cfg = await fetch('/api/v1/anomaly-scores/config');
+        const cfg = await this._apiFetch('/api/v1/anomaly-scores/config');
         if (cfg.ok) this.anomalyConfig = await cfg.json();
       } catch (e) { }
     },
 
     async fetchCustomRules() {
       try {
-        const res = await fetch('/api/v1/custom-detection-rules');
+        const res = await this._apiFetch('/api/v1/custom-detection-rules');
         if (res.ok) {
           this.customRules = await res.json();
           // Index custom rules into rulesMeta too, so a custom-rule match
@@ -1017,7 +1024,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchSystemInfo() {
       try {
-        const res = await fetch('/api/v1/system/info');
+        const res = await this._apiFetch('/api/v1/system/info');
         if (res.ok) {
           this.systemInfo = await res.json();
           // sync counters that were previously hardcoded
@@ -1028,7 +1035,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchServices() {
       try {
-        const res = await fetch('/api/v1/services');
+        const res = await this._apiFetch('/api/v1/services');
         if (res.ok) {
           this.services = await res.json();
         } else throw new Error('non-200');
@@ -1041,7 +1048,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchContainers() {
       try {
-        const res = await fetch('/api/v1/containers?limit=100');
+        const res = await this._apiFetch('/api/v1/containers?limit=100');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         this.containers = Array.isArray(data) ? data : (data.items || []);
@@ -1063,7 +1070,7 @@ document.addEventListener('alpine:init', () => {
       if (this.kernelHostFilter.trim()) query.set('docker_host_id', this.kernelHostFilter.trim());
       if (this.selectedContainer) query.set('container_id', this.selectedContainer);
       try {
-        const response = await fetch(`/api/v1/kernel-events?${query}`);
+        const response = await this._apiFetch(`/api/v1/kernel-events?${query}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const events = await response.json();
         if (!Array.isArray(events)) throw new Error('Invalid kernel event response');
@@ -1111,12 +1118,12 @@ document.addEventListener('alpine:init', () => {
           fallbackEndpoint += `&container_id=${encodeURIComponent(this.selectedContainer)}`;
         }
 
-        const res = await fetch(endpoint);
+        const res = await this._apiFetch(endpoint);
         if (res.ok) {
           const data = await res.json();
           // If container_name query returned empty (e.g. name mismatch), fallback to container_id prefix if available
           if (Array.isArray(data) && data.length === 0 && this.selectedContainer && this.selectedContainerName) {
-            const resById = await fetch(`/api/v1/process-events?limit=100&container_id=${encodeURIComponent(this.selectedContainer.substring(0, 12))}`);
+            const resById = await this._apiFetch(`/api/v1/process-events?limit=100&container_id=${encodeURIComponent(this.selectedContainer.substring(0, 12))}`);
             if (resById.ok) {
               const dataById = await resById.json();
               if (Array.isArray(dataById) && dataById.length > 0) {
@@ -1129,7 +1136,7 @@ document.addEventListener('alpine:init', () => {
           return;
         }
 
-        const r2 = await fetch(fallbackEndpoint);
+        const r2 = await this._apiFetch(fallbackEndpoint);
         if (r2.ok) {
           this.events = await r2.json();
           return;
@@ -1146,7 +1153,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchAnomalyScores() {
       try {
-        const res = await fetch('/api/v1/anomaly-scores?limit=20');
+        const res = await this._apiFetch('/api/v1/anomaly-scores?limit=20');
         if (res.ok) {
           const list = await res.json();
           if (Array.isArray(list) && list.length) {
@@ -1218,7 +1225,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchIncidents() {
       try {
-        const res = await fetch('/api/v1/incidents?limit=50');
+        const res = await this._apiFetch('/api/v1/incidents?limit=50');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const fetched = await res.json();
         const getTime = (x) => {
@@ -1241,7 +1248,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchScans() {
       try {
-        const res = await fetch('/api/v1/image-scans?limit=20');
+        const res = await this._apiFetch('/api/v1/image-scans?limit=20');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const scans = await res.json();
         if (Array.isArray(scans) && scans.length > 0) {
@@ -1256,7 +1263,7 @@ document.addEventListener('alpine:init', () => {
           const allFindings = [];
           for (const scan of targets) {
             try {
-              const detailRes = await fetch(`/api/v1/image-scans/${scan.scan_id}`);
+              const detailRes = await this._apiFetch(`/api/v1/image-scans/${scan.scan_id}`);
               if (detailRes.ok) {
                 const detail = await detailRes.json();
                 if (Array.isArray(detail.vulnerabilities)) {
@@ -1332,9 +1339,17 @@ document.addEventListener('alpine:init', () => {
       return this.vulnerabilityFindings.filter(v => this.matchesReachabilityFilter(v, this.reachabilityFilter));
     },
 
+    async fetchAssessmentStatus() {
+      try {
+        const response = await this._apiFetch('/api/v1/assessment-worker/status');
+        this.assessmentStatus = response.ok ? await response.json() : null;
+      } catch (_) { this.assessmentStatus = null; }
+    },
+
     async refreshAllData() {
       await this.fetchSystemInfo();
       await Promise.all([
+        this.fetchAssessmentStatus(),
         this.fetchServices(),
         this.fetchContainers(),
         this.fetchEvents(),
@@ -1607,8 +1622,9 @@ document.addEventListener('alpine:init', () => {
       }
 
       // NOTE: System Call Flow Deviation Radar chart was intentionally removed
-      // because Porygon sensor is execve/execveat-only (see docs/research/threat-model.md)
-      // and does not capture per-syscall frequency telemetry.
+      // because behavioral profiles retain the execve/execveat contract
+      // (see docs/research/threat-model.md). Separate typed kernel evidence
+      // does not provide a complete per-syscall frequency distribution.
     },
 
     updateTimelineChart() {
@@ -1654,12 +1670,12 @@ document.addEventListener('alpine:init', () => {
 
       try {
         const headers = { 'Content-Type': 'application/json' };
-        const token = this.operatorToken || 'dev-operator-clearance';
+        const token = this.operatorToken;
         if (token) {
           headers['X-Porygon-Operator-Token'] = token;
         }
 
-        const res = await fetch('/api/demo/run-scenario', {
+        const res = await this._apiFetch('/api/demo/run-scenario', {
           method: 'POST',
           headers,
           body: JSON.stringify({ scenario_id: scenarioId })
@@ -1805,7 +1821,7 @@ document.addEventListener('alpine:init', () => {
           recommendationId = match?.recommendation_id;
         } else {
           // if already generated, list existing
-          const listRes = await fetch(`/api/v1/response-recommendations?incident_id=${incident.incident_id}`);
+          const listRes = await this._apiFetch(`/api/v1/response-recommendations?incident_id=${incident.incident_id}`);
           if (listRes.ok) {
             const list = await listRes.json();
             const match = list.find(r => r.incident_id === incident.incident_id && r.status === 'proposed');
@@ -1862,7 +1878,7 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // Operator incident clean/resolve action
+    // Operator incident workflow resolution
     async resolveIncident(incident) {
       if (!incident) return;
       if (incident.status === 'closed' || incident.status === 'resolved') {
@@ -1882,15 +1898,13 @@ document.addEventListener('alpine:init', () => {
           body: JSON.stringify({
             status: 'resolved',
             actor: 'operator-dashboard',
-            note: 'Marked clean & resolved by operator'
+            note: 'Resolved after operator review'
           })
         });
 
         if (res.ok) {
-          incident.status = 'resolved';
-          incident.closed_at = new Date().toISOString();
-          this.showToast(`Incident marked as CLEAN & RESOLVED.`, 'success');
-          this.logTerminal('OPERATOR', `Incident ${incident.incident_id} marked as clean/resolved`, 'success');
+          this.showToast(`Incident resolved.`, 'success');
+          this.logTerminal('OPERATOR', `Incident ${incident.incident_id} resolved after operator review`, 'success');
           await this.fetchIncidents();
         } else {
           const err = await res.json().catch(() => ({}));
@@ -1901,42 +1915,39 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // Operator batch clean action
+    // Resolve one bounded batch and then reload the server's incident state.
     async cleanAllIncidents() {
       const openCount = (this.incidents || []).filter(i => i.status === 'open' || i.status === 'acknowledged').length;
       if (openCount === 0) {
-        this.showToast('No active incidents to clean.', 'info');
+        this.showToast('No active incidents in the current list.', 'info');
         return;
       }
-      if (!confirm(`Mark all ${openCount} active incident(s) as CLEAN and RESOLVED?`)) return;
+      if (!confirm('Resolve up to 100 active incidents after operator review?')) return;
       try {
         if (!this.operatorToken) {
-          const t = await this.requestOperatorToken('Cleaning all incidents requires operator clearance.', 'Clean All Incidents');
+          const t = await this.requestOperatorToken('Resolving an incident batch requires operator clearance.', 'Resolve Incident Batch');
           if (!t) { this.showToast('Operator clearance cancelled', 'danger'); return; }
           this.operatorToken = t;
         }
 
-        const res = await this._apiFetch('/operator/v1/incidents/clean-all', {
+        const res = await this._apiFetch('/operator/v1/incidents/clean-all?limit=100', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
 
         if (res.ok) {
           const data = await res.json();
-          this.incidents.forEach(i => {
-            if (i.status === 'open' || i.status === 'acknowledged') {
-              i.status = 'resolved';
-            }
-          });
-          this.showToast(`All active incidents (${data.resolved_count || openCount}) marked CLEAN & RESOLVED.`, 'success');
-          this.logTerminal('OPERATOR', `Cleaned ${data.resolved_count || openCount} incidents`, 'success');
+          const count = Number.isInteger(data.resolved_count) ? data.resolved_count : 0;
+          const remaining = data.more_pending ? ' More active incidents remain; review another batch.' : '';
           await this.fetchIncidents();
+          this.showToast(`Resolved ${count} incident(s).${remaining}`, data.more_pending ? 'info' : 'success');
+          this.logTerminal('OPERATOR', `Resolved batch of ${count} incident(s).${remaining}`, 'success');
         } else {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.detail || `HTTP ${res.status}`);
         }
       } catch (err) {
-        this.showToast(`Failed to clean incidents: ${err.message}`, 'danger');
+        this.showToast(`Failed to resolve incident batch: ${err.message}`, 'danger');
       }
     },
 
@@ -1974,7 +1985,7 @@ document.addEventListener('alpine:init', () => {
       if (!scoreId) return;
       this.pipelineScoreLoading = true;
       try {
-        const res = await fetch(`/api/v1/anomaly-scores/${scoreId}`);
+        const res = await this._apiFetch(`/api/v1/anomaly-scores/${scoreId}`);
         if (!res.ok) throw new Error(`score fetch failed: ${res.status}`);
         this.pipelineScoreDetail = await res.json();
       } catch (err) {
@@ -1996,7 +2007,7 @@ document.addEventListener('alpine:init', () => {
       this.pipelineLoading = true;
       this.pipelineError = '';
       try {
-        const res = await fetch(`/api/v1/incidents/${incidentId}/timeline`);
+        const res = await this._apiFetch(`/api/v1/incidents/${incidentId}/timeline`);
         if (!res.ok) throw new Error(`timeline fetch failed: ${res.status}`);
         const rows = await res.json();
         this.pipelineTimeline = rows;
@@ -2042,15 +2053,15 @@ document.addEventListener('alpine:init', () => {
 
     async manageOperatorToken() {
       if (this.operatorToken) {
-        const confirmed = await this.requestConfirm(`Operator token is active (${this.operatorToken.slice(0, 6)}...). Clear stored token?`, 'Clear operator token', 'Clear', false);
+        const confirmed = await this.requestConfirm(`Operator token is active (configured). Log out this tab?`, 'Clear operator token', 'Clear', false);
         if (confirmed) {
           this.clearOperatorToken();
         }
       } else {
-        const val = await this.requestOperatorToken('Paste the X-Porygon-Operator-Token value from your local .env (PORYGON_OPERATOR_API_TOKEN).', 'Set operator token');
+        const val = await this.requestOperatorToken('Paste your enrolled human access token. It stays in this tab until logout or reload.', 'Set operator token');
         if (val) {
           this.operatorToken = val;
-          this.showToast('Operator token stored securely in localStorage', 'success');
+          this.showToast('Access token configured for this tab', 'success');
           this.logTerminal('OPERATOR', 'Operator token configured for human-in-the-loop containment', 'success');
         }
       }

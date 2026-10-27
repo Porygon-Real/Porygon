@@ -17,8 +17,6 @@ from sqlalchemy.orm import Session, aliased
 
 from porygon_api.baseline import (
     FEATURE_SCHEMA_VERSION,
-    COMMAND_LINEAGE_SCHEMA,
-    MIN_COMMAND_COVERAGE,
     build_profile_document,
 )
 from porygon_api.calibrated_provenance import (
@@ -32,21 +30,18 @@ from porygon_api.calibrated_rarity import (
 )
 from porygon_api.run_calibration import build_calibration_artifact, score_test_block
 from porygon_api.retention import apply_retention
-from porygon_api.incident_grouping import attach_incident
 from porygon_api.maintenance import RetentionWorker
 from porygon_api.reconciliation import IdentityReconciliationWorker
 from porygon_api.kernel_events import router as kernel_router, reconcile_kernel_identities
+from porygon_api.assessment_service import (compute_anomaly_score as assessment_compute,
+    run_detection as assessment_detect, _detection_execution as assessment_execution)
 from porygon_api.config import get_settings
 from porygon_api.detection import (
     CORRELATION_WINDOW_SECONDS,
     DETECTION_RULES,
     MATCHER_REVISION,
     RULESET_VERSION,
-    allowlist_set_hash,
     build_allowlist_matcher_hash,
-    build_detection_run_key,
-    custom_ruleset_hash,
-    evaluate_detection,
     ruleset_hash,
 )
 from porygon_api.identity import resolve_container_identity as _resolve_container_identity
@@ -57,7 +52,6 @@ from porygon_api.models import (
     CustomDetectionRule,
     DetectionAllowlist,
     DetectionRun,
-    DetectionIncidentLink,
     Incident,
     IncidentEvidence,
     ResponseAuditEvent,
@@ -156,8 +150,6 @@ from porygon_api.ml_classifier import (
 from porygon_api.scoring import (
     ALGORITHM_VERSION,
     get_scoring_config,
-    build_observation_key,
-    score_feature_documents,
 )
 from porygon_api.response import (
     RESPONSE_POLICY,
@@ -167,6 +159,16 @@ from porygon_api.response import (
     response_policy_hash,
 )
 from porygon_api.security import require_internal_token, require_operator_token
+from porygon_api.principals import Principal, LOCAL_INTERNAL_PRINCIPAL, LOCAL_OPERATOR_PRINCIPAL, current_principal, audit_subject
+from porygon_api.auth import install_authentication, enforce_host
+from porygon_api.credentialroutes import router as credential_router
+from porygon_api.health_metrics import router as health_metrics_router,record_health
+from porygon_api.notification_worker import router as notifications_router,NotificationWorker
+from porygon_api.notifications import load_destinations
+from porygon_api.evidence_routes import router as evidence_router
+from porygon_api.profile_lifecycle import router as profile_router
+from porygon_api.window_worker import router as assessment_router, AssessmentWorker
+from porygon_api.incident_transitions import transition_incident, resolve_incident_batch
 from porygon_api.vulnerability import (
     is_local_image_identity,
     assess_exposure,
@@ -210,6 +212,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         batch_size=settings.reconciliation_batch_size,
     )
     app.state.identity_reconciliation = repair
+    assessments = AssessmentWorker(settings, SessionLocal)
+    app.state.assessment_worker = assessments
+    notifications=NotificationWorker(settings,SessionLocal)
+    app.state.notification_worker=notifications
+    try:load_destinations(settings)
+    except (OSError,ValueError):logger.warning('Notification configuration invalid; detection will retain configuration-error delivery records')
+    if settings.notification_enabled:notifications.start()
+    if settings.assessment_enabled:
+        assessments.start()
     if settings.retention_scheduler_enabled:
         worker.start()
     if settings.reconciliation_enabled:
@@ -217,6 +228,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        notifications.stop()
+        assessments.stop()
         repair.stop()
         worker.stop()
 
@@ -233,6 +246,13 @@ app = FastAPI(
 
 
 app.include_router(kernel_router)
+app.include_router(credential_router)
+app.include_router(health_metrics_router)
+app.include_router(notifications_router)
+app.include_router(evidence_router)
+app.include_router(profile_router)
+app.include_router(assessment_router)
+install_authentication(app)
 
 
 @app.get("/api/v1/reconciliation/status", tags=["system"])
@@ -295,6 +315,7 @@ def health_ready(db: Session = Depends(get_db)) -> HealthResponse:
     dependencies=[Depends(require_internal_token)],
 )
 def record_heartbeat(payload: HeartbeatIn, db: Session = Depends(get_db)) -> ServiceHeartbeat:
+    record_health(db,payload)
     heartbeat = db.scalar(
         select(ServiceHeartbeat).where(
             ServiceHeartbeat.service_name == payload.service_name,
@@ -1173,7 +1194,7 @@ def build_behavior_profile(
             training_start=training_start,
             training_end=training_end,
             window_seconds=payload.window_seconds,
-            approved_by=payload.approved_by,
+            approved_by=audit_subject(payload.approved_by),
             approval_reference=payload.approval_reference,
             notes=payload.notes,
             process_event_count=manifest["process_event_count"],
@@ -1672,251 +1693,8 @@ def get_calibrated_score(score_id: str, db: Session = Depends(get_db)) -> Calibr
     tags=["internal", "anomaly-scores"],
     dependencies=[Depends(require_internal_token)],
 )
-def compute_anomaly_score(
-    payload: AnomalyScoreComputeIn,
-    db: Session = Depends(get_db),
-) -> AnomalyScore:
-    """Score one fixed window against an immutable-digest behaviour profile.
-
-    The result is a distance measurement, not a maliciousness verdict. A window
-    without process telemetry is persisted as insufficient_data so telemetry loss
-    is not silently interpreted as normal or anomalous behaviour.
-    """
-
-    if payload.profile_id:
-        profile = db.get(BehaviorProfile, payload.profile_id)
-        if profile is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-        if profile.image_digest != payload.image_digest:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Profile image digest does not match requested image digest",
-            )
-        if profile.status == "draft" or not bool(profile.quality.get("passed")):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Only quality-passing active or retired profiles may be used for scoring",
-            )
-    else:
-        profile = db.scalar(
-            select(BehaviorProfile).where(
-                BehaviorProfile.image_digest == payload.image_digest,
-                BehaviorProfile.status == "active",
-            )
-        )
-        if profile is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No active profile exists for the requested image digest",
-            )
-
-    try:
-        scoring_config = get_scoring_config(
-            profile.feature_schema_version, payload.algorithm_version
-        )
-        if profile.features.get("schema_version") != profile.feature_schema_version:
-            raise ValueError("Profile feature document does not match its schema identity")
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-    window_start = payload.window_start.astimezone(timezone.utc)
-    window_end = window_start + timedelta(seconds=profile.window_seconds)
-    if window_end > datetime.now(timezone.utc):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="The fixed observation window has not completed yet",
-        )
-    if window_start < profile.training_end and window_end > profile.training_start:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Scoring windows must not overlap the profile training interval",
-        )
-
-    process_filters = (
-        ProcessExecEvent.image_digest == payload.image_digest,
-        ProcessExecEvent.correlation_status == "resolved",
-        ProcessExecEvent.occurred_at >= window_start,
-        ProcessExecEvent.occurred_at < window_end,
-    )
-    runtime_filters = (
-        RuntimeEvent.image_digest == payload.image_digest,
-        RuntimeEvent.occurred_at >= window_start,
-        RuntimeEvent.occurred_at < window_end,
-    )
-    process_count = (
-        db.scalar(select(func.count()).select_from(ProcessExecEvent).where(*process_filters)) or 0
-    )
-    runtime_count = (
-        db.scalar(select(func.count()).select_from(RuntimeEvent).where(*runtime_filters)) or 0
-    )
-    if process_count + runtime_count > settings.anomaly_max_events:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=(
-                f"Observation window contains {process_count + runtime_count} events; "
-                f"maximum is {settings.anomaly_max_events}"
-            ),
-        )
-
-    process_events = list(
-        db.scalars(
-            select(ProcessExecEvent)
-            .where(*process_filters)
-            .order_by(ProcessExecEvent.occurred_at, ProcessExecEvent.event_id)
-        ).all()
-    )
-    runtime_events = list(
-        db.scalars(
-            select(RuntimeEvent)
-            .where(*runtime_filters)
-            .order_by(RuntimeEvent.occurred_at, RuntimeEvent.event_id)
-        ).all()
-    )
-
-    observation_features, _, observation_manifest, _ = build_profile_document(
-        image_digest=payload.image_digest,
-        start_at=window_start,
-        end_at=window_end,
-        window_seconds=profile.window_seconds,
-        process_events=process_events,
-        runtime_events=runtime_events,
-        minimum_process_events=0,
-        minimum_nonempty_windows=0,
-        feature_schema_version=profile.feature_schema_version,
-    )
-    observation_key = build_observation_key(
-        profile_id=profile.profile_id,
-        profile_model_hash=profile.model_hash,
-        window_start=window_start.isoformat(),
-        window_end=window_end.isoformat(),
-        selected_event_ids_sha256=observation_manifest["selected_event_ids_sha256"],
-        feature_schema_version=profile.feature_schema_version,
-        observation_features_sha256=observation_manifest.get("feature_document_sha256"),
-        algorithm_version=scoring_config["algorithm_version"],
-    )
-
-    try:
-        db.execute(select(func.pg_advisory_xact_lock(func.hashtext(observation_key))))
-        existing = db.scalar(
-            select(AnomalyScore).where(AnomalyScore.observation_key == observation_key)
-        )
-        if existing is not None:
-            return existing
-
-        command_coverage = observation_manifest.get("observation_coverage", {}).get(
-            "command_event_fraction", 0
-        )
-        missing_command_evidence = (
-            profile.feature_schema_version == COMMAND_LINEAGE_SCHEMA
-            and command_coverage < MIN_COMMAND_COVERAGE
-        )
-        if process_count < settings.anomaly_min_process_events or missing_command_evidence:
-            score_status = "insufficient_data"
-            band = "insufficient_data"
-            total_score = None
-            components = {
-                "available": False,
-                "reason": "Insufficient process-execution telemetry",
-                "required_process_events": settings.anomaly_min_process_events,
-                "observed_process_events": process_count,
-                "observed_runtime_events": runtime_count,
-            }
-            if missing_command_evidence:
-                components.update(
-                    {
-                        "reason": "Insufficient command-line evidence coverage",
-                        "required_command_coverage": MIN_COMMAND_COVERAGE,
-                        "observed_command_coverage": command_coverage,
-                    }
-                )
-            explanation = {
-                "band": band,
-                "interpretation": (
-                    "The observation was not scored because the process-execution evidence did not "
-                    "meet the configured minimum. This is not evidence of normal behaviour."
-                ),
-                "top_contributors": [],
-                "unseen_tokens": [],
-                "highest_numeric_deviations": [],
-            }
-        else:
-            try:
-                total_score, band, components, explanation = score_feature_documents(
-                    baseline_features=profile.features,
-                    observation_features=observation_features,
-                    algorithm_version=scoring_config["algorithm_version"],
-                )
-                if scoring_config["algorithm_version"] == ALGORITHM_VERSION:
-                    ml_res = default_classifier.predict_document(
-                        observation_features=observation_features,
-                        baseline_features=profile.features,
-                        drift_score=total_score,
-                    )
-                    explanation["ml_threat_classification"] = ml_res.to_dict()
-                else:
-                    explanation["ml_input_contract"] = {
-                        "supported": False,
-                        "required_feature_schema": FEATURE_SCHEMA_VERSION,
-                        "required_algorithm": ALGORITHM_VERSION,
-                        "observed_algorithm": scoring_config["algorithm_version"],
-                        "observed_feature_schema": profile.feature_schema_version,
-                    }
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=str(exc),
-                ) from exc
-            score_status = "scored"
-
-        now = datetime.now(timezone.utc)
-        record = AnomalyScore(
-            score_id=str(uuid4()),
-            observation_key=observation_key,
-            profile_id=profile.profile_id,
-            image_digest=payload.image_digest,
-            profile_version=profile.profile_version,
-            profile_model_hash=profile.model_hash,
-            algorithm_version=scoring_config["algorithm_version"],
-            status=score_status,
-            score_band=band,
-            total_score=total_score,
-            window_start=window_start,
-            window_end=window_end,
-            window_seconds=profile.window_seconds,
-            process_event_count=observation_manifest["process_event_count"],
-            runtime_event_count=observation_manifest["runtime_event_count"],
-            container_count=observation_manifest["container_count"],
-            components=components,
-            explanation=explanation,
-            observation_manifest=observation_manifest,
-            scoring_config=scoring_config,
-            created_at=now,
-        )
-        db.add(record)
-        db.commit()
-        db.refresh(record)
-        return record
-    except HTTPException:
-        db.rollback()
-        raise
-    except IntegrityError as exc:
-        db.rollback()
-        existing = db.scalar(
-            select(AnomalyScore).where(AnomalyScore.observation_key == observation_key)
-        )
-        if existing is not None:
-            return existing
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A concurrent scoring request created a conflicting record",
-        ) from exc
-    except SQLAlchemyError as exc:
-        db.rollback()
-        logger.exception("Anomaly-score persistence failed")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Anomaly-score persistence failed",
-        ) from exc
+def compute_anomaly_score(payload: AnomalyScoreComputeIn, db: Session = Depends(get_db)) -> AnomalyScore:
+    return assessment_compute(payload, db, settings=settings)
 
 
 @app.get(
@@ -1993,22 +1771,7 @@ def get_anomaly_score(score_id: str, db: Session = Depends(get_db)) -> AnomalySc
 
 
 def _detection_execution(db: Session, run: DetectionRun) -> dict[str, object]:
-    link = db.get(DetectionIncidentLink, run.run_id)
-    incident = (
-        db.get(Incident, link.incident_id)
-        if link is not None
-        else db.scalar(select(Incident).where(Incident.detection_run_id == run.run_id))
-    )
-    timeline: list[IncidentEvidence] = []
-    if incident is not None:
-        timeline = list(
-            db.scalars(
-                select(IncidentEvidence)
-                .where(IncidentEvidence.incident_id == incident.incident_id)
-                .order_by(IncidentEvidence.sequence_no)
-            ).all()
-        )
-    return {"run": run, "incident": incident, "timeline": timeline}
+    return assessment_execution(db, run)
 
 
 @app.get(
@@ -2110,7 +1873,7 @@ def create_detection_allowlist(
         executable=payload.executable,
         parent_executable=payload.parent_executable,
         reason=payload.reason,
-        approved_by=payload.approved_by,
+        approved_by=audit_subject(payload.approved_by),
         approval_reference=payload.approval_reference,
         active=True,
         created_at=now,
@@ -2157,7 +1920,7 @@ def deactivate_detection_allowlist(
         return record
     record.active = False
     record.deactivated_at = datetime.now(timezone.utc)
-    record.deactivated_by = payload.actor
+    record.deactivated_by = audit_subject(payload.actor)
     db.commit()
     db.refresh(record)
     return record
@@ -2217,7 +1980,7 @@ def create_custom_detection_rule(
         confidence_weight=payload.confidence_weight,
         incident_eligible=payload.incident_eligible,
         enabled=True,
-        created_by=payload.created_by,
+        created_by=audit_subject(payload.created_by),
         created_at=now,
         updated_at=now,
         disabled_at=None,
@@ -2255,7 +2018,7 @@ def disable_custom_detection_rule(
     now = datetime.now(timezone.utc)
     record.enabled = False
     record.disabled_at = now
-    record.disabled_by = payload.actor
+    record.disabled_by = audit_subject(payload.actor)
     record.updated_at = now
     db.commit()
     db.refresh(record)
@@ -2316,147 +2079,8 @@ def enable_custom_detection_rule(
     tags=["internal", "detection"],
     dependencies=[Depends(require_internal_token)],
 )
-def run_detection(
-    payload: DetectionRunIn,
-    db: Session = Depends(get_db),
-) -> dict[str, object]:
-    score = db.get(AnomalyScore, payload.anomaly_score_id)
-    if score is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anomaly score not found")
-
-    now = datetime.now(timezone.utc)
-    active_allowlists = list(
-        db.scalars(
-            select(DetectionAllowlist)
-            .where(
-                DetectionAllowlist.image_digest == score.image_digest,
-                DetectionAllowlist.active.is_(True),
-                or_(
-                    DetectionAllowlist.expires_at.is_(None),
-                    DetectionAllowlist.expires_at > now,
-                ),
-            )
-            .order_by(DetectionAllowlist.allowlist_id)
-        ).all()
-    )
-    selected_allowlist_hash = allowlist_set_hash(active_allowlists)
-    enabled_custom_rules = list(
-        db.scalars(
-            select(CustomDetectionRule)
-            .where(CustomDetectionRule.enabled.is_(True))
-            .order_by(CustomDetectionRule.slug)
-        ).all()
-    )
-    custom_rule_documents = [
-        {
-            "slug": rule.slug,
-            "name": rule.name,
-            "category": rule.category,
-            "description": rule.description,
-            "target": rule.target,
-            "condition": rule.condition,
-            "severity_weight": rule.severity_weight,
-            "confidence_weight": rule.confidence_weight,
-            "incident_eligible": rule.incident_eligible,
-            "enabled": rule.enabled,
-        }
-        for rule in enabled_custom_rules
-    ]
-    selected_custom_ruleset_hash = custom_ruleset_hash(custom_rule_documents)
-    run_key = build_detection_run_key(
-        score.score_id, selected_allowlist_hash, selected_custom_ruleset_hash
-    )
-    if db.get_bind().dialect.name == "postgresql":
-        db.execute(select(func.pg_advisory_xact_lock(func.hashtext(run_key))))
-    existing = db.scalar(select(DetectionRun).where(DetectionRun.run_key == run_key))
-    if existing is not None:
-        return _detection_execution(db, existing)
-
-    profile = db.get(BehaviorProfile, score.profile_id)
-    if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="The immutable profile referenced by the anomaly score no longer exists",
-        )
-
-    process_events = list(
-        db.scalars(
-            select(ProcessExecEvent)
-            .where(
-                ProcessExecEvent.image_digest == score.image_digest,
-                ProcessExecEvent.correlation_status == "resolved",
-                ProcessExecEvent.occurred_at >= score.window_start,
-                ProcessExecEvent.occurred_at < score.window_end,
-            )
-            .order_by(ProcessExecEvent.occurred_at, ProcessExecEvent.event_id)
-        ).all()
-    )
-    runtime_events = list(
-        db.scalars(
-            select(RuntimeEvent)
-            .where(
-                RuntimeEvent.image_digest == score.image_digest,
-                RuntimeEvent.occurred_at >= score.window_start,
-                RuntimeEvent.occurred_at < score.window_end,
-            )
-            .order_by(RuntimeEvent.occurred_at, RuntimeEvent.event_id)
-        ).all()
-    )
-
-    result = evaluate_detection(
-        anomaly_score=score,
-        profile=profile,
-        process_events=process_events,
-        runtime_events=runtime_events,
-        allowlists=active_allowlists,
-        custom_rules=custom_rule_documents,
-    )
-    run = DetectionRun(
-        run_id=str(uuid4()),
-        run_key=run_key,
-        score_id=score.score_id,
-        ruleset_version=RULESET_VERSION,
-        ruleset_hash=ruleset_hash(),
-        allowlist_set_hash=selected_allowlist_hash,
-        custom_ruleset_hash=selected_custom_ruleset_hash,
-        applied_allowlist_ids=[item.allowlist_id for item in active_allowlists],
-        image_digest=score.image_digest,
-        window_start=score.window_start,
-        window_end=score.window_end,
-        status=result["status"],
-        matches_count=len(result["matches"]),
-        incident_created=bool(result["incident_eligible"]),
-        result=result,
-        created_at=now,
-    )
-    db.add(run)
-
-    incident, timeline = attach_incident(
-        db, run, score, result, process_events, runtime_events, now
-    )
-
-    try:
-        db.commit()
-        db.refresh(run)
-        if incident is not None:
-            db.refresh(incident)
-        return {"run": run, "incident": incident, "timeline": timeline}
-    except IntegrityError as exc:
-        db.rollback()
-        existing = db.scalar(select(DetectionRun).where(DetectionRun.run_key == run_key))
-        if existing is not None:
-            return _detection_execution(db, existing)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A concurrent detection request created a conflicting run",
-        ) from exc
-    except SQLAlchemyError as exc:
-        db.rollback()
-        logger.exception("Detection persistence failed")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Detection persistence failed",
-        ) from exc
+def run_detection(payload: DetectionRunIn, db: Session = Depends(get_db)) -> dict[str, object]:
+    return assessment_detect(payload, db)
 
 
 @app.get(
@@ -2558,67 +2182,14 @@ def update_incident_status(
     incident_id: str,
     payload: IncidentStatusUpdateIn,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(require_internal_token),
 ) -> Incident:
-    incident = db.scalar(
-        select(Incident)
-        .where(Incident.incident_id == incident_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
-    if incident is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
-
-    transitions = {
-        "open": {"acknowledged", "resolved", "dismissed"},
-        "acknowledged": {"resolved", "dismissed"},
-        "resolved": set(),
-        "dismissed": set(),
-    }
-    if payload.status == incident.status:
-        return incident
-    if payload.status not in transitions[incident.status]:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Incident cannot transition from {incident.status} to {payload.status}",
-        )
-
-    now = datetime.now(timezone.utc)
-    incident.status = payload.status
-    incident.updated_at = now
-    if payload.status == "acknowledged":
-        incident.acknowledged_at = now
-        incident.acknowledged_by = payload.actor
-    else:
-        incident.closed_at = now
-        incident.closed_by = payload.actor
-        incident.closure_note = payload.note
-
-    next_sequence = (
-        db.scalar(
-            select(func.coalesce(func.max(IncidentEvidence.sequence_no), 0)).where(
-                IncidentEvidence.incident_id == incident.incident_id
-            )
-        )
-        or 0
-    ) + 1
-    db.add(
-        IncidentEvidence(
-            evidence_id=str(uuid4()),
-            incident_id=incident.incident_id,
-            sequence_no=next_sequence,
-            occurred_at=now,
-            source_type="incident_status",
-            source_id=incident.incident_id,
-            rule_id=None,
-            evidence_type="status_change",
-            summary=f"Incident status changed to {payload.status} by {payload.actor}.",
-            details={
-                "status": payload.status,
-                "actor": payload.actor,
-                "note": payload.note,
-            },
-            created_at=now,
-        )
+    # Existing trusted in-process callers do not run FastAPI dependencies. They
+    # receive the local service identity, never the unverified payload actor.
+    if not isinstance(principal, Principal):
+        principal = current_principal() or LOCAL_INTERNAL_PRINCIPAL
+    incident = transition_incident(
+        db, incident_id, target_status=payload.status, principal=principal, note=payload.note
     )
     db.commit()
     db.refresh(incident)
@@ -2635,9 +2206,14 @@ def operator_update_incident_status(
     incident_id: str,
     payload: IncidentStatusUpdateIn,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(require_operator_token),
 ) -> Incident:
     """Allow operators to resolve, dismiss, or acknowledge incidents."""
-    return update_incident_status(incident_id=incident_id, payload=payload, db=db)
+    if not isinstance(principal, Principal):
+        principal = current_principal() or LOCAL_OPERATOR_PRINCIPAL
+    return update_incident_status(
+        incident_id=incident_id, payload=payload, db=db, principal=principal
+    )
 
 
 @app.post(
@@ -2647,24 +2223,22 @@ def operator_update_incident_status(
 )
 def clean_all_incidents(
     db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=500),
+    note: str = Query(default="Resolved by operator bulk action", min_length=1, max_length=4000),
+    principal: Principal = Depends(require_operator_token),
 ) -> dict[str, Any]:
-    """Mark all open or acknowledged incidents as resolved and clean."""
-    now = datetime.now(timezone.utc)
-    incidents = list(
-        db.scalars(
-            select(Incident).where(
-                or_(Incident.status == "open", Incident.status == "acknowledged")
-            )
-        ).all()
+    """Resolve a bounded batch; resolution does not certify workload safety."""
+    if not isinstance(principal, Principal):
+        principal = current_principal() or LOCAL_OPERATOR_PRINCIPAL
+    # Preserve trusted direct invocation alongside the HTTP query defaults.
+    limit = limit if isinstance(limit, int) else 100
+    note = note if isinstance(note, str) else "Resolved by operator bulk action"
+    count, more_pending = resolve_incident_batch(
+        db, principal=principal, limit=limit, note=note
     )
-    count = len(incidents)
-    for inc in incidents:
-        inc.status = "resolved"
-        inc.closed_at = now
-        inc.closed_by = "operator"
-        inc.closure_note = "Resolved via operator dashboard clean action"
     db.commit()
-    return {"resolved_count": count, "status": "ok"}
+    return {"resolved_count": count, "status": "ok", "more_pending": more_pending,
+            "batch_limit": limit}
 
 
 @app.get("/api/v1/images", response_model=list[ImageIdentityOut], tags=["identity"])
@@ -2717,13 +2291,16 @@ def audit_container(
     api_key = payload.api_key or x_porygon_ai_key
     if not api_key:
         if settings.ai_api_key:
-            if not x_porygon_operator_token:
+            verified = current_principal()
+            if verified is not None and verified.kind != "operator":
+                raise HTTPException(403, "Human authorization is required for external AI")
+            if verified is None and not x_porygon_operator_token:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required to use server AI credentials. Provide X-Porygon-Operator-Token or supply your own key via X-Porygon-AI-Key.",
+                    detail="Authentication required to use server AI credentials",
                 )
             expected = settings.operator_api_token.get_secret_value()
-            if not secrets.compare_digest(x_porygon_operator_token, expected):
+            if verified is None and not secrets.compare_digest(x_porygon_operator_token, expected):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid operator token",
@@ -2860,13 +2437,14 @@ def audit_container(
 def get_ml_model_info() -> MLModelInfoOut:
     """Return architecture, classes, and feature metadata for Porygon's ML Threat Classifier."""
     return MLModelInfoOut(
-        model_name="Porygon Threat Classifier (Random Forest)",
+        model_name="Porygon Heuristic Threat Classifier",
         model_version=ML_MODEL_VERSION,
-        algorithm="Calibrated Decision Tree Ensemble",
+        algorithm="Hand-authored Decision Tree Ensemble",
         classes=list(ML_CLASSES),
         features=list(ML_FEATURE_NAMES),
         num_trees=len(default_classifier.trees),
-        explainability_method="TreeSHAP Local Additive Attribution",
+        explainability_method="Tree-path deltas in raw ensemble probability space",
+        model_metadata=default_classifier.metadata.to_dict(),
     )
 
 
@@ -2933,6 +2511,10 @@ def classify_events(
         summary=res.summary,
         model_version=res.model_version,
         classified_at=res.classified_at,
+        model_metadata=res.model_metadata.to_dict(),
+        explanation_base_values=res.explanation_base_values,
+        raw_output_values=res.raw_output_values,
+        full_feature_contributions=res.full_feature_contributions,
     )
 
 
@@ -3064,6 +2646,10 @@ def classify_container(
         summary=res.summary,
         model_version=res.model_version,
         classified_at=res.classified_at,
+        model_metadata=res.model_metadata.to_dict(),
+        explanation_base_values=res.explanation_base_values,
+        raw_output_values=res.raw_output_values,
+        full_feature_contributions=res.full_feature_contributions,
     )
 
 
@@ -3101,6 +2687,10 @@ def classify_features(payload: MLClassifyFeaturesIn) -> MLThreatClassificationOu
         summary=res.summary,
         model_version=res.model_version,
         classified_at=res.classified_at,
+        model_metadata=res.model_metadata.to_dict(),
+        explanation_base_values=res.explanation_base_values,
+        raw_output_values=res.raw_output_values,
+        full_feature_contributions=res.full_feature_contributions,
     )
 
 
@@ -3269,7 +2859,7 @@ def _response_audit(
         recommendation_id=recommendation_id,
         execution_id=execution_id,
         event_type=event_type,
-        actor=actor,
+        actor=audit_subject(actor),
         details=details,
         created_at=created_at or datetime.now(timezone.utc),
     )
@@ -3324,6 +2914,12 @@ def generate_response_recommendations(
     now = datetime.now(timezone.utc)
     records: list[ResponseRecommendation] = []
     for target in targets:
+        target_hosts = set(db.scalars(select(ContainerIdentity.docker_host_id).where(
+            ContainerIdentity.container_id == target)).all()) if target else set()
+        target_host = next(iter(target_hosts)) if len(target_hosts) == 1 else None
+        principal = current_principal()
+        if principal is not None and not principal.legacy and target_host is None:
+            raise HTTPException(409, 'Response target requires an unambiguous host identity')
         document = build_recommendation_document(
             incident_id=incident.incident_id,
             target_container_id=target,
@@ -3337,10 +2933,13 @@ def generate_response_recommendations(
             policy_hash=str(document["policy_hash"]),
             evidence_run_id=incident.latest_detection_run_id or incident.detection_run_id,
         )
+        enrolled = principal is not None and not principal.legacy
+        if enrolled:
+            key = sha256_document({"recommendation_key": key, "target_docker_host_id": target_host})
         existing = db.scalar(
             select(ResponseRecommendation).where(ResponseRecommendation.recommendation_key == key)
         )
-        if existing is None and incident.latest_detection_run_id in {
+        if existing is None and not enrolled and incident.latest_detection_run_id in {
             None,
             incident.detection_run_id,
         }:
@@ -3366,6 +2965,7 @@ def generate_response_recommendations(
             recommendation_key=key,
             incident_id=incident.incident_id,
             target_container_id=target,
+            target_docker_host_id=target_host,
             policy_version=str(document["policy_version"]),
             policy_hash=str(document["policy_hash"]),
             recommended_action=str(document["recommended_action"]),
@@ -3476,6 +3076,9 @@ def approve_response_recommendation(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found"
         )
+    principal = current_principal()
+    if principal is not None and not principal.legacy and record.target_docker_host_id is None:
+        raise HTTPException(409, 'Legacy proposal requires a new host-bound recommendation')
     existing_execution = db.scalar(
         select(ResponseExecution).where(
             ResponseExecution.recommendation_id == record.recommendation_id
@@ -3527,7 +3130,10 @@ def approve_response_recommendation(
         )
 
     now = datetime.now(timezone.utc)
-    age_seconds = (now - record.created_at).total_seconds()
+    created_at = record.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    age_seconds = (now - created_at).total_seconds()
     if age_seconds > settings.response_approval_max_age_seconds:
         raise HTTPException(
             status_code=409,
@@ -3535,7 +3141,7 @@ def approve_response_recommendation(
         )
     record.status = "approved"
     record.decided_at = now
-    record.decided_by = payload.actor
+    record.decided_by = audit_subject(payload.actor)
     record.decision_note = payload.note
     record.approved_action = payload.action_type
 
@@ -3544,12 +3150,13 @@ def approve_response_recommendation(
     if incident is not None and incident.status == "open":
         incident.status = "acknowledged"
         incident.acknowledged_at = now
-        incident.acknowledged_by = payload.actor
+        incident.acknowledged_by = audit_subject(payload.actor)
     execution = ResponseExecution(
         execution_id=str(uuid4()),
         recommendation_id=record.recommendation_id,
         incident_id=record.incident_id,
         target_container_id=record.target_container_id,
+        target_docker_host_id=record.target_docker_host_id,
         action_type=payload.action_type,
         status="pending",
         idempotency_key=build_execution_idempotency_key(
@@ -3581,7 +3188,7 @@ def approve_response_recommendation(
         recommendation_id=record.recommendation_id,
         execution_id=execution.execution_id,
         event_type="recommendation_approved",
-        actor=payload.actor,
+        actor=audit_subject(payload.actor),
         details={
             "approved_action": payload.action_type,
             "target_container_id": record.target_container_id,
@@ -3623,14 +3230,14 @@ def reject_response_recommendation(
     now = datetime.now(timezone.utc)
     record.status = "rejected"
     record.decided_at = now
-    record.decided_by = payload.actor
+    record.decided_by = audit_subject(payload.actor)
     record.decision_note = payload.note
     _response_audit(
         db,
         incident_id=record.incident_id,
         recommendation_id=record.recommendation_id,
         event_type="recommendation_rejected",
-        actor=payload.actor,
+        actor=audit_subject(payload.actor),
         details={"note": payload.note},
         created_at=now,
     )
@@ -3639,13 +3246,14 @@ def reject_response_recommendation(
     return record
 
 
-def _requeue_expired_response_claims(db: Session, now: datetime) -> None:
+def _requeue_expired_response_claims(db: Session, now: datetime, host_guard=True) -> None:
     db.execute(
         update(ResponseExecution)
         .where(
             ResponseExecution.status == "claimed",
             ResponseExecution.lease_expires_at.is_not(None),
             ResponseExecution.lease_expires_at < now,
+            host_guard,
         )
         .values(status="pending", executor_instance_id=None, lease_expires_at=None)
     )
@@ -3655,6 +3263,7 @@ def _requeue_expired_response_claims(db: Session, now: datetime) -> None:
             ResponseExecution.status == "rollback_claimed",
             ResponseExecution.lease_expires_at.is_not(None),
             ResponseExecution.lease_expires_at < now,
+            host_guard,
         )
         .values(status="rollback_pending", executor_instance_id=None, lease_expires_at=None)
     )
@@ -3671,11 +3280,14 @@ def claim_response_execution(
     db: Session = Depends(get_db),
 ) -> dict[str, object | None]:
     now = datetime.now(timezone.utc)
-    _requeue_expired_response_claims(db, now)
+    principal = current_principal()
+    host_guard = (ResponseExecution.target_docker_host_id.in_(principal.host_ids)
+                  if principal is not None and not principal.legacy else True)
+    _requeue_expired_response_claims(db, now, host_guard)
     operation: str | None = None
     record = db.scalar(
         select(ResponseExecution)
-        .where(ResponseExecution.status == "rollback_pending")
+        .where(ResponseExecution.status == "rollback_pending", host_guard)
         .order_by(ResponseExecution.rollback_requested_at, ResponseExecution.created_at)
         .with_for_update(skip_locked=True)
         .limit(1)
@@ -3685,7 +3297,7 @@ def claim_response_execution(
         record.status = "rollback_claimed"
         record.rollback_started_at = record.rollback_started_at or now
     else:
-        pending_statement = select(ResponseExecution).where(ResponseExecution.status == "pending")
+        pending_statement = select(ResponseExecution).where(ResponseExecution.status == "pending", host_guard)
         if settings.response_execution_mode != "live":
             pending_statement = pending_statement.where(
                 ResponseExecution.action_type == "observe_only"
@@ -3744,6 +3356,13 @@ def complete_response_execution(
     )
     if record is None:
         raise HTTPException(status_code=404, detail="Response execution not found")
+    principal = current_principal()
+    if principal is not None and not principal.legacy:
+        if record.target_docker_host_id is None:
+            raise HTTPException(403, 'Execution has no enrolled host binding')
+        enforce_host(principal, record.target_docker_host_id)
+        if record.executor_instance_id != principal.instance_id:
+            raise HTTPException(403, 'Execution is assigned to another service instance')
     if (payload.operation is None) != (payload.operation_started_at is None):
         raise HTTPException(
             status_code=422,
@@ -3865,7 +3484,7 @@ def request_response_rollback(
     now = datetime.now(timezone.utc)
     record.status = "rollback_pending"
     record.rollback_requested_at = now
-    record.rollback_requested_by = payload.actor
+    record.rollback_requested_by = audit_subject(payload.actor)
     record.rollback_note = payload.note
     _response_audit(
         db,
@@ -3873,7 +3492,7 @@ def request_response_rollback(
         recommendation_id=record.recommendation_id,
         execution_id=record.execution_id,
         event_type="rollback_requested",
-        actor=payload.actor,
+        actor=audit_subject(payload.actor),
         details={
             "action_type": record.action_type,
             "note": payload.note,
@@ -3941,7 +3560,7 @@ def retry_response_execution(
         recommendation_id=record.recommendation_id,
         execution_id=record.execution_id,
         event_type="execution_retry_requested",
-        actor=payload.actor,
+        actor=audit_subject(payload.actor),
         details={
             "previous_status": previous_status,
             "next_status": record.status,
@@ -3999,6 +3618,13 @@ def get_response_execution(
     record = db.get(ResponseExecution, execution_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Response execution not found")
+    principal = current_principal()
+    if principal is not None and principal.kind == 'service' and not principal.legacy:
+        if record.target_docker_host_id is None:
+            raise HTTPException(403, 'Execution has no enrolled host binding')
+        enforce_host(principal, record.target_docker_host_id)
+        if record.executor_instance_id != principal.instance_id:
+            raise HTTPException(403, 'Execution is assigned to another service instance')
     return record
 
 
@@ -4117,7 +3743,7 @@ def create_image_scan(
         scanner_version=payload.scanner_version,
         scan_reference=payload.scan_reference,
         status="queued",
-        requested_by=payload.requested_by,
+        requested_by=audit_subject(payload.requested_by),
         request_note=payload.note,
         scanner_instance_id=None,
         lease_expires_at=None,
@@ -4208,12 +3834,20 @@ def renew_image_scan_lease(
     )
     if record is None:
         raise HTTPException(status_code=404, detail="Image scan not found")
+    principal = current_principal()
+    if principal is not None and not principal.legacy:
+        if record.docker_host_id is None:
+            raise HTTPException(403, 'Scan has no enrolled host binding')
+        enforce_host(principal, record.docker_host_id)
+        if record.scanner_instance_id != principal.instance_id:
+            raise HTTPException(403, 'Scan is assigned to another service instance')
     if record.status != "claimed" or record.scanner_instance_id != payload.scanner_instance_id:
         raise HTTPException(status_code=409, detail="Scan is not claimed by this scanner")
     record.lease_expires_at = datetime.now(timezone.utc) + timedelta(seconds=payload.lease_seconds)
     db.commit()
     db.refresh(record)
     return record
+
 
 
 def _require_scan_claim(record: ImageScan, scanner_instance_id: str) -> None:
@@ -4244,9 +3878,17 @@ def complete_image_scan(
     )
     if record is None:
         raise HTTPException(status_code=404, detail="Image scan not found")
+    principal = current_principal()
+    if principal is not None and not principal.legacy:
+        if record.docker_host_id is None:
+            raise HTTPException(403, 'Scan has no enrolled host binding')
+        enforce_host(principal, record.docker_host_id)
+        if record.scanner_instance_id != principal.instance_id:
+            raise HTTPException(403, 'Scan is assigned to another service instance')
     if record.status == "completed":
         return record
     _require_scan_claim(record, payload.scanner_instance_id)
+
 
     reported_host = payload.scanner_metadata.get("docker_host_id")
     if reported_host is not None and reported_host != record.docker_host_id:
@@ -4532,6 +4174,13 @@ def fail_image_scan(
     )
     if record is None:
         raise HTTPException(status_code=404, detail="Image scan not found")
+    principal = current_principal()
+    if principal is not None and not principal.legacy:
+        if record.docker_host_id is None:
+            raise HTTPException(403, 'Scan has no enrolled host binding')
+        enforce_host(principal, record.docker_host_id)
+        if record.scanner_instance_id != principal.instance_id:
+            raise HTTPException(403, 'Scan is assigned to another service instance')
     if record.status in {"completed", "failed"}:
         return record
     _require_scan_claim(record, payload.scanner_instance_id)
@@ -4544,6 +4193,7 @@ def fail_image_scan(
     db.commit()
     db.refresh(record)
     return record
+
 
 
 @app.get("/api/v1/image-scans", response_model=list[ImageScanOut], tags=["vulnerability"])
@@ -4726,5 +4376,6 @@ def run_retention(
         cutoff=result.cutoff,
         process_exec_events_deleted=result.process_exec_events_deleted,
         runtime_events_deleted=result.runtime_events_deleted,
+        kernel_runtime_events_deleted=result.kernel_runtime_events_deleted,
         dry_run=result.dry_run,
     )

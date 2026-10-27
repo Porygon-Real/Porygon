@@ -3,7 +3,7 @@
   condition: >
     evt.type in (execve, execveat) and container.id != host
     and not container.label[com.porygon.protected] = "true"
-  output: "Porygon container process execution (evt_time=%evt.time.iso8601 evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type container_id=%container.id container_name=%container.name image_repository=%container.image.repository image_tag=%container.image.tag pid=%proc.pid ppid=%proc.ppid vpid=%proc.vpid process=%proc.name executable=%proc.exepath command=%proc.cmdline cwd=%proc.cwd terminal=%proc.tty parent=%proc.pname parent_executable=%proc.pexepath parent_command=%proc.pcmdline user_uid=%user.uid user=%user.name group_gid=%group.gid group=%group.name)"
+  output: "Porygon container process execution (evt_time=%evt.time.iso8601 evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type exec_result=%evt.rawres event_direction=%evt.dir container_id=%container.id container_name=%container.name image_repository=%container.image.repository image_tag=%container.image.tag pid=%proc.pid process_start_ns=%proc.pid.ts parent_start_ns=%proc.ppid.ts pid_namespace_start_ns=%proc.pidns_init_start_ts exe_from_memfd=%proc.is_exe_from_memfd exe_writable=%proc.is_exe_writable ppid=%proc.ppid vpid=%proc.vpid process=%proc.name executable=%proc.exepath command=%proc.cmdline cwd=%proc.cwd terminal=%proc.tty parent=%proc.pname parent_executable=%proc.pexepath parent_command=%proc.pcmdline user_uid=%user.uid user=%user.name group_gid=%group.gid group=%group.name)"
   priority: NOTICE
   source: syscall
   tags: [porygon, telemetry, container, process]
@@ -12,7 +12,7 @@
   desc: Observe non-loopback outbound socket connection results without declaring compromise.
   condition: >
     evt.type = connect and (evt.rawres >= 0 or evt.rawres = -115) and container.id != host and not container.label[com.porygon.protected] = "true" and fd.sockfamily = ip and not fd.rnet in (127.0.0.0/8, ::1/128, ::ffff:7f00:0/104) and fd.rip != 0.0.0.0 and fd.rip != ::
-  output: "Porygon kernel runtime (evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type result=%evt.rawres container_id=%container.id pid=%proc.pid process=%proc.name executable=%proc.exepath command=%proc.cmdline user_uid=%user.uid) (remote=%fd.rip remote_port=%fd.rport local=%fd.lip local_port=%fd.lport)"
+  output: "Porygon kernel runtime (evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type result=%evt.rawres container_id=%container.id pid=%proc.pid process_start_ns=%proc.pid.ts parent_start_ns=%proc.ppid.ts pid_namespace_start_ns=%proc.pidns_init_start_ts exe_from_memfd=%proc.is_exe_from_memfd exe_writable=%proc.is_exe_writable process=%proc.name executable=%proc.exepath command=%proc.cmdline user_uid=%user.uid) (remote=%fd.rip remote_port=%fd.rport local=%fd.lip local_port=%fd.lport)"
   priority: NOTICE
   source: syscall
   tags: [porygon, telemetry, container, kernel-runtime]
@@ -21,7 +21,7 @@
   desc: Observe successful memfd file creation; creation alone does not prove executable memory use.
   condition: >
     evt.type = memfd_create and evt.rawres >= 0 and container.id != host and not container.label[com.porygon.protected] = "true"
-  output: "Porygon kernel runtime (evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type result=%evt.rawres container_id=%container.id pid=%proc.pid process=%proc.name executable=%proc.exepath command=%proc.cmdline user_uid=%user.uid) (memory_name=%evt.arg.name)"
+  output: "Porygon kernel runtime (evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type result=%evt.rawres container_id=%container.id pid=%proc.pid process_start_ns=%proc.pid.ts parent_start_ns=%proc.ppid.ts pid_namespace_start_ns=%proc.pidns_init_start_ts exe_from_memfd=%proc.is_exe_from_memfd exe_writable=%proc.is_exe_writable process=%proc.name executable=%proc.exepath command=%proc.cmdline user_uid=%user.uid) (memory_name=%evt.arg.name)"
   priority: NOTICE
   source: syscall
   tags: [porygon, telemetry, container, kernel-runtime]
@@ -30,7 +30,7 @@
   desc: Observe writable opens of sensitive paths, distinct from actual written bytes.
   condition: >
     evt.type in (open, openat, openat2) and evt.rawres >= 0 and evt.is_open_write = true and container.id != host and not container.label[com.porygon.protected] = "true" and (fd.name startswith /etc/ or fd.name startswith /usr/bin/ or fd.name startswith /usr/sbin/ or fd.name startswith /bin/ or fd.name startswith /sbin/ or fd.name startswith /root/.ssh/)
-  output: "Porygon kernel runtime (evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type result=%evt.rawres container_id=%container.id pid=%proc.pid process=%proc.name executable=%proc.exepath command=%proc.cmdline user_uid=%user.uid) (file=%fd.name)"
+  output: "Porygon kernel runtime (evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type result=%evt.rawres container_id=%container.id pid=%proc.pid process_start_ns=%proc.pid.ts parent_start_ns=%proc.ppid.ts pid_namespace_start_ns=%proc.pidns_init_start_ts exe_from_memfd=%proc.is_exe_from_memfd exe_writable=%proc.is_exe_writable process=%proc.name executable=%proc.exepath command=%proc.cmdline user_uid=%user.uid) (file=%fd.name)"
   priority: NOTICE
   source: syscall
   tags: [porygon, telemetry, container, kernel-runtime]
@@ -39,7 +39,7 @@
   desc: Observe positive writes to sensitive paths; payload bytes are never collected.
   condition: >
     evt.type in (write, writev, pwrite, pwritev) and evt.rawres > 0 and container.id != host and not container.label[com.porygon.protected] = "true" and (fd.name startswith /etc/ or fd.name startswith /usr/bin/ or fd.name startswith /usr/sbin/ or fd.name startswith /bin/ or fd.name startswith /sbin/ or fd.name startswith /root/.ssh/)
-  output: "Porygon kernel runtime (evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type result=%evt.rawres container_id=%container.id pid=%proc.pid process=%proc.name executable=%proc.exepath command=%proc.cmdline user_uid=%user.uid) (file=%fd.name)"
+  output: "Porygon kernel runtime (evt_rawtime=%evt.rawtime evt_num=%evt.num evt_type=%evt.type result=%evt.rawres container_id=%container.id pid=%proc.pid process_start_ns=%proc.pid.ts parent_start_ns=%proc.ppid.ts pid_namespace_start_ns=%proc.pidns_init_start_ts exe_from_memfd=%proc.is_exe_from_memfd exe_writable=%proc.is_exe_writable process=%proc.name executable=%proc.exepath command=%proc.cmdline user_uid=%user.uid) (file=%fd.name)"
   priority: NOTICE
   source: syscall
   tags: [porygon, telemetry, container, kernel-runtime]

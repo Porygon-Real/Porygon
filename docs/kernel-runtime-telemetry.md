@@ -17,7 +17,7 @@ Sensitive paths cover `/etc/`, `/usr/bin/`, `/usr/sbin/`, `/bin/`, `/sbin/`, and
 
 Falco outputs typed records into its existing JSON file. The telemetry adapter recognizes four additional rules and validates the syscall, result, peer address, and container ID. A durable SQLite outbox assigns each record to either the process or kernel channel. Upgrading an existing spool preserves queued exec payloads and the file checkpoint. Queue writes and checkpoint advancement remain atomic.
 
-Each delivery pass shares capacity between due channels. A failed kernel request retains its own rows for backoff and retry; an acknowledged process request can still drain. Internal channel markers are stripped from API payloads. Stable evidence IDs and conflict-safe inserts prevent duplicate database growth after replay or a lost acknowledgement. Queue capacity remains shared and bounded; sustained overload still requires operational attention.
+Each delivery pass shares capacity between due channels. Non-Docker cgroup labels emitted by Falco are excluded from this Docker-ID channel. A failed kernel request retains its own rows for backoff and retry; an acknowledged process request can still drain. Internal channel markers are stripped from API payloads. Stable evidence IDs and conflict-safe inserts prevent duplicate database growth after replay or a lost acknowledgement. Acknowledgements count returned insert IDs rather than driver-dependent row counts; the same correction applies to process and Docker lifecycle batches. Queue capacity remains shared and bounded; sustained overload still requires operational attention.
 
 `POST /internal/v1/kernel-events/batch` requires the internal service token and accepts at most 250 events atomically. A database failure rolls back the batch. The gateway does not expose this route. The new Alembic migration adds storage and indexes without rewriting historical evidence. Downgrade refuses to remove a nonempty kernel evidence table.
 
@@ -43,10 +43,12 @@ The dashboard telemetry tab includes a separate kernel activity table with exact
 - `GET /api/v1/reconciliation/status`: worker state, last success/error class, cumulative repaired counts.
 - `POST /operator/v1/kernel-events/reconcile`: explicit bounded repair, authenticated with the operator token.
 
-Kernel events participate in existing bounded raw-evidence retention, including dry runs. Scheduled deletion remains disabled by default. No new single-syscall automatic containment policy is introduced.
+Kernel events participate in existing bounded raw-evidence retention, including dry runs. The retention API reports kernel counts alongside process and lifecycle counts. Scheduled deletion remains disabled by default. No new single-syscall automatic containment policy is introduced.
 
 ## Verification
 
 Run `python3 scripts/verify_kernel_runtime.py` against the local stack. It creates one disposable container with no host mounts and all capabilities dropped. It generates a non-loopback connection, a loopback negative control, a memory-backed file, and a controlled write inside the container layer. It repeats the probes during telemetry and backend outages, verifies recovered records, replays normalized evidence, and checks isolation from exec events. Both services and the disposable target are restored or removed on exit. Results are saved under `artifacts/local/kernel-runtime-validation/`.
 
 The backend tests cover a 50,000-row retention batch with a 999-parameter database limit, transaction rollback, replay isolation, host ambiguity, local image repair, worker restart recovery, and replica lock ownership. `PORYGON_TEST_POSTGRES=1 pytest tests/test_kernel_migration.py` exercises the full Alembic chain in a unique disposable schema, including evidence-preserving downgrade refusal. Use `alembic upgrade head --sql` for an offline SQL migration check; the installed Alembic CLI has no `--dry-run` option.
+
+The exec acceptance gate compares new dead-letter IDs during each run and records both new errors and the retained diagnostic total. Historical diagnostics remain available and are not deleted to obtain a passing gate.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from uuid import uuid4
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 
@@ -46,6 +47,8 @@ def _not_ready(condition: str, message: str) -> None:
 
 
 async def heartbeat_loop(state: TelemetryState, store: TelemetryStore) -> None:
+    counter_epoch="adapter:"+uuid4().hex
+    sequence=0
     endpoint = f"{settings.api_base_url.rstrip('/')}/internal/v1/heartbeats"
     headers = {"X-Porygon-Internal-Token": settings.internal_api_token.get_secret_value()}
     timeout = httpx.Timeout(5.0, connect=3.0)
@@ -53,16 +56,32 @@ async def heartbeat_loop(state: TelemetryState, store: TelemetryStore) -> None:
     async with httpx.AsyncClient(timeout=timeout) as client:
         while True:
             snapshot = state.snapshot()
+            sequence+=1
+            health_stats=await asyncio.to_thread(store.health_stats)
             queue_depth = await asyncio.to_thread(store.count)
             state.set(queue_depth=queue_depth)
             healthy = bool(snapshot["source_running"] and snapshot["source_file_available"])
             dead_letters = await asyncio.to_thread(store.dead_letter_stats)
+            health={'counter_epoch':counter_epoch,'sequence':sequence,'source_loss':'unknown','source_epoch':None,
+                'metrics':dict(health_stats,spooled_events=snapshot['events_enqueued'],delivered_events=snapshot['events_delivered'],
+                    backpressure_events=snapshot['spool_overflow_count'],backend_failures=snapshot['backend_consecutive_failures'])}
+            from porygon_telemetry.falco_metrics import parse_metrics
+            try:
+                response=await client.get(settings.falco_metrics_url,follow_redirects=False)
+                response.raise_for_status()
+                if len(response.content)>1048576:raise ValueError('Metrics scrape too large')
+                falco=parse_metrics(response.text)
+                health['metrics'].update(falco['metrics']);health['source_epoch']=falco['source_epoch'];health['source_loss']=falco['source_loss']
+            except (httpx.HTTPError,ValueError):pass # Unknown is retained; never manufacture zero drops.
+            health['metrics']['dead_letters']=dead_letters.get('records',dead_letters.get('count',0))
             payload = {
                 "service_name": settings.service_name,
                 "instance_id": settings.telemetry_instance_id,
                 "status": "healthy" if healthy else "degraded",
                 "observed_at": datetime.now(timezone.utc).isoformat(),
                 "metadata": {
+                    "health":health,
+                    "docker_host_id":settings.reported_docker_host_id,
                     "version": settings.version,
                     "environment": settings.environment,
                     "capability": "process-telemetry",
@@ -168,6 +187,7 @@ async def lifespan(app: FastAPI):
     store = TelemetryStore(
         settings.spool_path,
         settings.spool_max_events,
+        max_bytes=settings.spool_max_bytes,
         dead_letter_max_records=settings.dead_letter_max_records,
         dead_letter_max_total_bytes=settings.dead_letter_max_total_bytes,
         dead_letter_excerpt_bytes=settings.dead_letter_excerpt_bytes,

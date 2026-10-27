@@ -126,11 +126,17 @@
 
         <!-- Right Quick Status & Actions -->
         <div class="flex items-center gap-3 font-mono text-xs">
+          <span id="assessment-worker-status" class="border border-[#111111] px-2 py-1.5"
+                x-text="assessmentStatus ? ((assessmentStatus.enabled_in_api ? 'Assessments enabled' : 'API worker disabled') + ' · ' + (assessmentStatus.counts.pending || 0) + ' pending · coverage unknown') : 'Assessment status unavailable'"></span>
           <!-- eBPF Status Indicator -->
           <div class="border border-[#111111] px-2.5 py-1.5 bg-white flex items-center gap-1.5">
             <span class="w-2 h-2 bg-[#111111] animate-pulse"></span>
             <span class="text-[11px] font-bold text-[#111111]" x-text="(services.length > 0 || systemInfo.registered_services > 0 || systemInfo.runtime_events != null) ? 'eBPF ONLINE' : 'OFFLINE'">eBPF ONLINE</span>
           </div>
+
+          <button id="human-access-control" @click="manageOperatorToken()"
+                  class="btn-news-secondary py-1.5 px-3"
+                  x-text="operatorToken ? 'Log out' : 'Access token'">Access token</button>
 
           <!-- Refresh Button -->
           <button @click="refreshAllData()" class="btn-news-secondary py-1.5 px-3" title="Sync live telemetry">
@@ -275,7 +281,7 @@
                   <td class="font-mono text-xs" x-text="c.current_snapshot?.state?.pid || '—'"></td>
                   <td class="font-mono text-xs uppercase" x-text="c.container_name.includes('porygon') ? 'CORE' : 'APP'"></td>
                   <td class="text-right whitespace-nowrap">
-                    <button @click.stop="classifyContainerWithML(c)" class="btn-news-secondary py-0.5 px-2 text-[10px] mr-1 bg-[#FFF9E6] hover:bg-[#FFF0B3] border border-[#111111]" title="Classify container runtime threat tactics with Random Forest ML">
+                    <button @click.stop="classifyContainerWithML(c)" class="btn-news-secondary py-0.5 px-2 text-[10px] mr-1 bg-[#FFF9E6] hover:bg-[#FFF0B3] border border-[#111111]" title="Classify container execution features with the heuristic tree ensemble">
                       <i class="ph ph-brain text-xs"></i> ML CLASSIFY
                     </button>
                     <button @click.stop="auditContainerWithAi(c)" class="btn-news-secondary py-0.5 px-2 text-[10px]" title="Inspect security posture advisory">
@@ -388,10 +394,10 @@
         </div>
 
       </div>
-      <section id="kernel-runtime-panel" class="border-2 border-[#111111] bg-white p-5 mt-6" aria-labelledby="kernel-runtime-title">
+      <section id="kernel-runtime-panel" class="font-sans border-2 border-[#111111] bg-white p-5 mt-6" aria-labelledby="kernel-runtime-title">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#111111] pb-3 mb-4">
           <div>
-            <h2 id="kernel-runtime-title" class="font-body font-bold text-xl text-[#111111]">Kernel runtime activity</h2>
+            <h2 id="kernel-runtime-title" class="font-sans font-bold text-xl text-[#111111]">Kernel runtime activity</h2>
             <p class="text-xs text-neutral-600">Connections, memory-backed files and sensitive-path writes. Showing the latest 100 matching records.</p>
           </div>
           <button id="kernel-runtime-refresh" type="button" class="btn-news-secondary text-xs px-3 py-2" @click="fetchKernelEvents()" :disabled="kernelLoading">Refresh activity</button>
@@ -445,12 +451,12 @@
             <p class="font-body text-xs text-neutral-600 m-0">Operator-approved container containment actions and audit records.</p>
           </div>
           <div class="flex items-center gap-2">
-            <button @click="cleanAllIncidents()"
+            <button id="resolve-incident-batch" @click="cleanAllIncidents()"
                     x-show="openIncidentsCount > 0"
                     class="btn-news-secondary py-1.5 px-3 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-800 flex items-center gap-1.5 font-bold"
-                    title="Mark all active incidents as clean and resolved">
+                    title="Resolve a batch of up to 100 active incidents after review">
               <i class="ph ph-check-circle text-sm"></i>
-              <span>CLEAN ALL INCIDENTS</span>
+              <span>RESOLVE BATCH</span>
             </button>
             <button @click="openAddRuleModal()" class="btn-news-primary py-1.5 px-3 text-xs">
               + CREATE CUSTOM RULE
@@ -469,7 +475,7 @@
             <button @click="incidentFilter='clean'"
                     :class="incidentFilter==='clean' ? 'bg-emerald-800 text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
                     class="px-2.5 py-1 uppercase text-[11px] transition-colors">
-              RESOLVED / CLEAN (<span x-text="(incidents.length || 0) - openIncidentsCount"></span>)
+              RESOLVED (<span x-text="(incidents.length || 0) - openIncidentsCount"></span>)
             </button>
             <button @click="incidentFilter='all'"
                     :class="incidentFilter==='all' ? 'bg-[#111111] text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
@@ -487,7 +493,7 @@
                 <div class="flex items-center gap-2">
                   <span class="badge-breaking"
                         :class="inc.status === 'resolved' || inc.status === 'closed' ? 'bg-emerald-700 text-white' : ''"
-                        x-text="inc.status === 'resolved' || inc.status === 'closed' ? 'CLEAN & RESOLVED' : (inc.severity_level ? inc.severity_level.toUpperCase() : 'ALERT')">CRITICAL</span>
+                        x-text="inc.status === 'resolved' || inc.status === 'closed' ? 'RESOLVED' : (inc.severity_level ? inc.severity_level.toUpperCase() : 'ALERT')">CRITICAL</span>
                   <span class="font-mono text-xs text-neutral-500" x-text="inc.incident_id.substring(0, 12)"></span>
                 </div>
                 <div class="font-mono text-xs text-neutral-600" x-text="new Date(inc.created_at).toLocaleString()"></div>
@@ -533,8 +539,8 @@
                                 class="btn-news-secondary text-xs">
                           OBSERVE
                         </button>
-                        <button @click="resolveIncident(inc)" class="btn-news-secondary text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-800 flex items-center gap-1 font-bold" title="Mark this incident as clean and resolved">
-                          <i class="ph ph-check-circle text-xs"></i> CLEAN
+                        <button :id="'resolve-open-incident-' + inc.incident_id" @click="resolveIncident(inc)" class="btn-news-secondary text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-800 flex items-center gap-1 font-bold" title="Resolve this incident after operator review">
+                          <i class="ph ph-check-circle text-xs"></i> RESOLVE
                         </button>
                       </div>
                     </template>
@@ -547,10 +553,10 @@
                           <span class="text-amber-800" x-text="inc.approved_action || inc.recommended_action || 'PAUSED'"></span>
                         </div>
                         <div class="flex items-center gap-1.5">
-                          <button @click="resolveIncident(inc)"
+                          <button :id="'resolve-acknowledged-incident-' + inc.incident_id" @click="resolveIncident(inc)"
                                   class="btn-news-secondary text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-800 flex-1 flex items-center justify-center gap-1 font-bold py-1"
-                                  title="Mark this incident as clean and resolved">
-                            <i class="ph ph-check-circle text-xs"></i> MARK RESOLVED &amp; CLEAN
+                                  title="Resolve this incident after operator review">
+                            <i class="ph ph-check-circle text-xs"></i> MARK RESOLVED
                           </button>
                         </div>
                       </div>
@@ -702,10 +708,10 @@
         <div class="flex flex-wrap items-center justify-between border-b border-[#111111] pb-3 mb-4 gap-3">
           <div>
             <div class="flex items-center gap-2">
-              <h2 class="font-serif font-bold text-2xl text-[#111111] m-0">Machine Learning Threat Classifier</h2>
-              <span class="border border-[#111111] bg-[#111111] text-white px-2 py-0.5 text-[10px] font-mono font-bold uppercase">Random Forest + TreeSHAP</span>
+              <h2 class="font-serif font-bold text-2xl text-[#111111] m-0">Heuristic Threat Classifier</h2>
+              <span class="border border-[#111111] bg-[#111111] text-white px-2 py-0.5 text-[10px] font-mono font-bold uppercase">Heuristic Trees + Path Deltas</span>
             </div>
-            <p class="font-body text-xs text-neutral-600 m-0 mt-0.5">Continuous evaluation of 12 kernel execution features against MITRE ATT&amp;CK tactics with local additive attribution.</p>
+            <p class="font-body text-xs text-neutral-600 m-0 mt-0.5">On-demand classification of 12 process-execution features with raw tree-path attribution.</p>
           </div>
           <div class="flex items-center gap-2">
             <button @click="classifyFleetForMLView()"
@@ -768,9 +774,9 @@
               <tr>
                 <th class="w-48">CONTAINER / WORKLOAD</th>
                 <th class="w-40">PREDICTED MITRE TACTIC</th>
-                <th class="w-28">CONFIDENCE</th>
+                <th class="w-28">CLASS SCORE</th>
                 <th class="w-24">VERDICT</th>
-                <th>PRIMARY TREESHAP ATTRIBUTION DRIVER</th>
+                <th>PRIMARY RAW PATH DRIVER</th>
                 <th class="text-right w-44">INSPECTION</th>
               </tr>
             </thead>
@@ -841,8 +847,8 @@
                   <td class="text-right whitespace-nowrap">
                     <button @click="inspectMLFromTable(item.container)"
                             class="btn-news-secondary py-1 px-2.5 text-[11px] bg-[#FFF9E6] hover:bg-[#FFF0B3] border border-[#111111]"
-                            title="Inspect complete TreeSHAP local additive feature attributions and probability distribution">
-                      <i class="ph ph-tree-structure text-xs"></i> INSPECT TREESHAP
+                            title="Inspect top raw-space tree-path drivers and heuristic class scores">
+                      <i class="ph ph-tree-structure text-xs"></i> INSPECT PATH DELTAS
                     </button>
                   </td>
                 </tr>
@@ -1338,22 +1344,22 @@
          ====================================================================== -->
 
     <!-- OPERATOR TOKEN CLEARANCE MODAL -->
-    <div x-show="tokenModal.show" class="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" style="display:none" @keydown.escape.window="cancelTokenModal()">
+    <div id="human-access-modal" x-show="tokenModal.show" class="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" style="display:none" @keydown.escape.window="cancelTokenModal()">
       <div class="border-2 border-[#111111] bg-white p-6 max-w-md w-full hard-shadow text-[#111111]">
         <div class="flex items-center justify-between border-b border-[#111111] pb-2 mb-3">
           <span class="font-mono text-xs font-bold uppercase text-[#CC0000]">OPERATOR TOKEN</span>
-          <button @click="cancelTokenModal()" class="font-mono font-bold text-base">&times;</button>
+          <button id="human-access-close" @click="cancelTokenModal()" class="font-mono font-bold text-base">&times;</button>
         </div>
         <h3 class="font-serif font-bold text-xl text-[#111111] m-0" x-text="tokenModal.title">Operator Token</h3>
         <p class="font-body text-xs text-neutral-600 mt-1 mb-4" x-text="tokenModal.message">Containment actions require the operator secret token.</p>
 
-        <input type="password" x-model="tokenModal.value" @keydown.enter="submitTokenModal()"
-               placeholder="PORYGON_OPERATOR_API_TOKEN..."
+        <input id="human-access-token" type="password" autocomplete="off" x-model="tokenModal.value" @keydown.enter="submitTokenModal()"
+               placeholder="Human access token"
                class="input-news font-mono text-xs mb-4">
 
         <div class="flex justify-end gap-2">
-          <button @click="cancelTokenModal()" class="btn-news-secondary py-1 px-3 text-xs">CANCEL</button>
-          <button @click="submitTokenModal()" class="btn-news-primary py-1 px-3 text-xs">AUTHORIZE</button>
+          <button id="human-access-cancel" @click="cancelTokenModal()" class="btn-news-secondary py-1 px-3 text-xs">CANCEL</button>
+          <button id="human-access-submit" @click="submitTokenModal()" class="btn-news-primary py-1 px-3 text-xs">AUTHORIZE</button>
         </div>
       </div>
     </div>
@@ -1405,7 +1411,7 @@
 
         <div x-show="mlClassifyModal.loading" class="text-center py-8 font-mono text-xs space-y-2">
           <i class="ph ph-spinner animate-spin text-2xl text-neutral-600"></i>
-          <div>EVALUATING 12 RUNTIME FEATURE FAMILIES VIA RANDOM FOREST ENSEMBLE...</div>
+          <div>EVALUATING 12 EXECUTION FEATURES VIA HEURISTIC TREES...</div>
         </div>
 
         <div x-show="mlClassifyModal.error" class="border border-red-500 bg-red-50 p-3 text-red-700 text-xs font-mono my-2" x-text="mlClassifyModal.error"></div>
@@ -1427,7 +1433,7 @@
                       x-text="mlClassifyModal.result?.predicted_class?.replace('_', ' ')"></span>
               </div>
               <div class="flex items-center gap-2 font-mono text-xs">
-                <span class="text-neutral-500">CONFIDENCE:</span>
+                <span class="text-neutral-500">CLASS SCORE:</span>
                 <span class="font-bold text-sm" x-text="((mlClassifyModal.result?.confidence || 0) * 100).toFixed(1) + '%'"></span>
                 <span class="px-1.5 py-0.5 font-bold uppercase border border-[#111111]"
                       :class="{
@@ -1441,9 +1447,9 @@
             <p class="text-neutral-800 leading-relaxed font-body mt-2" x-text="mlClassifyModal.result?.summary"></p>
           </div>
 
-          <!-- Class Probabilities Distribution -->
+          <!-- Heuristic class scores -->
           <div class="border border-[#111111] p-3 bg-white">
-            <h4 class="font-mono font-bold text-xs uppercase text-neutral-600 mb-2">Class Probability Distribution</h4>
+            <h4 class="font-mono font-bold text-xs uppercase text-neutral-600 mb-2">Heuristic Class Scores</h4>
             <div class="space-y-1.5">
               <template x-for="(prob, tactic) in (mlClassifyModal.result?.class_probabilities || {})" :key="tactic">
                 <div class="flex items-center gap-2 font-mono text-[11px]">
@@ -1457,11 +1463,11 @@
             </div>
           </div>
 
-          <!-- TreeSHAP Local Feature Attribution Table -->
+          <!-- Tree-path Feature Attribution Table -->
           <div class="border border-[#111111] p-3 bg-white">
             <div class="flex items-center justify-between mb-2">
-              <h4 class="font-mono font-bold text-xs uppercase text-neutral-600">TreeSHAP Explainability (Top Local Drivers)</h4>
-              <span class="font-mono text-[10px] text-neutral-400">Additive Local Accuracy</span>
+              <h4 class="font-mono font-bold text-xs uppercase text-neutral-600">Tree-path Deltas (Top Raw-space Drivers)</h4>
+              <span class="font-mono text-[10px] text-neutral-400">Raw ensemble output space</span>
             </div>
             <table class="w-full text-left font-mono text-[11px] border-collapse">
               <thead>
@@ -1490,7 +1496,7 @@
           </div>
 
           <div class="font-mono text-[10px] text-neutral-500 flex justify-between items-center pt-1">
-            <span>MODEL: Random Forest Ensemble (<span x-text="mlClassifyModal.result?.model_version"></span>)</span>
+            <span>MODEL: Heuristic Tree Ensemble (<span x-text="mlClassifyModal.result?.model_version"></span>)</span>
             <span>CLASSIFIED AT: <span x-text="mlClassifyModal.result?.classified_at"></span></span>
           </div>
         </div>

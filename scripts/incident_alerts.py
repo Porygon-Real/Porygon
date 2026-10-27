@@ -142,13 +142,14 @@ def format_alert_email(
         f"  - {f.get('rule_id', '?')} ({f.get('name', '?')}): {f.get('summary', '')}"
         for f in top_findings
     )
+    distance = f"{incident['anomaly_score']:.3f}" if incident.get('anomaly_score') is not None else 'unavailable'
     body = f"""Porygon detected a behavioral deviation and opened an incident.
 
 Title:       {incident['title']}
 Status:      {incident['status']}
 Severity:    {incident['severity_level']} (score {incident['severity_score']:.3f})
 Confidence:  {incident['confidence_level']} (score {incident['confidence_score']:.3f})
-Anomaly:     {incident['anomaly_score']:.3f} (behavioural distance from the trained baseline)
+Anomaly:     {distance} (behavioural distance when available)
 Image:       {incident['image_digest']}
 Containers:  {', '.join(incident.get('container_ids', []))}
 First seen:  {incident['first_seen_at']}
