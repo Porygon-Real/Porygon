@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
+from porygon_api.db import Base
 from porygon_api.kernel_events import ingest_kernel_events, reconcile_kernel_identities
 from porygon_api.models import KernelRuntimeEvent, ProcessExecEvent, RuntimeEvent
 from porygon_api.reconciliation import IdentityReconciliationWorker
@@ -124,32 +125,36 @@ def test_worker_retries_from_committed_rows_after_restart(db, monkeypatch):
     assert worker.snapshot()["kernel_repaired"] == 1
 
 
-def test_retention_production_batch_under_low_bind_limit(db):
-    if db.bind.dialect.name != "sqlite":
-        pytest.skip("SQLite bind-limit regression")
+def test_retention_production_batch_under_low_bind_limit():
+    # Production containers intentionally have a small tmpfs. Keep this large
+    # synthetic inventory in memory so the test does not exhaust /tmp.
     from datetime import timedelta
-    from test_retention import _process_event, _runtime_event
-    old = NOW - timedelta(days=90)
-    for model, factory in ((ProcessExecEvent, _process_event), (RuntimeEvent, _runtime_event)):
-        template = factory("template", old)
-        values = {c.name: getattr(template, c.name) for c in model.__table__.columns}
-        db.execute(model.__table__.insert(), [dict(values, event_id=f"old-{i}") for i in range(50001)])
-    kernel = payload(occurred_at=old).model_dump()
-    kernel.update(correlation_status="unresolved", received_at=old)
-    db.add(KernelRuntimeEvent(**kernel))
-    db.commit()
-    connection = db.connection().connection.driver_connection
-    connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
-    dry = apply_retention(db, retention_days=30, max_delete_batch=50000, dry_run=True, now=NOW)
-    assert dry.kernel_runtime_events_deleted == 1
-    assert db.scalar(select(func.count()).select_from(ProcessExecEvent)) == 50001
-    result = apply_retention(db, retention_days=30, max_delete_batch=50000, dry_run=False, now=NOW)
-    db.commit()
-    assert result.process_exec_events_deleted == result.runtime_events_deleted == 50000
-    assert result.kernel_runtime_events_deleted == 1
-    assert db.scalar(select(func.count()).select_from(ProcessExecEvent)) == 1
-    assert db.scalar(select(func.count()).select_from(RuntimeEvent)) == 1
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        from test_retention import _process_event, _runtime_event
+        old = NOW - timedelta(days=90)
+        for model, factory in ((ProcessExecEvent, _process_event), (RuntimeEvent, _runtime_event)):
+            template = factory("template", old)
+            values = {c.name: getattr(template, c.name) for c in model.__table__.columns}
+            db.execute(model.__table__.insert(), [dict(values, event_id=f"old-{i}") for i in range(50001)])
+        kernel = payload(occurred_at=old).model_dump()
+        kernel.update(correlation_status="unresolved", received_at=old)
+        db.add(KernelRuntimeEvent(**kernel))
+        db.commit()
+        connection = db.connection().connection.driver_connection
+        connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
+        dry = apply_retention(db, retention_days=30, max_delete_batch=50000, dry_run=True, now=NOW)
+        assert dry.kernel_runtime_events_deleted == 1
+        assert db.scalar(select(func.count()).select_from(ProcessExecEvent)) == 50001
+        result = apply_retention(db, retention_days=30, max_delete_batch=50000, dry_run=False, now=NOW)
+        db.commit()
+        assert result.process_exec_events_deleted == result.runtime_events_deleted == 50000
+        assert result.kernel_runtime_events_deleted == 1
+        assert db.scalar(select(func.count()).select_from(ProcessExecEvent)) == 1
+        assert db.scalar(select(func.count()).select_from(RuntimeEvent)) == 1
 
+    engine.dispose()
 
 def test_failed_batch_rolls_back_all_evidence(db):
     from sqlalchemy import event
@@ -237,3 +242,17 @@ def test_legacy_postgres_acknowledgements_and_no_inline_repair(db, monkeypatch):
         assert (replay.inserted, replay.duplicates) == (0, 1)
     repair.assert_not_called()
     assert notify.notify.call_count == 4
+
+
+@pytest.mark.parametrize('dry_run', [True, False])
+def test_retention_api_reports_kernel_counts_and_preserves_dry_run(db, dry_run):
+    from datetime import timedelta
+    from porygon_api import main
+    old = datetime.now(timezone.utc) - timedelta(days=90)
+    values = payload(occurred_at=old).model_dump()
+    db.add(KernelRuntimeEvent(**values, correlation_status='unresolved', received_at=old))
+    db.commit()
+    result = main.run_retention(dry_run=dry_run, db=db)
+    assert result.kernel_runtime_events_deleted == 1
+    assert result.dry_run is dry_run
+    assert db.scalar(select(func.count()).select_from(KernelRuntimeEvent)) == int(dry_run)

@@ -97,7 +97,7 @@ listener.close()
         with open_backend(replay_request) as response:
             replay = json.load(response)
         assert replay['inserted'] == 0 and replay['duplicates'] == len(events)
-        legacy = request('GET', base + '/api/v1/process-events?container_id=' + target + '&limit=1000')
+        legacy = request('GET', base + '/api/v1/process-events?container_id=' + target + '&limit=500')
         legacy_events = legacy if isinstance(legacy,list) else legacy.get('events', [])
         assert all(event['event_type'] in ('execve','execveat') for event in legacy_events)
         worker = request('GET', base + '/api/v1/reconciliation/status')

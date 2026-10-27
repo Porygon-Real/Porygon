@@ -29,7 +29,9 @@ def normalize_kernel_event(raw_event, *, sensor_instance_id, reported_docker_hos
     if not cid or cid == "host":
         return None
     if re.fullmatch(r"[0-9a-f]{12,64}", cid) is None:
-        raise ValueError("Kernel container ID is not a full or short Docker ID")
+        # Falco can report host cgroup labels (for example system.slice).
+        # They are outside this Docker-ID evidence stream, not malformed JSON.
+        return None
     kind, types = RULES[rule]
     syscall = _text(fields.get("evt.type"), 64)
     if syscall not in types:

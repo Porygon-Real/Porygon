@@ -4726,5 +4726,6 @@ def run_retention(
         cutoff=result.cutoff,
         process_exec_events_deleted=result.process_exec_events_deleted,
         runtime_events_deleted=result.runtime_events_deleted,
+        kernel_runtime_events_deleted=result.kernel_runtime_events_deleted,
         dry_run=result.dry_run,
     )

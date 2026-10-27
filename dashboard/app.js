@@ -1607,8 +1607,9 @@ document.addEventListener('alpine:init', () => {
       }
 
       // NOTE: System Call Flow Deviation Radar chart was intentionally removed
-      // because Porygon sensor is execve/execveat-only (see docs/research/threat-model.md)
-      // and does not capture per-syscall frequency telemetry.
+      // because behavioral profiles retain the execve/execveat contract
+      // (see docs/research/threat-model.md). Separate typed kernel evidence
+      // does not provide a complete per-syscall frequency distribution.
     },
 
     updateTimelineChart() {

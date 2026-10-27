@@ -8,7 +8,7 @@ Porygon monitors container execution at the kernel level using modern eBPF (via 
 
 ## Features
 
-- **Kernel-Level Telemetry**: Captures process execution events (`execve`/`execveat`) in real time using modern eBPF probes.
+- **Kernel-Level Telemetry**: Captures process execution (`execve`/`execveat`) plus separate typed evidence for outbound connections, memory-backed files, and sensitive-path opens and writes using modern eBPF probes.
 - **Digest-Bound Baselines**: Profiles expected process behavior bound to cryptographic image digests (`sha256:...`) rather than mutable image tags.
 - **Behavioral Anomaly Scoring**: Calculates runtime drift using Jensen-Shannon divergence to identify unexpected processes and abnormal tool usage.
 - **ML Threat Classification**: Classifies runtime telemetry into MITRE attack tactics (`shell_escape`, `reconnaissance`, `suspicious_tooling`, `privilege_escalation`, `benign`) using an explainable Random Forest ensemble with TreeSHAP feature attribution.
@@ -25,7 +25,7 @@ Porygon monitors container execution at the kernel level using modern eBPF (via 
 | :--- | :--- | :--- |
 | **`backend`** | Core API, scoring engine, detection logic, and incident management | `8000` (via gateway) |
 | **`collector`** | Streams Docker daemon lifecycle events (create, start, exec, die) | Internal |
-| **`telemetry`** | Ingests and spools kernel process events from Falco | Internal |
+| **`telemetry`** | Normalizes and durably spools separate process and kernel-runtime channels from Falco | Internal |
 | **`responder`** | Executes container containment actions (pause / stop) | Internal |
 | **`scanner`** | Runs Trivy vulnerability scans and retrieves EPSS/KEV metadata | Internal |
 | **`falco`** | Modern eBPF sensor monitoring system calls | Internal |
@@ -204,6 +204,7 @@ Explore the complete documentation in [`docs/`](docs/):
 - **Architecture:**
   - [System Overview](docs/architecture/system-overview.md)
   - [eBPF Kernel Telemetry](docs/architecture/ebpf-telemetry.md)
+  - [Kernel Runtime Evidence and Recovery](docs/kernel-runtime-telemetry.md)
   - [Digest-Bound Behavioral Profiling](docs/architecture/behavioral-profiling.md)
   - [Explainable ML Threat Classifier](docs/architecture/ml-threat-classifier.md)
   - [Containment Engine & Safety Leases](docs/architecture/containment-engine.md)

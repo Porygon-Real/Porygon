@@ -1,8 +1,9 @@
 # eBPF Kernel Telemetry & Ingestion Architecture
 
-> **Component:** `porygon-collector`, modern-eBPF driver (Falco)  
+> **Components:** Falco modern-eBPF driver, `porygon-telemetry`, backend identity resolution<br>
 > **Schema:** `porygon.behaviour.v1`  
-> **Tracepoints Hooked:** `sys_enter_execve`, `sys_exit_execve`, `sys_enter_execveat`, `sys_exit_execveat`
+> **Behavioral input:** `execve`, `execveat`<br>
+> **Separate runtime evidence:** `connect`, `memfd_create`, sensitive-path open/write syscalls; see [kernel runtime telemetry](../kernel-runtime-telemetry.md).
 
 ---
 
@@ -41,17 +42,17 @@ Porygon hooks raw kernel tracepoints rather than kprobes to ensure portability a
                     [BPF Ring Buffer (Host Memory)]
 ```
 
-### Tracepoint Selection: Why Execve Only in v1?
-As formalized in [`docs/research/threat-model.md`](../research/threat-model.md):
-- Per-packet network sniffing or per-syscall tracking (`read`, `write`, `openat`) produces overwhelming telemetry volume (>100,000 events/sec per host), causing severe cache churn and high false-positive rates.
-- Container attack workflows (initial access, privilege escalation, defense evasion, command and control) inevitably manifest as **process execution transitions** (e.g., executing `/bin/sh`, invoking `curl`, launching `sudo` or compilers).
-- Tracking `execve` and `execveat` captures 100% of distinct binary executions while maintaining sub-1% CPU consumption.
+### Separate observation from behavioral scoring
+
+The frozen [research threat model](../research/threat-model.md) defines the exec-based behavior-profile contract. `execve` and `execveat` continue to feed that contract. Existing profile hashes, features, and detection semantics do not incorporate the additional syscalls.
+
+A separate typed evidence channel observes non-loopback outbound connections, memory-backed file creation, writable opens, and actual writes to sensitive paths. A successful open records write access; a positive write result records bytes written. Neither a connection nor a memory-backed file alone establishes exploitation. Falco enables the write-family syscalls required by the rules, with emitted events restricted by path and protected-container filters. Capture overhead and event drops depend on workload and must be measured for the deployment.
 
 ---
 
 ## 3. Container Context & Identity Resolution
 
-When an event arrives from the ring buffer, `porygon-collector` resolves the kernel namespace and cgroup identifiers to immutable container metadata:
+Falco supplies container and process context. `porygon-telemetry` normalizes and durably spools this evidence. Independently, `porygon-collector` records Docker lifecycle snapshots and immutable image metadata. The backend resolves the reported container prefix within its exact Docker host, and a bounded background worker repairs out-of-order identities after commit:
 
 ```
 +------------------------------------+
@@ -78,7 +79,9 @@ When an event arrives from the ring buffer, `porygon-collector` resolves the ker
 
 ---
 
-## 4. Telemetry Event Schema (`porygon.behaviour.v1`)
+## 4. Process evidence and behavioral features
+
+The following diagram organizes process, parent, and deployment context conceptually. The wire schemas are `ProcessExecEventIn` and `KernelRuntimeEventIn` in `backend/src/porygon_api/schemas.py`; `porygon.behaviour.v1` names the aggregated feature contract rather than this context diagram.
 
 ```json
 {
@@ -114,11 +117,8 @@ When an event arrives from the ring buffer, `porygon-collector` resolves the ker
 
 ---
 
-## 5. Lossless Saturation & Verification Protocol
+## 5. Recovery and verification
 
-To mathematically verify that telemetry is not dropped under burst loads, Porygon executes an automated stress gate (`scripts/verify_ebpf_telemetry.sh` and `scripts/verify_all.sh`):
+`scripts/verify_ebpf_telemetry.sh` exercises real execs, parent linkage, identity resolution, adapter/backend outages, malformed input handling, and replay idempotency. Its evidence records the observed Falco file IDs, queued rows, and recovered database rows for each run. `scripts/verify_event_ingestion.sh` additionally saturates the lifecycle spool and reconciles Docker canary events against PostgreSQL.
 
-1. **Synthetic Burst Execution:** Generates 5,000 rapid container process executions within a 10-second burst.
-2. **Reconciliation Check:** Reconciles the count of executions recorded in container audit logs against the count of persisted events in the PostgreSQL database:
-   $$\text{Loss Rate} = \frac{\text{Expected Executions} - \text{Recorded Events}}{\text{Expected Executions}} \times 100\%$$
-3. **Pass Criteria:** Loss rate must equal $0.00\%$. Any non-zero drop triggers pipeline failure in the static/unit verification suite.
+`python3 scripts/verify_kernel_runtime.py` exercises the separate non-exec channel with real connections, memory-backed files, and sensitive-path writes, repeats them through both outages, and replays the normalized records. It also verifies loopback exclusion and exec-stream isolation. Kernel drop accounting, source-file retention, queue saturation, and database recovery must be considered together under the deployment workload.
