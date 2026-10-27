@@ -1126,7 +1126,7 @@
         <p class="hero-body">
           Porygon instruments the Linux kernel with <strong>eBPF probes</strong> to extract syscall telemetry
           directly from container workloads. It pairs <strong>Jensen-Shannon distance</strong> for baseline behavioral
-          drift with an <strong>explainable machine learning classifier</strong> (TreeSHAP) to detect runtime anomalies,
+          drift with a <strong>heuristic tree classifier</strong> with raw tree-path deltas to detect runtime anomalies,
           privilege escalation, and execution deviations without sidecar overhead.
         </p>
 
@@ -1272,7 +1272,7 @@
               <div class="pipe-node-num">03 / SCORE &amp; CLASSIFY</div>
               <i class="ph ph-brain pipe-node-icon" aria-hidden="true"></i>
               <div class="pipe-node-name">Scoring &amp; ML Engine</div>
-              <div class="pipe-node-desc">Measures Jensen-Shannon baseline drift and classifies 12 runtime behavioral features with TreeSHAP attributions.</div>
+              <div class="pipe-node-desc">Measures Jensen-Shannon baseline drift and classifies 12 runtime behavioral features with raw tree-path deltas.</div>
               <div class="pipe-node-tech">Jensen-Shannon &middot; Tree Ensemble</div>
               <span class="pipe-chevron" aria-hidden="true">&#9658;</span>
             </div>
@@ -1337,7 +1337,7 @@
           <p class="cap-body">
             Combines base-2 Jensen-Shannon distance across categorical syscall distributions with an explainable
             tree ensemble classifier. Evaluates 12 runtime telemetry features (drift, shell ratio, privilege escalation)
-            with TreeSHAP feature attributions.
+            with raw tree-path feature deltas.
           </p>
           <a href="index.html#ml" class="cap-action-link">
             Inspect Scoring &amp; ML Models &rarr;
@@ -1398,7 +1398,7 @@
           </div>
           <h4 class="dataset-title">Porygon: Container Runtime Security Dataset</h4>
           <p class="dataset-desc">
-            A benchmark empirical dataset collected across 216 controlled Docker container trials. Evaluates benign microservice workloads against live adversary behaviors (cryptomining malware, interactive reverse shells, and SUID privilege escalation), capturing fine-grained kernel execve syscall sequences, Jensen-Shannon categorical divergence, and TreeSHAP feature attributions.
+            A benchmark empirical dataset collected across 216 controlled Docker container trials. Evaluates benign microservice workloads against live adversary behaviors (cryptomining malware, interactive reverse shells, and SUID privilege escalation), capturing fine-grained kernel execve syscall sequences, Jensen-Shannon categorical divergence, and recorded feature contributions.
           </p>
 
           <div class="dataset-metrics-grid">
@@ -1476,7 +1476,7 @@
         <p class="gov-body">
           Porygon establishes an empirical framework for container runtime security. The platform instruments
           Linux kernel syscalls via eBPF probes, calculates Jensen-Shannon categorical drift distributions,
-          and classifies deviations with TreeSHAP explainability across open benchmark datasets.
+          and reports heuristic classifications with explicit raw-output explanations.
         </p>
       </div>
 
@@ -1581,7 +1581,7 @@
       fetch(endpoint, { signal: controller.signal })
         .then(res => {
           clearTimeout(timeoutId);
-          if (!res.ok) throw new Error('Status ' + res.status);
+          if (!res.ok) throw new Error(res.status === 401 ? 'Authentication required' : 'Live metrics unavailable');
           return res.json();
         })
         .then(info => {
@@ -1600,8 +1600,13 @@
             servicesEl.textContent = String(info.registered_services);
           }
         })
-        .catch(() => {
-          // Graceful fallback: static calibrated metrics remain intact without throwing errors
+        .catch(error => {
+          const events = document.getElementById('stat-events');
+          const detail = document.getElementById('stat-events-sub');
+          const services = document.getElementById('stat-microservices');
+          if (events) events.textContent = '—';
+          if (services) services.textContent = '—';
+          if (detail) detail.textContent = error.message === 'Authentication required' ? 'Authentication required for live metrics' : 'Live metrics unavailable';
         });
     })();
   </script>

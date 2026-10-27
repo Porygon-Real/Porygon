@@ -198,7 +198,9 @@ def test_api_model_info_endpoint() -> None:
     assert len(info.classes) == 5
     assert len(info.features) == 12
     assert info.num_trees > 0
-    assert "TreeSHAP" in info.explainability_method
+    assert "Tree-path deltas" in info.explainability_method
+    assert info.model_metadata.model_kind == "heuristic"
+    assert info.model_metadata.calibration_status == "unvalidated"
 
 
 def test_api_classify_events_endpoint() -> None:

@@ -14,7 +14,7 @@ docs/
 │   ├── behavioral-profiling.md    # Digest-bound profiling, rarity formulas, and drift calculation
 │   ├── containment-engine.md      # Non-destructive cgroup freezing & cryptographic clearance
 │   ├── sbom-vulnerability.md      # Trivy digest binding & dynamic runtime CVE reachability
-│   └── ml-threat-classifier.md    # Pure-Python Tree Ensemble (Random Forest) & TreeSHAP attributions
+│   └── ml-threat-classifier.md    # Hand-authored heuristic trees & raw tree-path deltas
 │
 ├── research/                      # Academic Pre-Registration & Scientific Protocol
 │   ├── README.md                  # Academic package overview and study design
@@ -56,7 +56,7 @@ docs/
   Read [`docs/architecture/system-overview.md`](architecture/system-overview.md).
 - **Want to see how eBPF telemetry is captured without dropping packets?**  
   Read [`docs/architecture/ebpf-telemetry.md`](architecture/ebpf-telemetry.md).
-- **Want to understand the explainable ML model and TreeSHAP values?**  
+- **Want to understand the heuristic model and raw tree-path deltas?**
   Read [`docs/architecture/ml-threat-classifier.md`](architecture/ml-threat-classifier.md).
 - **Evaluating the academic research or reviewing for publication/viva?**  
   Start with [`docs/research/README.md`](research/README.md) and [`docs/research/research-protocol.md`](research/research-protocol.md).

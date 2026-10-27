@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from uuid import uuid4
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 
@@ -26,6 +27,8 @@ def _iso(value: object) -> str | None:
 
 
 async def heartbeat_loop(state: CollectorState, store: OutboxStore) -> None:
+    counter_epoch="adapter:"+uuid4().hex
+    sequence=0
     endpoint = f"{settings.api_base_url.rstrip('/')}/internal/v1/heartbeats"
     headers = {"X-Porygon-Internal-Token": settings.internal_api_token.get_secret_value()}
     timeout = httpx.Timeout(5.0, connect=3.0)
@@ -33,18 +36,24 @@ async def heartbeat_loop(state: CollectorState, store: OutboxStore) -> None:
     async with httpx.AsyncClient(timeout=timeout) as client:
         while True:
             snapshot = state.snapshot()
+            sequence+=1
+            health_stats=await asyncio.to_thread(store.health_stats)
             queue_depth = await asyncio.to_thread(store.count)
             state.set(queue_depth=queue_depth)
             observed_at = datetime.now(timezone.utc)
             collector_healthy = bool(
                 snapshot["docker_connected"] and snapshot["event_stream_connected"]
             )
+            health={'counter_epoch':counter_epoch,'sequence':sequence,'source_loss':'unknown','source_epoch':None,
+                'metrics':dict(health_stats,spooled_events=snapshot['events_enqueued'],delivered_events=snapshot['events_delivered'],
+                    backpressure_events=snapshot['spool_overflow_count'],backend_failures=snapshot['backend_consecutive_failures'])}
             payload = {
                 "service_name": settings.service_name,
                 "instance_id": settings.collector_instance_id,
                 "status": "healthy" if collector_healthy else "degraded",
                 "observed_at": observed_at.isoformat(),
                 "metadata": {
+                    "health":health,
                     "version": settings.version,
                     "environment": settings.environment,
                     "capability": "event-ingestion",
@@ -126,7 +135,7 @@ async def delivery_loop(state: CollectorState, store: OutboxStore) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     state = CollectorState(started_at=datetime.now(timezone.utc))
-    store = OutboxStore(settings.spool_path, settings.spool_max_events)
+    store = OutboxStore(settings.spool_path, settings.spool_max_events,max_bytes=settings.spool_max_bytes)
     state.set(queue_depth=store.count())
     source = DockerEventSource(settings, state, store)
 

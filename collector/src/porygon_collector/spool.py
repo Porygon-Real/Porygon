@@ -15,9 +15,10 @@ class SpoolFullError(RuntimeError):
 
 
 class OutboxStore:
-    def __init__(self, path: str, max_events: int) -> None:
+    def __init__(self, path: str, max_events: int, *, max_bytes: int = 268435456) -> None:
         self.path = Path(path)
         self.max_events = max_events
+        self.max_bytes = max_bytes
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -33,6 +34,18 @@ class OutboxStore:
                 yield connection
         finally:
             connection.close()
+
+    def health_stats(self):
+        with self._connect() as connection:
+            row=connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(payload AS BLOB))),0),MIN(enqueued_at) FROM outbox").fetchone()
+        disk=sum(path.stat().st_size for path in (self.path,Path(str(self.path)+'-wal'),Path(str(self.path)+'-shm')) if path.exists())
+        return {'queue_depth':int(row[0]),'queue_payload_bytes':int(row[1]),'spool_disk_bytes':disk,
+                'oldest_age_seconds':max(0,time.time()-float(row[2])) if row[2] is not None else 0}
+
+    def _check_byte_budget(self,connection,additional):
+        used=int(connection.execute("SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) FROM outbox").fetchone()[0])
+        if used+additional>self.max_bytes:
+            raise SpoolFullError('Durable outbox reached configured payload byte budget')
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -169,6 +182,7 @@ class OutboxStore:
                 raise SpoolFullError(
                     f"Durable outbox reached configured limit of {self.max_events} events"
                 )
+            self._check_byte_budget(connection,sum(len(value.encode()) for _,value,_ in new))
             connection.executemany(
                 "INSERT INTO outbox(event_id, payload, enqueued_at) VALUES (?, ?, ?)",
                 new,

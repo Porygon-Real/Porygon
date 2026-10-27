@@ -1,19 +1,23 @@
 """Machine Learning Threat Classification Engine for Porygon.
 
-Implements an explainable Tree Ensemble (Random Forest) classifier for container runtime
-telemetry. Evaluates 60-second observation windows or raw kernel eBPF process execution
+Implements a hand-authored heuristic tree ensemble for container runtime
+telemetry. Evaluates caller-supplied observation windows or kernel eBPF process execution
 events, categorizing activity into MITRE attack tactics (reconnaissance, privilege
-escalation, shell escape, suspicious tooling, or benign) with local TreeSHAP-style
+escalation, shell escape, suspicious tooling, or benign) with local tree-path delta
 feature attribution.
 """
 from __future__ import annotations
 
 import math
+import hashlib
+import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Literal, Protocol
 
 MODEL_VERSION = "porygon.ml.rf.v1"
+FEATURE_CONTRACT = "porygon.ml.features.exec-taxonomy"
+INPUT_DOCUMENT_SCHEMA = "porygon.behaviour.v1"
 
 # Target attack tactic classes
 CLASSES: tuple[str, ...] = (
@@ -104,6 +108,21 @@ def _is_binary_in_set(proc_str: str | None, binary_set: frozenset[str]) -> bool:
     return base in binary_set
 
 
+@dataclass(frozen=True)
+class ClassifierMetadata:
+    model_kind: str
+    training_status: str
+    calibration_status: str
+    explanation_method: str
+    explanation_output_space: str
+    feature_contract: str
+    input_document_schema: str
+    model_artifact_sha256: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 @dataclass
 class MLFeatureContribution:
     feature: str
@@ -128,6 +147,10 @@ class MLThreatClassificationResult:
     feature_vector: dict[str, float]
     top_contributing_features: list[MLFeatureContribution]
     summary: str
+    model_metadata: ClassifierMetadata
+    explanation_base_values: dict[str, float]
+    raw_output_values: dict[str, float]
+    full_feature_contributions: dict[str, dict[str, float]]
     model_version: str = MODEL_VERSION
     classified_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -357,13 +380,34 @@ def _softmax(probs: list[float], temperature: float = 0.35) -> list[float]:
 
 
 class PorygonThreatClassifier:
-    """Explainable Random Forest ensemble for container runtime attack classification."""
+    """Heuristic tree ensemble with explicit provenance and tree-path deltas."""
 
     def __init__(self, trees: list[dict[str, Any]] | None = None) -> None:
+        self._hand_authored_default = not trees
         self.trees = trees or self._build_default_ensemble()
 
+    @property
+    def metadata(self) -> ClassifierMetadata:
+        document = {
+            "classes": CLASSES, "features": FEATURE_NAMES,
+            "feature_contract": FEATURE_CONTRACT, "input_document_schema": INPUT_DOCUMENT_SCHEMA,
+            "trees": self.trees,
+            "score_transform": {"method": "log_probability_softmax", "temperature": 0.35},
+        }
+        digest = hashlib.sha256(json.dumps(
+            document, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode()).hexdigest()
+        return ClassifierMetadata(
+            model_kind="heuristic" if self._hand_authored_default else "tree_ensemble",
+            training_status="hand_authored" if self._hand_authored_default else "unspecified",
+            calibration_status="unvalidated", explanation_method="tree_path_delta",
+            explanation_output_space="raw_ensemble_probability",
+            feature_contract=FEATURE_CONTRACT, input_document_schema=INPUT_DOCUMENT_SCHEMA,
+            model_artifact_sha256=digest,
+        )
+
     def _build_default_ensemble(self) -> list[dict[str, Any]]:
-        """Calibrated 5-tree specialist ensemble with exact decision splits."""
+        """Hand-authored five-tree specialist ensemble with fixed decision splits."""
         # 1. Shell Escape Specialist
         tree_shell = {
             "is_leaf": False,
@@ -539,6 +583,7 @@ class PorygonThreatClassifier:
         num_classes = len(CLASSES)
 
         raw_probs = [0.0] * num_classes
+        base_values = [0.0] * num_classes
         all_contribs = [[0.0] * num_classes for _ in range(num_features)]
         tree_count = len(self.trees) or 1
 
@@ -546,13 +591,16 @@ class PorygonThreatClassifier:
             probs, contribs = self._traverse_tree(tree, x)
             for c in range(num_classes):
                 raw_probs[c] += probs[c] / tree_count
+                base_values[c] += tree["probs"][c] / tree_count
                 for f in range(num_features):
                     all_contribs[f][c] += contribs[f][c] / tree_count
 
-        calibrated_probs = _softmax(raw_probs, temperature=0.35)
-        pred_idx = calibrated_probs.index(max(calibrated_probs))
+        # Compatibility score sharpening is fixed, not fitted calibration. Path
+        # deltas explain raw_probs; the nonlinear transformation is separate.
+        heuristic_scores = _softmax(raw_probs, temperature=0.35)
+        pred_idx = heuristic_scores.index(max(heuristic_scores))
         predicted_class = CLASSES[pred_idx]
-        confidence = calibrated_probs[pred_idx]
+        confidence = heuristic_scores[pred_idx]
 
         # Calculate risk level
         risk_level = self._compute_risk_level(predicted_class, confidence, x)
@@ -567,7 +615,7 @@ class PorygonThreatClassifier:
 
         summary = self._generate_summary(predicted_class, confidence, risk_level, contributions)
 
-        class_prob_map = {cls_name: calibrated_probs[i] for i, cls_name in enumerate(CLASSES)}
+        class_prob_map = {cls_name: heuristic_scores[i] for i, cls_name in enumerate(CLASSES)}
 
         return MLThreatClassificationResult(
             predicted_class=predicted_class,  # type: ignore
@@ -577,6 +625,13 @@ class PorygonThreatClassifier:
             feature_vector={fname: round(x[i], 4) for i, fname in enumerate(FEATURE_NAMES)},
             top_contributing_features=contributions,
             summary=summary,
+            model_metadata=self.metadata,
+            explanation_base_values={name: base_values[i] for i, name in enumerate(CLASSES)},
+            raw_output_values={name: raw_probs[i] for i, name in enumerate(CLASSES)},
+            full_feature_contributions={
+                name: {feature: all_contribs[j][i] for j, feature in enumerate(FEATURE_NAMES)}
+                for i, name in enumerate(CLASSES)
+            },
             model_version=MODEL_VERSION,
         )
 
@@ -694,11 +749,11 @@ class PorygonThreatClassifier:
         top_factor = contributions[0].explanation if contributions else "telemetry features"
         if predicted_class == "benign":
             return (
-                f"Container execution matches expected benign workload profile "
-                f"({confidence * 100:.1f}% confidence). No malicious behavior detected."
+                f"Heuristic classification: benign "
+                f"({confidence * 100:.1f}% class score)."
             )
         return (
-            f"Classified as {predicted_class.upper()} ({confidence * 100:.1f}% confidence, "
+            f"Classified as {predicted_class.upper()} ({confidence * 100:.1f}% heuristic class score, "
             f"risk: {risk_level.upper()}). Primary driver: {top_factor}"
         )
 

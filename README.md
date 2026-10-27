@@ -11,7 +11,7 @@ Porygon monitors container execution at the kernel level using modern eBPF (via 
 - **Kernel-Level Telemetry**: Captures process execution (`execve`/`execveat`) plus separate typed evidence for outbound connections, memory-backed files, and sensitive-path opens and writes using modern eBPF probes.
 - **Digest-Bound Baselines**: Profiles expected process behavior bound to cryptographic image digests (`sha256:...`) rather than mutable image tags.
 - **Behavioral Anomaly Scoring**: Calculates runtime drift using Jensen-Shannon divergence to identify unexpected processes and abnormal tool usage.
-- **ML Threat Classification**: Classifies runtime telemetry into MITRE attack tactics (`shell_escape`, `reconnaissance`, `suspicious_tooling`, `privilege_escalation`, `benign`) using an explainable Random Forest ensemble with TreeSHAP feature attribution.
+- **ML Threat Classification**: Classifies runtime telemetry into MITRE attack tactics (`shell_escape`, `reconnaissance`, `suspicious_tooling`, `privilege_escalation`, `benign`) using a hand-authored heuristic tree ensemble with tree-path feature deltas.
 - **Rule Engine & AI Auditor**: Detects shell escapes, privilege escalation, unknown binaries, and suspicious executions, supplemented by automated incident summaries.
 - **Automated / Approved Containment**: Quarantines compromised containers (pause or stop) with configurable human-in-the-loop approval workflows.
 - **Vulnerability & SBOM Context**: Scans images with Trivy and enriches findings with EPSS exploit probabilities and CISA KEV exploitation data.
@@ -37,15 +37,14 @@ Porygon monitors container execution at the kernel level using modern eBPF (via 
 
 ## Machine Learning Threat Classification
 
-Porygon pairs continuous kernel eBPF observation with a supervised **Random Forest ensemble** and **TreeSHAP additive feature attribution**. Rather than treating machine learning as an opaque scoring mechanism, Porygon classifies runtime process telemetry directly into standardized **MITRE ATT&CK tactics** while mathematically explaining every prediction down to individual feature contributions.
-
+Porygon's default classifier is a **hand-authored five-tree heuristic ensemble** over 12 process-execution features. It returns operational class scores and raw tree-path feature deltas. Every response identifies its model kind, training and calibration status, feature contract and canonical ensemble hash. The historical model identifier remains stable for replay.
 ### Multi-Layer Detection Architecture
 
 | Defense Layer | Detection Engine | Target Threat Vector | Evaluation Latency | Output Representation | Explainability Mechanism |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Statistical Drift** | Jensen-Shannon Divergence | Unseen process churn & baseline deviation | < 0.2 ms | Continuous distance score (`0.00`–`1.00`) | Digest symbol distribution delta |
 | **Deterministic Rules** | Falco eBPF Kernel Probes | Known exploits (`setuid`, cgroup escape, shim bypass) | Real-time (< 0.1 ms) | Boolean incident alerts | Syscall argument match & trace |
-| **Supervised ML** | Calibrated Random Forest Ensemble | Stealthy multi-stage attack tactics & intent | < 1.5 ms | MITRE tactic probabilities + verdict | Exact TreeSHAP additive feature attributions ($\Delta \mathbf{P}$) |
+| **Heuristic classifier** | Hand-authored five-tree ensemble | Execution feature patterns | Benchmark-dependent | Heuristic class scores + operational label | Tree-path deltas in raw ensemble probability space |
 | **Generative AI** | Local LLM Auditor (Claude/Ollama) | Complex alert correlation & blast-radius analysis | 1.5 s – 3.0 s | Plain-language remediation brief | Chain-of-thought markdown narrative |
 
 ### MITRE ATT&CK Tactic Mapping
@@ -77,13 +76,13 @@ The ML classifier ingests 12 normalized telemetry features derived from kernel `
 | **`suspicious_sequence_ratio`** | `[0.0, 1.0]` | Sequences matching rapid recon-to-exploit chaining patterns | Multi-step automated cyber kill-chain execution |
 | **`jensen_shannon_drift`** | `[0.0, 1.0]` | Jensen-Shannon distance against the baseline process distribution | Global behavioral divergence from expected workload profile |
 
-### TreeSHAP Mathematical Explainability
+### Tree-path Feature Explanation
 
-To satisfy strict regulatory and security audit requirements, Porygon rejects black-box classifications. Each prediction is accompanied by exact TreeSHAP local additive feature attributions:
+For each output class, the average tree-root value plus all traversed feature deltas reconstructs the raw ensemble output:
 
-$$\mathbf{f}(x) = \phi_0 + \sum_{i=1}^{12} \phi_i(x)$$
+$$f_c^{\mathrm{raw}}(x) = b_c + \sum_{i=1}^{12} \Delta_{i,c}(x)$$
 
-Where $\phi_0$ is the base expected model value and $\phi_i(x)$ represents the exact marginal contribution of feature $i$ pushing the probability toward or away from a given MITRE tactic.
+Responses expose `explanation_base_values`, `raw_output_values` and `full_feature_contributions` for this identity. The dashboard shows the top five raw-space drivers. The existing `class_probabilities` and `confidence` field names retain their historical numeric values: they contain fixed-temperature sharpened heuristic scores. Their calibration status is `unvalidated`; the path deltas explain the raw output before that nonlinear transform. Training provenance and a distinct output-space contract accompany model metadata.
 
 ### ML Classifier REST API
 

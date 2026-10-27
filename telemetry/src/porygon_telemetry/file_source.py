@@ -5,6 +5,7 @@ import logging
 import sqlite3
 import time
 import threading
+from uuid import uuid4
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +23,8 @@ class FalcoFileSource:
         self.state = state
         self.store = store
         self.stop_event = threading.Event()
+        self.capture_epoch = "adapter-source:" + uuid4().hex
+        self.capture_inode = None
         self.thread = threading.Thread(
             target=self._run,
             name="porygon-falco-file-source",
@@ -61,6 +64,9 @@ class FalcoFileSource:
 
                 inode = int(stat.st_ino)
                 stored_inode, stored_offset = self.store.get_file_cursor()
+                if self.capture_inode is not None and (self.capture_inode != inode or stat.st_size < stored_offset):
+                    self.capture_epoch = "adapter-source:" + uuid4().hex
+                self.capture_inode = inode
                 offset = stored_offset if stored_inode == inode and stat.st_size >= stored_offset else 0
                 self.state.set(
                     source_file_available=True,
@@ -102,6 +108,7 @@ class FalcoFileSource:
                                     event = normalize_falco_event(
                                         raw_event,
                                         sensor_instance_id=self.settings.telemetry_instance_id,
+                                        sensor_epoch=self.capture_epoch,
                                         expected_rule=self.settings.falco_expected_rule,
                                         reported_docker_host_id=self.settings.reported_docker_host_id,
                                     )

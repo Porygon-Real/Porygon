@@ -186,3 +186,27 @@ def test_auto_remove_container_refuses_stop_rollback():
     assert result.error_code == "invalid_request"
     assert "auto-remove" in str(result.error_message)
 
+
+
+def test_frozen_host_mismatch_prevents_container_lookup_and_action():
+    container = FakeContainer()
+    runner = executor(container)
+    runner.client.info = lambda: {'ID':'other-daemon'}
+    def forbidden_lookup(_):
+        raise AssertionError('host mismatch must fail before container lookup')
+    runner.client.containers.get = forbidden_lookup
+    result = runner.execute(action_type='pause_container', target_container_id=container.id,
+                            operation='execute', target_docker_host_id='expected-daemon')
+    assert not result.success
+    assert result.error_code == 'invalid_request'
+    assert not container.paused
+
+
+def test_authenticated_executor_rejects_missing_frozen_host():
+    container = FakeContainer()
+    runner = executor(container)
+    runner.authenticated = True
+    result = runner.execute(action_type='pause_container', target_container_id=container.id,
+                            operation='execute')
+    assert not result.success
+    assert not container.paused

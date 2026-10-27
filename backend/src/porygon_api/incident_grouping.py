@@ -75,7 +75,8 @@ def attach_incident(db, run, score, result, process_events, runtime_events, now)
             container_ids,
             process_events,
             runtime_events,
-            [run.ruleset_hash, run.allowlist_set_hash, run.custom_ruleset_hash],
+            [run.ruleset_hash, run.allowlist_set_hash, run.custom_ruleset_hash]
+            + ([result["runtime_evidence"]["rules_hash"],result["runtime_evidence"]["model"].get("artifact_sha256")] if result.get("runtime_evidence") else []),
         )
         if key is not None:
             if db.get_bind().dialect.name == "postgresql":
@@ -89,6 +90,7 @@ def attach_incident(db, run, score, result, process_events, runtime_events, now)
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
+        previous_severity=incident.severity_level if incident is not None else None
         created = incident is None
         if created:
             incident = Incident(
@@ -100,7 +102,7 @@ def attach_incident(db, run, score, result, process_events, runtime_events, now)
                 image_digest=score.image_digest,
                 title=f"{leading['name']} in {score.image_digest.split('@', 1)[0]}",
                 status="open",
-                anomaly_score=float(result["anomaly_score"]),
+                anomaly_score=float(result["anomaly_score"]) if result["anomaly_score"] is not None else None,
                 severity_score=float(result["severity_score"]),
                 severity_level=str(result["severity_level"]),
                 confidence_score=float(result["confidence_score"]),
@@ -129,7 +131,7 @@ def attach_incident(db, run, score, result, process_events, runtime_events, now)
                 # peak severity/confidence values into a stronger response policy.
                 incident.latest_detection_run_id = run.run_id
                 incident.score_id = score.score_id
-                incident.anomaly_score = float(result["anomaly_score"])
+                incident.anomaly_score = float(result["anomaly_score"]) if result["anomaly_score"] is not None else None
                 incident.severity_score = float(result["severity_score"])
                 incident.severity_level = str(result["severity_level"])
                 incident.confidence_score = float(result["confidence_score"])
@@ -157,8 +159,8 @@ def attach_incident(db, run, score, result, process_events, runtime_events, now)
                 "rule_id": None,
                 "evidence_type": "behavioural_distance",
                 "summary": (
-                    f"Observed behavioural distance was {score.total_score:.3f} "
-                    f"({score.score_band})."
+                    f"Observed behavioural distance was {score.total_score:.3f} ({score.score_band})." if score.total_score is not None else
+                    "Process distance is unavailable for this evidence-backed incident."
                 ),
                 "details": {
                     "algorithm_version": score.algorithm_version,
@@ -213,4 +215,7 @@ def attach_incident(db, run, score, result, process_events, runtime_events, now)
             db.add(evidence)
             timeline.append(evidence)
 
+    if incident is not None:
+        from porygon_api.notifications import enqueue_transition
+        enqueue_transition(db,incident,previous_severity)
     return incident, timeline

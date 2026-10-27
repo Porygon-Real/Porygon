@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     internal_api_token: SecretStr = Field(min_length=32)
     operator_api_token: SecretStr = Field(min_length=32)
+    access_mode: Literal["local", "authenticated"] = "local"
     response_execution_mode: Literal["disabled", "live"] = "disabled"
     calibrated_enabled: bool = False
     ai_api_key: SecretStr | None = None
@@ -48,6 +49,21 @@ class Settings(BaseSettings):
     reconciliation_enabled: bool = True
     reconciliation_interval_seconds: float = Field(default=5, ge=0.2, le=300)
     reconciliation_batch_size: int = Field(default=500, ge=1, le=5000)
+    notification_enabled: bool = False
+    notification_config_file: str | None = None
+    notification_poll_seconds: float = Field(default=2,ge=0.2,le=300)
+    notification_batch_size: int = Field(default=10,ge=1,le=100)
+    notification_max_attempts: int = Field(default=8,ge=1,le=30)
+    notification_lease_seconds: int = Field(default=60,ge=20,le=3600)
+    notification_timeout_seconds: int = Field(default=10,ge=1,le=15)
+    runtime_evidence_enabled: bool = False
+    assessment_enabled: bool = False
+    assessment_poll_seconds: float = Field(default=2,ge=0.2,le=300)
+    assessment_jobs_per_tick: int = Field(default=10,ge=1,le=100)
+    assessment_lease_seconds: int = Field(default=120,ge=10,le=3600)
+    assessment_max_attempts: int = Field(default=5,ge=1,le=20)
+    assessment_allowed_lateness_seconds: int = Field(default=10,ge=0,le=3600)
+    assessment_heartbeat_max_age_seconds: int = Field(default=60,ge=10,le=3600)
     retention_scheduler_enabled: bool = False
     retention_interval_seconds: int = Field(default=21600, ge=60, le=604800)
 

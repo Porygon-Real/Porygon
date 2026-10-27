@@ -138,9 +138,9 @@
             <li class="doc-li"><strong>Information-theoretic drift ($D_{JS}$).</strong> Calculates base-2 Jensen-Shannon
               distance across categorical
               distributions (process names, binaries, parent-child lineages, bigram transitions) and token novelty.</li>
-            <li class="doc-li"><strong>Explainable ML classification (TreeSHAP).</strong> Evaluates 12 runtime telemetry
-              features against a Random Forest
-              ensemble, mapping anomalous activity to MITRE ATT&amp;CK tactics with local feature attributions.</li>
+            <li class="doc-li"><strong>Heuristic classification with tree-path deltas.</strong> Evaluates 12 runtime telemetry
+              features against a hand-authored tree
+              ensemble, returning operational class scores and raw-space feature deltas.</li>
             <li class="doc-li"><strong>Deterministic rule synthesis &amp; containment.</strong> Cross-references
               anomalies against deterministic rules
               and active allowlists, triggering automated container quarantine, process termination, or network
@@ -295,7 +295,7 @@ docker compose ps</pre>
                 <tr>
                   <td>ML Threat Engine</td>
                   <td><code>backend/src/porygon_api/ml_classifier.py</code></td>
-                  <td>Random Forest ensemble, 12 feature extractions, TreeSHAP importances</td>
+                  <td>Hand-authored tree ensemble, 12 feature extractions, raw tree-path deltas</td>
                 </tr>
                 <tr>
                   <td>Baseline Profiler</td>
@@ -451,11 +451,11 @@ where M = 0.5 * (P + Q)</pre>
             </table>
           </div>
           <p class="doc-p">
-            The model outputs probabilities across 5 target MITRE tactics: <code>benign</code>,
+            The model outputs heuristic scores across 5 operational classes: <code>benign</code>,
             <code>reconnaissance</code>,
             <code>privilege_escalation</code>, <code>shell_escape</code>, and <code>suspicious_tooling</code>,
-            accompanied by TreeSHAP
-            feature attribution matrices.
+            accompanied by raw tree-path
+            feature deltas and model provenance.
           </p>
         </section>
 
@@ -568,7 +568,7 @@ where M = 0.5 * (P + Q)</pre>
                 <tr>
                   <td><code>POST</code></td>
                   <td><code>/api/v1/ml/classify</code></td>
-                  <td>Evaluates observation window against Tree Ensemble and TreeSHAP explainer</td>
+                  <td>Evaluates supplied observations using heuristic trees and raw tree-path deltas</td>
                 </tr>
                 <tr>
                   <td><code>GET</code></td>

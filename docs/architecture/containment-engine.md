@@ -55,7 +55,7 @@ To prevent compromised backend microservices or rogue API callers from issuing u
        v
 [porygon-dashboard (Operator View)]
        |
-       | Human reviews behavioral diff & TreeSHAP explanation
+       | Human reviews behavioral diff & raw-path explanation
        | Clicks "AUTHORIZE LEASE"
        v
 [Operator Clearance Token Generation]

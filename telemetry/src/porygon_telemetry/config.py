@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     version: str = "0.3.0"
 
+    falco_metrics_url: str = "http://falco:8765/metrics"
     falco_log_path: str = "/var/log/porygon/falco-events.jsonl"
     falco_poll_seconds: float = Field(default=0.25, ge=0.05, le=10.0)
     falco_max_line_bytes: int = Field(default=1_048_576, ge=4096, le=16_777_216)
@@ -30,6 +31,7 @@ class Settings(BaseSettings):
     docker_host_id: str | None = None
 
     spool_path: str = "/var/lib/porygon/process-outbox.db"
+    spool_max_bytes: int = Field(default=268435456,ge=1048576,le=10737418240)
     spool_max_events: int = Field(default=250_000, ge=100, le=10_000_000)
     delivery_batch_size: int = Field(default=100, ge=1, le=250)
     delivery_poll_seconds: float = Field(default=1.0, ge=0.2, le=30.0)

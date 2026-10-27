@@ -142,6 +142,14 @@ class ProcessExecEvent(Base):
 
     event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     sensor_instance_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    exec_return_value: Mapped[int | None] = mapped_column(BigInteger,nullable=True)
+    event_direction: Mapped[str | None] = mapped_column(String(1),nullable=True)
+    sensor_epoch: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    process_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    parent_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    pid_namespace_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    exe_from_memfd: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    exe_writable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     sensor_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     rule_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -211,6 +219,12 @@ class KernelRuntimeEvent(Base):
     )
     event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     sensor_instance_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sensor_epoch: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    process_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    parent_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    pid_namespace_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    exe_from_memfd: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    exe_writable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     sensor_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     rule_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -484,6 +498,7 @@ class AnomalyScore(Base):
     components: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     explanation: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     observation_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    assessment_scope: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     scoring_config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -648,6 +663,7 @@ class Incident(Base):
         Index("ix_incidents_created_at", "created_at"),
     )
 
+    notification_revision: Mapped[int]=mapped_column(Integer,nullable=False,default=0,server_default="0")
     incident_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     detection_run_id: Mapped[str] = mapped_column(
         String(36),
@@ -668,7 +684,7 @@ class Incident(Base):
     image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    anomaly_score: Mapped[float] = mapped_column(Float, nullable=False)
+    anomaly_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     severity_score: Mapped[float] = mapped_column(Float, nullable=False)
     severity_level: Mapped[str] = mapped_column(String(16), nullable=False)
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
@@ -766,6 +782,7 @@ class ResponseRecommendation(Base):
         nullable=True,
     )
     target_container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    target_docker_host_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
     policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     recommended_action: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -812,6 +829,7 @@ class ResponseExecution(Base):
         nullable=False,
     )
     target_container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    target_docker_host_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     action_type: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -1041,3 +1059,167 @@ class VulnerabilityFinding(Base):
     intel_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ApiCredential(Base):
+    """Opaque high-entropy credentials; plaintext material is never retained."""
+    __tablename__ = 'api_credentials'
+    __table_args__ = (
+        UniqueConstraint('token_sha256', name='uq_api_credentials_token_sha256'),
+        UniqueConstraint('replaces_credential_id', name='uq_api_credentials_replacement'),
+        CheckConstraint("kind IN ('operator','service')", name='ck_api_credentials_kind'),
+        Index('ix_api_credentials_subject', 'subject'),
+    )
+    credential_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    token_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    host_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    service_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    instance_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    replaces_credential_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class AssessmentTarget(Base):
+    __tablename__ = 'assessment_targets'
+    __table_args__ = (UniqueConstraint('docker_host_id','container_id','image_digest','context_hash',name='uq_assessment_target_scope'),)
+    target_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    docker_host_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    container_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
+    context_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    context_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    window_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    next_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    allowed_lateness_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    active_profile_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    coverage_state: Mapped[str] = mapped_column(String(32), nullable=False, default='unprofiled')
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ManagedProfile(Base):
+    __tablename__ = 'managed_profiles'
+    __table_args__ = (UniqueConstraint('target_id','artifact_hash',name='uq_managed_profile_artifact'),)
+    enrollment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey('assessment_targets.target_id',ondelete='RESTRICT'), nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(36), ForeignKey('behavior_profiles.profile_id',ondelete='RESTRICT'), nullable=False)
+    artifact_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    shadow_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    proposed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AssessmentJob(Base):
+    __tablename__ = 'assessment_jobs'
+    __table_args__ = (UniqueConstraint('assessment_key',name='uq_assessment_job_key'),
+                     Index('ix_assessment_job_claim','state','next_retry_at','lease_expires_at'),)
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey('assessment_targets.target_id',ondelete='RESTRICT'), nullable=False)
+    profile_enrollment_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('managed_profiles.enrollment_id',ondelete='RESTRICT'), nullable=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    config_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default='pending')
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    score_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('anomaly_scores.score_id',ondelete='RESTRICT'), nullable=True)
+    detection_run_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('detection_runs.run_id',ondelete='RESTRICT'), nullable=True)
+    coverage: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AssessmentAudit(Base):
+    __tablename__ = 'assessment_audits'
+    audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey('assessment_targets.target_id',ondelete='RESTRICT'), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RuntimeEvidenceBundle(Base):
+    __tablename__ = 'runtime_evidence_bundles'
+    bundle_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    score_id: Mapped[str] = mapped_column(String(36),ForeignKey('anomaly_scores.score_id',ondelete='RESTRICT'),nullable=False)
+    contract: Mapped[str] = mapped_column(String(64),nullable=False)
+    rules_hash: Mapped[str] = mapped_column(String(64),nullable=False)
+    document: Mapped[dict[str,Any]] = mapped_column(JSON,nullable=False)
+    feature_document: Mapped[dict[str,Any]] = mapped_column(JSON,nullable=False)
+    model_prediction: Mapped[dict[str,Any]] = mapped_column(JSON,nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class AdvisoryModel(Base):
+    __tablename__ = 'advisory_models'
+    artifact_hash: Mapped[str] = mapped_column(String(64),primary_key=True)
+    artifact: Mapped[dict[str,Any]] = mapped_column(JSON,nullable=False)
+    approved_by: Mapped[str] = mapped_column(String(128),nullable=False)
+    evaluation_reference: Mapped[str] = mapped_column(String(255),nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean,nullable=False,default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class NotificationDelivery(Base):
+    __tablename__='notification_deliveries'
+    __table_args__=(UniqueConstraint('delivery_key',name='uq_notification_delivery_key'),Index('ix_notification_delivery_claim','state','next_retry_at','lease_expires_at'))
+    delivery_id: Mapped[str]=mapped_column(String(36),primary_key=True)
+    delivery_key: Mapped[str]=mapped_column(String(64),nullable=False)
+    incident_id: Mapped[str]=mapped_column(String(36),ForeignKey('incidents.incident_id',ondelete='RESTRICT'),nullable=False)
+    revision: Mapped[int]=mapped_column(Integer,nullable=False)
+    destination_id: Mapped[str]=mapped_column(String(64),nullable=False)
+    destination_config_hash: Mapped[str]=mapped_column(String(64),nullable=False)
+    payload_bytes: Mapped[str]=mapped_column(Text,nullable=False)
+    state: Mapped[str]=mapped_column(String(16),nullable=False,default='pending')
+    generation: Mapped[int]=mapped_column(Integer,nullable=False,default=0)
+    attempts: Mapped[int]=mapped_column(Integer,nullable=False,default=0)
+    lease_owner: Mapped[str | None]=mapped_column(String(128),nullable=True)
+    lease_expires_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
+    next_retry_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
+    error_category: Mapped[str | None]=mapped_column(String(32),nullable=True)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    delivered_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
+
+
+class SensorHealthSample(Base):
+    __tablename__='sensor_health_samples'
+    __table_args__=(UniqueConstraint('service_name','instance_id','counter_epoch','sequence',name='uq_sensor_health_sequence'),Index('ix_sensor_health_host_time','docker_host_id','observed_at'))
+    sample_id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    docker_host_id: Mapped[str]=mapped_column(String(128),nullable=False)
+    service_name: Mapped[str]=mapped_column(String(64),nullable=False)
+    instance_id: Mapped[str]=mapped_column(String(128),nullable=False)
+    counter_epoch: Mapped[str]=mapped_column(String(128),nullable=False)
+    sequence: Mapped[int]=mapped_column(BigInteger,nullable=False)
+    observed_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    received_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    metrics: Mapped[dict[str,Any]]=mapped_column(JSON,nullable=False)
+
+
+class ModelQualityLock(Base):
+    __tablename__='model_quality_locks'
+    artifact_hash: Mapped[str]=mapped_column(String(64),ForeignKey('advisory_models.artifact_hash',ondelete='RESTRICT'),primary_key=True)
+    criteria_hash: Mapped[str]=mapped_column(String(64),nullable=False)
+    criteria: Mapped[dict[str,Any]]=mapped_column(JSON,nullable=False)
+    locked_by: Mapped[str]=mapped_column(String(128),nullable=False)
+    locked_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)

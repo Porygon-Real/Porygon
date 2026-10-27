@@ -233,12 +233,13 @@ import json
 ack=json.load(open('artifacts/detection-acknowledged.json'))
 resolved=json.load(open('artifacts/detection-resolved.json'))
 assert ack['status']=='acknowledged'
-assert ack['acknowledged_by']=='detection-verifier'
+assert ack['acknowledged_by']=='local-internal'
 assert resolved['status']=='resolved'
-assert resolved['closed_by']=='detection-verifier'
+assert resolved['closed_by']=='local-internal'
+assert resolved['acknowledged_by']=='local-internal'
 assert resolved['closure_note']=='Controlled experiment completed'
 PY
-pass "Human incident acknowledgement and resolution were persisted"
+pass "Authenticated local service subject acknowledgement and resolution were persisted"
 
 http_code="$(curl --silent --output artifacts/detection-invalid-transition.json --write-out '%{http_code}' \
   -X POST -H 'Content-Type: application/json' \
@@ -258,6 +259,14 @@ timeline=json.load(open('artifacts/detection-final-timeline.json'))
 info=json.load(open('artifacts/detection-system-info.json'))
 assert timeline[-2]['details']['status']=='acknowledged'
 assert timeline[-1]['details']['status']=='resolved'
+assert [item['sequence_no'] for item in timeline] == list(range(1, len(timeline) + 1))
+for item in timeline[-2:]:
+    assert item['evidence_type']=='status_change'
+    assert item['details']['actor']=='local-internal'
+    assert item['details']['principal_kind']=='service'
+assert timeline[-2]['details']['note']=='Evidence reviewed'
+assert timeline[-1]['details']['note']=='Controlled experiment completed'
+assert timeline[-1]['details']['previous_status']=='acknowledged'
 assert info['capability']
 assert info['detection_allowlists'] >= 1
 # Other operator exceptions and incidents are legitimate shared state.
@@ -266,7 +275,7 @@ assert info['detection_runs'] >= 4
 assert info['incidents'] >= 1
 assert 0 <= info['open_incidents'] <= info['incidents']
 PY
-pass "System counters and complete evidence timeline remain consistent"
+pass "System counters, authenticated status actors and ordered evidence timeline remain consistent"
 
 docker compose ps > artifacts/detection-services.txt
 printf '\nDetection engine verification complete. Incident severity and confidence are evidence-oriented research signals, not compromise probabilities.\n'
