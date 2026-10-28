@@ -10,6 +10,7 @@ collection stays refused until the protocol reports frozen status.
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 import math
 import random
 import re
@@ -475,6 +476,36 @@ def _pg_ready(container: str) -> bool:
     return completed.returncode == 0
 
 
+
+def _drive_redis_pipeline(port,operations,seed):
+    rng=random.Random(seed);successes=failures=0;samples=[];batch_size=16
+    def read_reply(handle):
+        line=handle.readline(65537)
+        if not line or len(line)>65536:raise PilotError('Invalid bounded Redis pipeline reply')
+        if line.startswith(b'$'):
+            length=int(line[1:].strip())
+            if length>65536:raise PilotError('Redis reply exceeds fixture bound')
+            if length>=0:handle.read(length+2)
+        return not line.startswith(b'-')
+    for offset in range(0,operations,batch_size):
+        commands=[]
+        for index in range(min(batch_size,operations-offset)):
+            key='porygon:'+str(rng.randrange(1000))
+            commands.append(['SET',key,str(index)] if index%2==0 else ['GET',key])
+        wire=b''.join(('*'+str(len(command))+'\r\n'+''.join('$'+str(len(word.encode()))+'\r\n'+word+'\r\n' for word in command)).encode() for command in commands)
+        start=time.monotonic();replies_read=0
+        try:
+            with socket.create_connection(('127.0.0.1',port),timeout=10) as sock:
+                sock.sendall(wire)
+                with sock.makefile('rb') as handle:
+                    for _ in commands:
+                        ok=read_reply(handle);replies_read+=1;successes+=ok;failures+=not ok
+        except (OSError,ValueError,PilotError):failures+=len(commands)-replies_read
+        samples.append((time.monotonic()-start)*1000)
+    return {'mode':'burst_pipeline','operations_planned':operations,'successes':successes,'failures':failures,
+        'seed':seed,'latency_ms_samples':samples,'concurrency':1,'pipeline_batch_size':batch_size,
+        'harness_induced_exec_count':0,'latency_definition':'wall-clock per pipeline batch including connection setup; not per-command latency'}
+
 def drive_load(
     container: str, family: str, port: int, mode: str, operations: int, seed: int
 ) -> dict[str, Any]:
@@ -485,6 +516,14 @@ def drive_load(
     harness_execs = 0
     if mode == "idle":
         operations = 0
+    if family=='WL-NGX' and mode=='burst_http':
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            outcomes=list(pool.map(lambda _: _http_get(port),range(operations)))
+        return {'mode':mode,'operations_planned':operations,'successes':sum(status<400 for status,_ in outcomes),
+            'failures':sum(status>=400 for status,_ in outcomes),'seed':seed,'latency_ms_samples':[elapsed for _,elapsed in outcomes],
+            'harness_induced_exec_count':0,'concurrency':8,'latency_definition':'per HTTP request including connection setup'}
+    if family=='WL-RDS' and mode=='burst_pipeline':
+        return _drive_redis_pipeline(port,operations,seed)
     for index in range(operations):
         try:
             if family == "WL-NGX":
@@ -519,6 +558,7 @@ def drive_load(
             failures += 1
     return {
         "mode": mode,
+        "concurrency": 1,
         "operations_planned": operations,
         "successes": successes,
         "failures": failures,
@@ -903,7 +943,7 @@ def container_name_for(run_id: str, trial_id: str) -> str:
 
 def start_container(
     name: str, network: str, run_id: str, trial_id: str, image: dict[str, Any],
-    family: str, variant: str,
+    family: str, variant: str, mode: str | None = None,
 ) -> str:
     spec = FAMILY_SPECS[family]
     args = [
@@ -919,8 +959,14 @@ def start_container(
     if not variant_available(variant, family):
         raise PilotError(f"context variant {variant} is not available for {family}")
     args += CONTEXT_VARIANTS[variant][family]
+    if mode == 'alternate_read_only_config' and family == 'WL-NGX':
+        args += ['--mount',f'type=bind,src={ROOT}/experiments/fixtures/nginx/readonly.conf,dst=/etc/nginx/nginx.conf,readonly']
     args.append(image["reference"])
-    args += VARIANT_COMMAND.get(variant, {}).get(family, [])
+    if mode == 'persistence_context' and family == 'WL-RDS':
+        args += ['redis-server','--appendonly','yes','--save','60','1']
+    elif mode == 'alternate_tuning_context' and family == 'WL-PG':
+        args += ['postgres','-c','shared_buffers=64MB','-c','max_connections=50']
+    else:args += VARIANT_COMMAND.get(variant, {}).get(family, [])
     return docker(*args, timeout=180)
 
 
@@ -928,6 +974,7 @@ def run_trial(
     *, run_id: str, trial_id: str, workload_id: str, mode: str, scenario_id: str,
     variant: str, replica: int, image: dict[str, Any], network: str, base_url: str,
     seed: int, warmup_seconds: float, operations: int, settle_seconds: float,
+    collection_context: dict | None = None,
 ) -> dict[str, Any]:
     family = family_of(workload_id)
     name = container_name_for(run_id, trial_id)
@@ -959,11 +1006,18 @@ def run_trial(
         ),
         "timeline": {"setup_started_at_utc": now_utc(), "setup_started_monotonic_ns": time.monotonic_ns()},
     }
+    if collection_context is not None:
+        from experiments.confirmatory import validate_collection_authorization
+        validate_collection_authorization(collection_context,run_id,trial_id)
+        record.update(split=collection_context['entry']['split'],research_eligible=True,
+            eligibility_reason='preauthorized frozen-stratified collection; final conformance remains required',
+            collection_plan_sha256=collection_context['plan_sha256'],ground_truth_class=collection_context['entry']['ground_truth_class'])
     started = False
     try:
-        container_ref = start_container(name, network, run_id, trial_id, image, family, variant)
+        container_ref = start_container(name, network, run_id, trial_id, image, family, variant, mode)
         started = True
-        record["container_id"] = container_ref[:12]
+        record["container_id"] = container_ref
+        record["docker_host_id"] = docker("info","--format","{{.ID}}")
         inspection = json.loads(docker("inspect", name))[0]
         context_document = runtime_context(inspection)
         record["runtime_context"] = context_document
@@ -997,6 +1051,11 @@ def run_trial(
             record["ground_truth"] = run_scenario(
                 name, record["container_id"], image["reference"], run_id, trial_id, scenario_id
             )
+        truth=record['ground_truth']
+        if truth.get('canary_sequences_planned')!=truth.get('canary_sequences_executed'):
+            raise PilotError('Controlled action aborted or partially executed; failed run remains in accounting')
+        if record['load']['failures']:
+            raise PilotError('Workload generator failed operations; run cannot become a clean negative')
         record["timeline"]["settle_started_at_utc"] = now_utc()
         time.sleep(settle_seconds)
         if scenario_id == BENIGN_SENTINEL:

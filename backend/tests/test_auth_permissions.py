@@ -45,6 +45,18 @@ def test_wrong_credentials_never_produce_a_principal(settings, check, token):
     assert failure.value.status_code == 401
 
 
+def test_require_operator_token_rejects_non_operator_principal_with_403(settings):
+    from porygon_api.principals import CURRENT_PRINCIPAL
+    token = CURRENT_PRINCIPAL.set(LOCAL_INTERNAL_PRINCIPAL)
+    try:
+        with pytest.raises(HTTPException) as failure:
+            security.require_operator_token()
+        assert failure.value.status_code == 403
+        assert failure.value.detail == 'Operator credential required'
+    finally:
+        CURRENT_PRINCIPAL.reset(token)
+
+
 def test_status_routes_bind_the_corresponding_verified_principal_dependency():
     wanted = {
         '/internal/v1/incidents/{incident_id}/status': security.require_internal_token,

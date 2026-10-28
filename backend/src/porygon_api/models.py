@@ -26,13 +26,14 @@ from porygon_api.db import Base
 class ServiceHeartbeat(Base):
     __tablename__ = "service_heartbeats"
     __table_args__ = (
-        UniqueConstraint("service_name", "instance_id", name="uq_service_heartbeat_identity"),
+        UniqueConstraint("docker_host_id", "service_name", "instance_id", name="uq_service_heartbeat_host_identity"),
         Index("ix_service_heartbeats_last_seen_at", "last_seen_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     service_name: Mapped[str] = mapped_column(String(64), nullable=False)
     instance_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    docker_host_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     service_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1204,7 +1205,7 @@ class NotificationDelivery(Base):
 
 class SensorHealthSample(Base):
     __tablename__='sensor_health_samples'
-    __table_args__=(UniqueConstraint('service_name','instance_id','counter_epoch','sequence',name='uq_sensor_health_sequence'),Index('ix_sensor_health_host_time','docker_host_id','observed_at'))
+    __table_args__=(UniqueConstraint('docker_host_id','service_name','instance_id','counter_epoch','sequence',name='uq_sensor_health_host_sequence'),Index('ix_sensor_health_host_time','docker_host_id','observed_at'))
     sample_id: Mapped[str]=mapped_column(String(64),primary_key=True)
     docker_host_id: Mapped[str]=mapped_column(String(128),nullable=False)
     service_name: Mapped[str]=mapped_column(String(64),nullable=False)
@@ -1223,3 +1224,12 @@ class ModelQualityLock(Base):
     criteria: Mapped[dict[str,Any]]=mapped_column(JSON,nullable=False)
     locked_by: Mapped[str]=mapped_column(String(128),nullable=False)
     locked_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class ModelPromotionReview(Base):
+    __tablename__='model_promotion_reviews'
+    review_hash: Mapped[str]=mapped_column(String(64),primary_key=True)
+    artifact_hash: Mapped[str]=mapped_column(String(64),ForeignKey('advisory_models.artifact_hash',ondelete='RESTRICT'),nullable=False)
+    document: Mapped[dict[str,Any]]=mapped_column(JSON,nullable=False)
+    reviewed_by: Mapped[str]=mapped_column(String(128),nullable=False)
+    reviewed_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)

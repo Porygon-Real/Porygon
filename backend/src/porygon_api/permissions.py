@@ -16,6 +16,7 @@ SERVICE_PURPOSES = {
     'responder': frozenset({'response_worker','heartbeat'}),
 }
 ROUTE_PERMISSIONS = {
+    ('POST','/operator/v1/evaluation-snapshots'): 'admin',
     ('GET','/api/v1/health-metrics'): 'read',
     ('GET','/api/v1/notification-deliveries'): 'read',
     ('POST','/operator/v1/notification-deliveries/{delivery_id}/repair-config'): 'admin',

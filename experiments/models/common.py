@@ -50,6 +50,8 @@ def load_dataset(path,*,for_training=False):
             started=row.get('collection_started_at')
             if not isinstance(started,str):raise ValueError('Actual test collection time required')
             instant=datetime.fromisoformat(started)
+            finished=datetime.fromisoformat(row.get('collection_finished_at',''))
+            if finished.tzinfo is None or finished<instant:raise ValueError('Complete ordered test collection interval required')
             if instant.tzinfo is None or instant.date().isoformat()!=row['day']:raise ValueError('Test collection date/zone mismatch')
         groups[split].append(row)
     if for_training:

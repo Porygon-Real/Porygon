@@ -1,0 +1,66 @@
+name: engineering
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install --require-hashes --only-binary=:all: -r backend/requirements.lock
+      - run: pip install ruff==0.14.3 pyyaml==6.0.3
+      - run: echo "PYTHONPATH=$PWD/backend/src" >> "$GITHUB_ENV"
+      - run: ruff check --select E4,E7,E9,F backend collector telemetry responder scanner scripts experiments
+      - run: python scripts/check_research_protocol.py
+      - run: python scripts/check_source_secrets.py
+      - run: pytest experiments/tests scripts/tests -q
+  services:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend, collector, telemetry, responder, scanner]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t porygon-ci-${{ matrix.service }} ${{ matrix.service }}
+      - run: docker run --rm --entrypoint pytest porygon-ci-${{ matrix.service }} -p no:cacheprovider
+      - run: docker run --rm --entrypoint python porygon-ci-${{ matrix.service }} -m pip check
+      - run: docker run --rm --entrypoint python porygon-ci-${{ matrix.service }} -m pip list --format=json > dependencies.json
+      - uses: anchore/sbom-action@v0
+        with:
+          image: porygon-ci-${{ matrix.service }}
+          output-file: sbom-${{ matrix.service }}.spdx.json
+          upload-artifact: true
+      - run: pipx run pip-audit==2.9.0 --disable-pip --no-deps --require-hashes -r ${{ matrix.service }}/requirements.lock
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.10-bookworm@sha256:9b18b78397054fce88a9552e9d5a3ad5bb7fd258c5b3cc1c5028e46373d6ea8f
+        env:
+          POSTGRES_USER: porygon_ci
+          POSTGRES_PASSWORD: ci-disposable-only
+          POSTGRES_DB: porygon_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U porygon_ci -d porygon_ci'
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t porygon-ci-backend backend
+      - name: PostgreSQL integration and migration acceptance
+        run: >-
+          docker run --rm --network host --entrypoint sh
+          -e PORYGON_TEST_POSTGRES=1 -e PORYGON_DB_HOST=127.0.0.1
+          -e PORYGON_DB_NAME=porygon_ci -e PORYGON_DB_USER=porygon_ci
+          -e PORYGON_DB_PASSWORD=ci-disposable-only
+          -e PORYGON_INTERNAL_API_TOKEN=ci-disposable-internal-token-not-for-deployment
+          -e PORYGON_OPERATOR_API_TOKEN=ci-disposable-operator-token-not-for-deployment
+          porygon-ci-backend -c 'alembic upgrade head --sql > /tmp/migrations.sql && pytest -p no:cacheprovider'

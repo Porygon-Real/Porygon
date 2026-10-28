@@ -1,5 +1,6 @@
 """Transactional stable-ID notifications to operator-configured destinations only."""
 from datetime import datetime,timezone
+from ipaddress import ip_address
 import hashlib
 import json
 import os
@@ -23,6 +24,7 @@ class Destination(BaseModel):
     hmac_secret: SecretStr=Field(min_length=32,max_length=512)
     minimum_severity: str=Field(default='high',pattern=r'^(low|medium|high|critical)$')
     allow_loopback: bool=False
+    connect_ip: str | None=Field(default=None,max_length=64)
 
     @model_validator(mode='after')
     def validate_url(self):
@@ -30,12 +32,21 @@ class Destination(BaseModel):
         if (value.scheme not in {'https','http'} or not value.hostname or value.username or value.password or
                 value.query or value.fragment or (value.scheme=='http' and not (self.allow_loopback and value.hostname in {'127.0.0.1','::1'}))):
             raise ValueError('Webhook requires HTTPS without URL credentials or an explicit loopback sink')
+        try:
+            port=value.port
+            if port is not None and not 1<=port<=65535:raise ValueError('Invalid port')
+            address=ip_address(self.connect_ip or value.hostname)
+        except ValueError as exc:
+            raise ValueError('Configure a literal connect_ip for hostname destinations; no delivery-time DNS') from exc
+        if not address.is_global and not (self.allow_loopback and value.hostname in {'127.0.0.1','::1'} and address.is_loopback):
+            raise ValueError('Webhook connect_ip must be globally routable or explicit literal loopback')
+        self.connect_ip=str(address)
         return self
 
     def configuration_hash(self):
         return sha256_document({'destination_id':self.destination_id,'url':self.url,
             'key_fingerprint':hashlib.sha256(self.hmac_secret.get_secret_value().encode()).hexdigest(),
-            'minimum_severity':self.minimum_severity,'allow_loopback':self.allow_loopback})
+            'minimum_severity':self.minimum_severity,'allow_loopback':self.allow_loopback,'connect_ip':self.connect_ip})
 
 
 def load_destinations(settings=None):

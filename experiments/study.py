@@ -306,107 +306,27 @@ def _post(base_url: str, path: str, payload: dict, token: str) -> Any:
 
 
 def stage_analysis(ctx: dict) -> dict:
-    """Build a profile from fit-split evidence, then score a window outside it."""
-    token = _token("PORYGON_INTERNAL_API_TOKEN")
-    if not token:
-        raise RuntimeError("PORYGON_INTERNAL_API_TOKEN is unavailable; cannot drive the API")
-    base = ctx["base_url"]
-    trials = [t for t in ctx.get("trials", []) if t["status"] == "completed"]
-    if not trials:
-        raise RuntimeError("no completed trials to analyse")
-
-    # Group by image digest: a profile is bound to exactly one immutable digest.
-    by_digest: dict[str, list[dict]] = {}
+    """Use assigned whole runs and exact snapshots; never fit broad time ranges."""
+    from experiments.frozen_analysis import evaluate_trials,validate_policy
+    from experiments.confirmatory import operator_snapshot
+    trials=list(ctx.get('trials',[]));assignments=ctx.get('splits',{})
+    if not trials:raise RuntimeError('no collected trials to analyse')
+    if set(assignments)!={row['trial_id'] for row in trials}:raise RuntimeError('every collected trial needs an actual assignment')
+    policy=ctx.get('analysis_policy')
+    if policy is None:
+        ctx['analysis']={'status':'insufficient_data','reason':'explicit justified analysis policy required; no default quality thresholds invented',
+            'heldout_runs':[row['trial_id'] for row in trials if assignments[row['trial_id']]=='test']}
+        return ctx['analysis']
+    validate_policy(policy)
+    snapshots=dict(ctx.get('snapshots',{}))
     for trial in trials:
-        by_digest.setdefault(trial["image"]["reference"], []).append(trial)
-
-    outcomes = []
-    for digest, group in by_digest.items():
-        group.sort(key=lambda t: t["timeline"]["setup_started_at_utc"])
-        if len(group) < 2:
-            outcomes.append({"image": digest, "status": "insufficient_runs",
-                             "reason": "a held-out window requires at least two runs"})
-            continue
-        fit, held_out = group[:-1], group[-1]
-        start = min(t["timeline"]["setup_started_at_utc"] for t in fit)
-        end = max(t["timeline"]["cleanup_finished_at_utc"] for t in fit)
-        try:
-            profile = _post(base, "/internal/v1/baselines/build", {
-                "image_digest": digest,
-                "training_start": start,
-                "training_end": end,
-                "window_seconds": ctx["window_seconds"],
-                "minimum_process_events": 20,
-                "minimum_nonempty_windows": 3,
-                "approved_by": "study-orchestrator",
-                "approval_reference": f"experiments.study run={ctx['run_id']}",
-            }, token)
-        except urllib.error.HTTPError as error:
-            outcomes.append({"image": digest, "status": "profile_refused",
-                             "reason": error.read().decode("utf-8", "replace")[:200]})
-            continue
-
-        entry = {
-            "image": digest,
-            "profile_id": profile["profile_id"],
-            "profile_quality_passed": profile["quality"]["passed"],
-            "process_events": profile["process_event_count"],
-            "windows": profile["window_count"],
-            "fit_runs": [t["trial_id"] for t in fit],
-            "held_out_run": held_out["trial_id"],
-        }
-        if not profile["quality"]["passed"]:
-            entry["status"] = "profile_below_quality_gate"
-            failed = [k for k, v in profile["quality"]["checks"].items() if not v["passed"]]
-            entry["failed_checks"] = failed
-            outcomes.append(entry)
-            continue
-
-        _post(base, f"/internal/v1/baselines/{profile['profile_id']}/activate", {}, token)
-        entry["activated"] = True
-
-        # Score a window from the held-out run only. The backend independently
-        # refuses any window overlapping the training interval.
-        window_start = held_out["timeline"]["measurement_started_at_utc"]
-        try:
-            score = _post(base, "/internal/v1/anomaly-scores/compute", {
-                "image_digest": digest, "window_start": window_start,
-            }, token)
-            entry["score_id"] = score.get("score_id")
-            entry["score_band"] = score.get("score_band")
-            entry["score_status"] = score.get("status")
-            entry["scored_events"] = score.get("process_event_count")
-        except urllib.error.HTTPError as error:
-            entry["status"] = "score_refused"
-            entry["reason"] = error.read().decode("utf-8", "replace")[:200]
-            outcomes.append(entry)
-            continue
-
-        if entry.get("score_id"):
-            try:
-                detection = _post(base, "/internal/v1/detections/run",
-                                  {"anomaly_score_id": entry["score_id"]}, token)
-                run = detection.get("run", {})
-                entry["rule_matches"] = run.get("matches_count")
-                entry["incident_created"] = run.get("incident_created")
-                entry["incident_detected"] = detection.get("incident") is not None
-                entry["detection_status"] = run.get("status")
-            except urllib.error.HTTPError as error:
-                entry["detection_error"] = error.read().decode("utf-8", "replace")[:200]
-        entry["status"] = "analysed"
-        outcomes.append(entry)
-
-    ctx["analysis"] = outcomes
-    return {
-        "digests": len(by_digest),
-        "analysed": sum(o["status"] == "analysed" for o in outcomes),
-        "outcomes": outcomes,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Stage 8: results rendering
-# ---------------------------------------------------------------------------
+        truth=trial.get('ground_truth',{})
+        trial['ground_truth_class']=('controlled-positive' if truth.get('expected_outcome') in {'controlled_positive','context_shift','exploratory_attack_like_deviation'} else 'benign')
+        if trial.get('status')!='completed' or trial['trial_id'] in snapshots:continue
+        try:snapshots[trial['trial_id']]=operator_snapshot(ctx['base_url'],trial)
+        except (OSError,ValueError,KeyError):pass # Missingness is retained in every held-out denominator.
+    ctx['analysis']=evaluate_trials(trials,snapshots,assignments,policy)
+    return ctx['analysis']
 
 
 def stage_results(ctx: dict) -> dict:
@@ -501,6 +421,7 @@ def run_study(**options: Any) -> Path:
         "settle_seconds": options.get("settle_seconds", 12.0),
         "seed": options.get("seed", 20260905),
         "window_seconds": options.get("window_seconds", 10),
+        "analysis_policy": options.get("analysis_policy"),
     }
     started = time.monotonic()
     stages: list[dict[str, Any]] = []

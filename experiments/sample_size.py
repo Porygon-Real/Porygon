@@ -593,6 +593,13 @@ def _cmd_build(args: argparse.Namespace) -> int:
         print(f"[refused] {exc}", file=sys.stderr)
         return 1
 
+    if getattr(args,'analysis_policy',None) is not None:
+        from experiments.frozen_analysis import validate_policy
+        from experiments.artifacts import sha256_json
+        policy=validate_policy(json.loads(args.analysis_policy.read_text()))
+        inputs['analysis_policy_sha256']=sha256_json(policy)
+        if getattr(args,'analysis_review',None) is not None:
+            inputs['analysis_review']=json.loads(args.analysis_review.read_text())
     lock = build_sample_size_lock(
         pilot_discordant_pairs={
             contrast_id: (c["discordant_successes"], c["discordant_trials"])
@@ -631,6 +638,8 @@ def main(argv: list[str] | None = None) -> int:
         "--run-dir", type=Path, action="append", default=None,
         help="pilot run directory (repeatable); default: auto-discover under artifacts/experiments/local",
     )
+    build.add_argument("--analysis-review",type=Path,help="actual independent human review of exact policy/source/power result")
+    build.add_argument("--analysis-policy",type=Path,help="reviewed exact frozen analysis/quality choices to bind before collection")
     build.add_argument("--base-url", default="http://127.0.0.1:8000")
     build.add_argument(
         "--out", type=Path, default=None,

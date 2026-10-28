@@ -594,6 +594,13 @@ def check_run_conformance(
     """Evaluate every CONF-* check against `run_dir`. Purely read-only: never
     writes to `run_dir` or anywhere else, and never starts a container."""
     run_dir = Path(run_dir)
+    if (run_dir/'plan.json').is_file():
+        from experiments.confirmatory import collection_conformance
+        result=collection_conformance(run_dir)
+        findings=[ConformanceFinding('CONF-FROZEN-MATRIX','all preconstructed collection records',result['completed'],result['valid'],
+            'Failed/missing records and absent clean strata remain explicit; pilot records never pad confirmatory counts')]
+        plan=json.loads((run_dir/'plan.json').read_text())
+        return ConformanceReport(plan['run_id'],plan['protocol_sha256'],findings,result['valid'],[] if result['valid'] else ['CONF-FROZEN-MATRIX'])
     manifest = manifest if manifest is not None else load_protocol_manifest()
     run_manifest = _load_run_manifest(run_dir)
     images_manifest = _load_images_manifest(run_dir)

@@ -73,6 +73,8 @@ def atomic_write_json(path: Path, value: Any) -> str:
 
 def atomic_write_bytes(path: Path, encoded: bytes) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise ArtifactError("artifact destination cannot be a symlink")
     if path.exists():
         existing = path.read_bytes()
         if existing != encoded:
@@ -83,7 +85,18 @@ def atomic_write_bytes(path: Path, encoded: bytes) -> str:
         handle.write(encoded)
         handle.flush()
         os.fsync(handle.fileno())
-    os.replace(temporary, path)
+    try:
+        # Same-filesystem hard-link publishes atomically without replacement.
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            if path.is_symlink() or path.read_bytes() != encoded:
+                raise ArtifactError(f"completed artifact cannot be overwritten: {path}")
+        descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:os.fsync(descriptor)
+        finally:os.close(descriptor)
+    finally:
+        temporary.unlink(missing_ok=True)
     return sha256_bytes(encoded)
 
 

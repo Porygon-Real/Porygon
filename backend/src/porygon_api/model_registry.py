@@ -1,6 +1,7 @@
 """Non-executable advisory models with exact contract, hash and provenance checks."""
 from __future__ import annotations
 import math
+from datetime import date
 from typing import Literal,Annotated
 from pydantic import BaseModel,ConfigDict,Field,model_validator
 from porygon_api.evidence_features import CONTRACT,FEATURE_NAMES,EvidenceFeatureDocument
@@ -11,6 +12,21 @@ RunId=Annotated[str,Field(min_length=1,max_length=128,pattern=r'^[A-Za-z0-9_.:-]
 Digest=Annotated[str,Field(pattern=r'^[a-f0-9]{64}$')]
 
 
+class CollectionGroup(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
+    run_id: RunId
+    family: RunId
+    host_id: RunId
+    release: RunId
+    day: str=Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+    image_digest: str=Field(max_length=512,pattern=r'^[^\s@]+@sha256:[a-f0-9]{64}$')
+
+    @model_validator(mode='after')
+    def valid_day(self):
+        date.fromisoformat(self.day)
+        return self
+
+
 class ModelProvenance(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True,allow_inf_nan=False)
     fit_run_ids: list[RunId]=Field(min_length=1,max_length=10000)
@@ -19,8 +35,8 @@ class ModelProvenance(BaseModel):
     split_manifest_sha256: Digest
     training_dataset_sha256: Digest
     heldout_plan_sha256: Digest
-    heldout_plan: list[dict]=Field(min_length=1,max_length=10000)
-    training_groups: list[dict]=Field(min_length=1,max_length=20000)
+    heldout_plan: list[CollectionGroup]=Field(min_length=1,max_length=10000)
+    training_groups: list[CollectionGroup]=Field(min_length=1,max_length=20000)
     label_source: Literal['independent-controller']
     seed: int=Field(ge=0,le=2147483647)
     dependencies: dict[str,Annotated[str,Field(min_length=1,max_length=128)]]=Field(min_length=1,max_length=32)
@@ -34,6 +50,33 @@ class ModelProvenance(BaseModel):
         for values in (self.fit_run_ids,self.calibration_run_ids,self.heldout_run_ids):
             if len(set(values))!=len(values):
                 raise ValueError('Duplicate model run IDs')
+        fit,calibration,test=map(set,(self.fit_run_ids,self.calibration_run_ids,self.heldout_run_ids))
+        if fit&calibration or fit&test or calibration&test:raise ValueError('Overlapping model partitions')
+        training_ids=[row.run_id for row in self.training_groups]
+        heldout_ids=[row.run_id for row in self.heldout_plan]
+        if len(set(training_ids))!=len(training_ids) or set(training_ids)!=fit|calibration:
+            raise ValueError('Training group identities differ from assigned runs')
+        if len(set(heldout_ids))!=len(heldout_ids) or set(heldout_ids)!=test:
+            raise ValueError('Heldout plan identities differ from assigned runs')
+        if {row.family for row in self.training_groups}&{row.family for row in self.heldout_plan}:
+            raise ValueError('Heldout family leakage')
+        if max(row.day for row in self.training_groups)>=min(row.day for row in self.heldout_plan):
+            raise ValueError('Heldout collection must follow training')
+        physical={}
+        for row in self.training_groups:
+            partition='fit' if row.run_id in fit else 'calibration'
+            key=(row.family,row.host_id,row.release,row.day)
+            if key in physical and physical[key]!=partition:raise ValueError('Physical group leakage')
+            physical[key]=partition
+        splits={run:split for split,ids in (('fit',fit),('calibration',calibration),('test',test)) for run in ids}
+        if sha256_document(splits)!=self.split_manifest_sha256:raise ValueError('Split manifest digest mismatch')
+        if sha256_document([row.model_dump() for row in self.heldout_plan])!=self.heldout_plan_sha256:
+            raise ValueError('Heldout plan digest mismatch')
+        if set(self.class_balance)!={'fit','calibration'}:raise ValueError('Class counts must exclude test outcomes')
+        for split,ids in (('fit',fit),('calibration',calibration)):
+            counts=self.class_balance[split]
+            if set(counts)!={'benign','attack'} or any(type(n) is not int or n<1 for n in counts.values()) or sum(counts.values())!=len(ids):
+                raise ValueError('Invalid training class counts')
         return self
 
 

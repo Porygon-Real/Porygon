@@ -4,18 +4,20 @@ FEATURE_NAMES=('observed_parent_edges','attributed_connections','attributed_sens
 
 
 def extract_features(bundle):
+    from porygon_api.runtime_evidence import successful_exec,completed_outbound,positive_sensitive_write
     events=bundle['events']
+    executions=[event for event in events if successful_exec(event)]
     def observed_flag(name):
-        flags=[event.get(name) for event in events if event['channel']=='process']
+        flags=[event.get(name) for event in executions]
         return 'observed' if True in flags else 'not_observed' if flags and all(flag is False for flag in flags) else 'unavailable'
     known={event['event_id']:event for event in events}
     attributions=[edge for edge in bundle['edges'] if edge['certainty']=='observed' and edge['relation']=='same_observed_process_lifetime']
     values={
         'observed_parent_edges':sum(edge['certainty']=='observed' and edge['relation']=='parent_process' for edge in bundle['edges']),
-        'attributed_connections':sum(known[edge['target']]['runtime_action']=='net_outbound' for edge in attributions),
-        'attributed_sensitive_writes':sum(known[edge['target']]['runtime_action']=='file_write' for edge in attributions),
-        'memfd_executions':sum(event.get('exe_from_memfd') is True for event in events if event['channel']=='process'),
-        'writable_executions':sum(event.get('exe_writable') is True for event in events if event['channel']=='process'),
+        'attributed_connections':sum(completed_outbound(known[edge['target']]) for edge in attributions),
+        'attributed_sensitive_writes':sum(positive_sensitive_write(known[edge['target']]) for edge in attributions),
+        'memfd_executions':sum(event.get('exe_from_memfd') is True for event in executions),
+        'writable_executions':sum(event.get('exe_writable') is True for event in executions),
     }
     return {'contract':CONTRACT,'values':values,'observations':{'memfd_execution':observed_flag('exe_from_memfd'),
         'writable_execution':observed_flag('exe_writable')},'identity_coverage':bundle['coverage']}

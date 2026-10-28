@@ -27,7 +27,7 @@ def require_operator_token(
     principal = current_principal()
     if principal is not None:
         if principal.kind != 'operator':
-            raise HTTPException(401, 'Operator credential required')
+            raise HTTPException(403, 'Operator credential required')
         return principal
     settings = get_settings()
     if getattr(settings, 'access_mode', 'local') == 'local' and isinstance(x_porygon_operator_token, str):

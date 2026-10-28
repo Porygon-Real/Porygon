@@ -48,6 +48,27 @@ The following findings and architectural gaps have been resolved, covered with r
   - *Fix*: Enforced temporal causality (`parent.occurred_at <= current.occurred_at` and `parent.time_nano <= current.time_nano`) and matching `sensor_instance_id` in `_ancestor_chain` ([`detection.py:344-358`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/detection.py#L344-L358)), preventing clock skew or cross-sensor event mixing from producing acausal lineage trees.
   - *Verification*: Verified in [`backend/tests/test_detection.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_detection.py).
 
+### Continuous Assessment, Scoped Identity & Fenced Webhooks (Landed in Commits `6f845d5`, `9e982f0`, `7d9a211`)
+
+- **`[SEC-03]` Database-Enrolled API Credentials & Scoped Principal RBAC**:
+  - *Fix*: Replaced static shared environment variables with database-backed `ApiCredential` records ([`models.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/models.py), [`enrolled_credentials.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/alembic/versions/enrolled_credentials.py)). Implemented scoped principals (`operator`, `service`, `system`), expiration, revocation, strict host-binding checks (`enforce_host`), and fail-closed route authorization matrix ([`permissions.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/permissions.py), [`auth.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/auth.py)). Added administrative CLI [`scripts/porygon_credentials.py`](file:///home/anuruprkris/Project/final_yeat_work/scripts/porygon_credentials.py) and authenticated profile [`compose.authenticated.yaml`](file:///home/anuruprkris/Project/final_yeat_work/compose.authenticated.yaml).
+  - *Verification*: Verified via [`test_credentials.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_credentials.py), [`test_agent_identity.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_agent_identity.py), [`test_auth_permissions.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_auth_permissions.py), and [`test_credential_migration.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_credential_migration.py).
+- **`[DIR-03]` Fenced Notification Outbox & SSRF-Protected Webhooks**:
+  - *Fix*: Implemented durable `NotificationDelivery` outbox table ([`operational_delivery.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/alembic/versions/operational_delivery.py)), asynchronous notification worker ([`notification_worker.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/notification_worker.py)), HMAC-SHA256 payload signing (`X-Porygon-Signature`), and strict SSRF defenses verifying resolved IP addresses against private and non-routable CIDRs.
+  - *Verification*: Verified via [`test_notifications.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_notifications.py) and [`test_notification_worker.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_notification_worker.py).
+- **`[ARCH-01]` Scientific Honesty & ML Model Governance**:
+  - *Fix*: Purged false marketing claims of "Random Forest" and "TreeSHAP" for the hand-crafted 5-rule heuristic in [`ml_classifier.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/ml_classifier.py). Formalized `Heuristic Tree Ensemble` with explicit `ClassifierMetadata` tracking version, training corpus provenance, and raw tree-path deltas. Established reproducible group-split training, Brier score calibration, and promotion gates in [`experiments/models/`](file:///home/anuruprkris/Project/final_yeat_work/experiments/models/).
+  - *Verification*: Verified via [`test_ml_classifier.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_ml_classifier.py) and [`test_model_contracts.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_model_contracts.py).
+- **`[OPS-02]` Continuous Service Trust & Windowed Assessment Engine**:
+  - *Fix*: Built continuous assessment scheduling engine with PostgreSQL `FOR UPDATE SKIP LOCKED` bounded queue claiming (`AssessmentWorker` in [`window_worker.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/window_worker.py)), generational leasing, target registration, temporal window slicing ([`assessment_service.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/assessment_service.py)), and formal profile lifecycle (`draft` -> `candidate` -> `approved` -> `archived`) with explicit approval audits in [`profile_lifecycle.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/profile_lifecycle.py).
+  - *Verification*: Verified via [`test_window_worker.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_window_worker.py), [`test_assessment_service.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_assessment_service.py), [`test_profile_lifecycle.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_profile_lifecycle.py), and [`scripts/verify_continuous_detection.py`](file:///home/anuruprkris/Project/final_yeat_work/scripts/verify_continuous_detection.py).
+- **`[CORR-02]` Atomic Incident State Machine & Evidence Audit**:
+  - *Fix*: Implemented row-locked status transitions (`open` -> `acknowledged` -> `resolved` / `dismissed`) in [`incident_transitions.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/incident_transitions.py), enforcing valid state machine arcs, batch mutations, and append-only `IncidentEvidence` audit logs.
+  - *Verification*: Verified via [`test_incident_transitions.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_incident_transitions.py).
+- **`[PERF-05]` Kernel Runtime Retention & Verification Harness Hardening**:
+  - *Fix*: Added table pruning support for `kernel_runtime_events` inside [`retention.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/retention.py) with chunked deletion queries, preventing unbounded database growth during heavy syscall collection. Hardened [`scripts/verify_kernel_runtime.py`](file:///home/anuruprkris/Project/final_yeat_work/scripts/verify_kernel_runtime.py).
+  - *Verification*: Verified in [`backend/tests/test_kernel_events.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/tests/test_kernel_events.py) and [`telemetry/tests/test_kernel_channels.py`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/tests/test_kernel_channels.py).
+
 ---
 
 ## 2. The 5 Production Chasms: Status & Evolution
@@ -61,10 +82,10 @@ The following findings and architectural gaps have been resolved, covered with r
 │ 1. Multi-Syscall Fabric       │ execve-only; all others dropped  │ [RESOLVED] in b04aa │
 │ 2. Collector Efficiency       │ Sync Docker socket query storms  │ [RESOLVED] in b04aa │
 │ 3. Background Reconciliation  │ Sync request handler blocking    │ [RESOLVED] in b04aa │
-│ 4. SecOps Webhooks & SIEM     │ Incidents trapped in DB tables   │ [ACTIVE] Track 01   │
+│ 4. SecOps Webhooks & SIEM     │ Incidents trapped in DB tables   │ [RESOLVED] in 7d9a2 │
 │ 5. Vulnerability-Threat Corr. │ Detection blind to KEV/EPSS CVEs │ [ACTIVE] Track 02   │
 │ 6. Safe K8s Network Isolation │ Destructive Docker pause/stop    │ [ACTIVE] Track 03   │
-│ 7. OIDC / RBAC Governance     │ Static shared env tokens         │ [ACTIVE] Track 04   │
+│ 7. OIDC / RBAC Governance     │ Static shared env tokens         │ [RESOLVED] in 7d9a2 │
 │ 8. Kubernetes DaemonSet Agent │ Single-host Docker socket bind   │ [ACTIVE] Track 05   │
 └───────────────────────────────┴──────────────────────────────────┴─────────────────────┘
 ```
@@ -98,16 +119,9 @@ The following findings and architectural gaps have been resolved, covered with r
 * With collector cache inversion (`[PERF-03]`) and background reconciliation (`[PERF-04]`) resolved in `b04aaea`, ingestion overhead on the API server dropped dramatically.
 * The remaining scale challenge for high-density 100+ node clusters is buffering events between node agents and the API server using Redis Streams or NATS JetStream.
 
-### Chasm 5: Enterprise Governance, Identity (RBAC/OIDC) & Ecosystem Integration
-* **Evidence in Code**:
-  - [`backend/src/porygon_api/security.py:10-24`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/security.py#L10-L24) enforces authentication with two shared static tokens from environment variables (`PORYGON_INTERNAL_API_TOKEN`, `PORYGON_OPERATOR_API_TOKEN`).
-  - Zero webhook dispatchers or SIEM forwarding mechanisms exist in the codebase.
-* **Production Reality**:
-  - Enterprise compliance (SOC 2 Type II, ISO 27001) forbids shared static credentials. SecOps requires Single Sign-On (SSO via Okta, Azure AD, or Google Workspace) with Role-Based Access Control (`Viewer`, `SecOps Analyst`, `Incident Responder`, `Platform Admin`).
-  - Security analysts do not monitor a standalone UI 24/7; they require real-time alerts dispatched to **Splunk HEC**, **Datadog Security Monitoring**, **Slack**, and **PagerDuty**.
-* **Target Architecture**:
-  - Implement JWT verification against enterprise OIDC providers.
-  - Implement an asynchronous Webhook / SIEM Forwarding engine with HMAC signatures and exponential retry backoff.
+### Chasm 5: Enterprise Governance, Identity (RBAC/OIDC) & Ecosystem Integration (RESOLVED in `7d9a211`)
+* Replaced static shared environment variables with database-backed `ApiCredential` records, scoped roles, and fail-closed route permissions.
+* Implemented HMAC-SHA256 signed notification webhooks with SSRF guard and exponential backoff retry outbox.
 
 ---
 
@@ -118,13 +132,15 @@ $$\text{Leverage} = \frac{\text{Impact}}{\text{Effort}} \times \text{Confidence}
 
 | ID | Title | Category | Impact | Effort | Risk | Confidence | Leverage | Status |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **[SEC-02]** | Multi-Syscall Kernel Runtime Telemetry Pipeline | Security | CRITICAL | M | LOW | HIGH | **2.0** | **RESOLVED (`b04aaea`)** |
-| **[PERF-03]** | Invert Collector Container Cache Checks | Performance | HIGH | M | LOW | HIGH | **1.5** | **RESOLVED (`b04aaea`)** |
-| **[PERF-04]** | Decouple Sync Identity Reconciliation | Performance | MED | M | LOW | HIGH | **1.0** | **RESOLVED (`b04aaea`)** |
-| **[DIR-03]** | Enterprise Incident Webhook & SIEM Forwarding Engine | Direction / DX | HIGH | S | LOW | HIGH | **2.0** | **ACTIVE (Next Target)** |
-| **[DIR-02]** | Unified Vulnerability (CISA KEV / EPSS) Threat Correlation | Direction / Det | HIGH | M | LOW | HIGH | **1.5** | **ACTIVE** |
-| **[ARCH-01]** | Augment ML Classifier with Behavioral Path & Inode Indicators | Architecture | HIGH | M | LOW | HIGH | **1.5** | **ACTIVE** |
-| **[SEC-03]** | Enterprise OIDC Authentication & Role-Based Access Control | Security / Auth | HIGH | M | LOW | HIGH | **1.33** | **ACTIVE** |
+| **[SEC-AUTH-01]** | Return 403 Forbidden for Non-Operator Principals in `require_operator_token` | Security / Auth | HIGH | XS | LOW | HIGH | **3.0** | **ACTIVE (High Leverage Bug)** |
+| **[DOC-SLOP-01]** | Purge Academic Course Markers from Production Docs (`docs.html:31,763`) | Documentation | HIGH | XS | LOW | HIGH | **2.0** | **ACTIVE (Rule 2.2 Fix)** |
+| **[SEC-AUTH-02]** | Salted or HMAC-Peppered API Token Digests in Database | Security / Auth | HIGH | S | LOW | HIGH | **2.0** | **ACTIVE** |
+| **[DIR-03]** | Enterprise Incident Webhook & SIEM Forwarding Engine | Direction / DX | HIGH | S | LOW | HIGH | **2.0** | **RESOLVED (`7d9a211`)** |
+| **[DIR-02]** | Unified Vulnerability (CISA KEV / EPSS) Threat Correlation | Direction / Det | HIGH | M | LOW | HIGH | **1.5** | **ACTIVE (Next Feature)** |
+| **[ARCH-01]** | Scientific ML Model Governance & Heuristic Metadata | Architecture | HIGH | M | LOW | HIGH | **1.5** | **RESOLVED (`7d9a211`)** |
+| **[SEC-03]** | Enrolled Database Credentials & Scoped Principal RBAC | Security / Auth | HIGH | M | LOW | HIGH | **1.33** | **RESOLVED (`7d9a211`)** |
+| **[PERF-WORKER-01]** | Eliminate Double JSON Decode/Encode in Service Auth Middleware | Performance | MED | S | LOW | HIGH | **1.5** | **ACTIVE** |
+| **[CORR-JOB-01]** | Window Worker Cursor Advance Atomicity & Target Starvation Guard | Correctness | MED | S | LOW | HIGH | **1.5** | **ACTIVE** |
 | **[DIR-04]** | Kubernetes Dynamic NetworkPolicy Containment & Blast-Radius | Direction / Resp | HIGH | L | MED | HIGH | **1.2** | **ACTIVE** |
 | **[ARCH-02]** | Distributed Event Streaming Bus (NATS JetStream / Redis Streams) | Architecture | HIGH | L | MED | MED | **0.8** | **ACTIVE** |
 | **[OPS-01]** | Helm Chart Packaging for Multi-Node Kubernetes DaemonSet | Operations | HIGH | L | LOW | HIGH | **0.8** | **ACTIVE** |
@@ -138,12 +154,7 @@ $$\text{Leverage} = \frac{\text{Impact}}{\text{Effort}} \times \text{Confidence}
 ### Phase 1: Telemetry & Threat Fabric
 
 #### Task 1.1: Multi-Syscall Telemetry Pipeline Activation (`[SEC-02]`) — **[COMPLETED in commit `b04aaea`]**
-* **Delivered**:
-  - Falco rules for network connections, in-memory execution, and sensitive file writes in [`falco/porygon_rules.yaml`](file:///home/anuruprkris/Project/final_yeat_work/falco/porygon_rules.yaml).
-  - Normalization engine in [`telemetry/src/porygon_telemetry/kernel.py`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/src/porygon_telemetry/kernel.py).
-  - Dual-channel spool outbox in [`telemetry/src/porygon_telemetry/spool.py`](file:///home/anuruprkris/Project/final_yeat_work/telemetry/src/porygon_telemetry/spool.py).
-  - Backend API endpoints and Postgres migration [`backend/src/porygon_api/kernel_events.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/kernel_events.py).
-  - Dashboard viewer tab in [`dashboard/app.js`](file:///home/anuruprkris/Project/final_yeat_work/dashboard/app.js).
+* **Delivered**: Falco rules for network connections, in-memory execution, and sensitive file writes; normalization engine; spool outbox; backend API endpoints.
 
 #### Task 1.2: Unified Vulnerability & Behavioral Threat Correlation (`[DIR-02]`) — **[ACTIVE ROADMAP]**
 * **Evidence**: [`backend/src/porygon_api/detection.py:16-80`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/detection.py#L16-L80) evaluates process and runtime anomalies in isolation from vulnerability intelligence in [`vulnerability.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/vulnerability.py).
@@ -162,33 +173,20 @@ $$\text{Leverage} = \frac{\text{Impact}}{\text{Effort}} \times \text{Confidence}
 
 ### Phase 2: SecOps Ecosystem & Governance
 
-#### Task 2.1: Enterprise Webhook & SIEM Forwarding Engine (`[DIR-03]`) — **[ACTIVE ROADMAP - HIGHEST LEVERAGE]**
-* **Evidence**: Zero external dispatch mechanisms exist when [`backend/src/porygon_api/incident_grouping.py:94`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/incident_grouping.py#L94) creates an `Incident`.
-* **Implementation Blueprint**:
-  1. Create `backend/src/porygon_api/webhooks.py`:
-     - Implements `dispatch_incident_webhook(incident: Incident)`.
-     - Supports generic JSON webhooks, Slack incoming webhooks, and Splunk HTTP Event Collector (HEC).
-     - Signs payloads using HMAC-SHA256 headers (`X-Porygon-Signature: sha256=<hex>`).
-     - Dispatches asynchronously with 3-attempt exponential backoff.
-  2. Trigger dispatch in `attach_incident` ([`incident_grouping.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/incident_grouping.py)) upon incident creation or severity escalation.
-* **Done Criteria**:
-  ```bash
-  docker compose exec -T backend pytest tests/test_webhooks.py
-  ```
+#### Task 2.1: Enterprise Webhook & SIEM Forwarding Engine (`[DIR-03]`) — **[COMPLETED in commit `7d9a211`]**
+* **Delivered**: `NotificationDelivery` outbox table, asynchronous `NotificationWorker`, HMAC-SHA256 signature verification, SSRF private IP validation, retry backoff. Verified via `test_notifications.py` and `test_notification_worker.py`.
 
-#### Task 2.2: Enterprise OIDC & Role-Based Access Control (`[SEC-03]`) — **[ACTIVE ROADMAP]**
-* **Evidence**: [`backend/src/porygon_api/security.py:10-24`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/security.py#L10-L24) verifies static shared tokens.
+#### Task 2.2: Enrolled Credentials & Scoped Principal RBAC (`[SEC-03]`) — **[COMPLETED in commit `7d9a211`]**
+* **Delivered**: Database-backed `ApiCredential` entity, scoped roles (`operator`, `service`, `system`), strict host binding (`enforce_host`), route permission table (`ROUTE_PERMISSIONS`), fail-closed middleware, and CLI enrollment tool. Verified via `test_credentials.py` and `test_agent_identity.py`.
+
+#### Task 2.3: Security & Correctness Hardening on Auth Layer (`[SEC-AUTH-01]`, `[SEC-AUTH-02]`) — **[ACTIVE ROADMAP]**
+* **Evidence**: [`security.py:28-31`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/security.py#L28-L31) returns 401 instead of 403 when authenticated service principals access operator routes. [`auth.py:23-24`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/auth.py#L23-L24) stores unsalted SHA-256 digests.
 * **Implementation Blueprint**:
-  1. Add optional OIDC JWT bearer verification (Okta, Azure AD, Keycloak) using `python-jose` and JWKS caching.
-  2. Define role hierarchy:
-     - `Viewer`: Read-only access to incidents, metrics, and profiles.
-     - `SecOps Analyst`: Acknowledge and close incidents, add notes.
-     - `Incident Responder`: Approve and execute container containment actions.
-     - `Platform Admin`: Modify custom detection rules and API tokens.
-  3. Record user identity on incident transitions ([`models.py:633-638`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/models.py#L633-L638)) instead of leaving `acknowledged_by` null.
+  1. Update `require_operator_token` to raise `HTTPException(403, 'Operator credential required')` when `principal.kind != 'operator'`.
+  2. Add pepper or per-credential random salt to `token_digest` calculations to protect database dumps against precomputed rainbow table lookups.
 * **Done Criteria**:
   ```bash
-  docker compose exec -T backend pytest tests/test_auth_rbac.py
+  docker compose exec -T backend pytest tests/test_auth_permissions.py
   ```
 
 ---
@@ -220,7 +218,7 @@ $$\text{Leverage} = \frac{\text{Impact}}{\text{Effort}} \times \text{Confidence}
 #### Task 4.2: Decouple Synchronous Identity Reconciliation (`[PERF-04]`) — **[COMPLETED in commit `b04aaea`]**
 * **Delivered**: Background worker loop in [`backend/src/porygon_api/reconciliation.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/reconciliation.py) decoupling parent and container identity repairs from ingestion requests in [`backend/src/porygon_api/main.py`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/main.py).
 
-#### Task 4.3: ML Classifier Behavioral Indicators (`[ARCH-01]`) — **[ACTIVE ROADMAP]**
+#### Task 4.3: ML Classifier Behavioral Indicators (`[ARCH-01b]`) — **[ACTIVE ROADMAP]**
 * **Evidence**: [`backend/src/porygon_api/ml_classifier.py:42-81`](file:///home/anuruprkris/Project/final_yeat_work/backend/src/porygon_api/ml_classifier.py#L42-L81) uses static basename sets vulnerable to path evasion (e.g. copying binaries to `/tmp`).
 * **Implementation Blueprint**:
   - Incorporate behavioral signals into feature extraction: execution from writable directories (`/tmp`, `/dev/shm`), unlinked executables (`(deleted)` inode suffix), and argument entropy.
