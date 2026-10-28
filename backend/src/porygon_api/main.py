@@ -33,6 +33,7 @@ from porygon_api.retention import apply_retention
 from porygon_api.maintenance import RetentionWorker
 from porygon_api.reconciliation import IdentityReconciliationWorker
 from porygon_api.kernel_events import router as kernel_router, reconcile_kernel_identities
+from porygon_api.evaluation_routes import router as evaluation_router
 from porygon_api.assessment_service import (compute_anomaly_score as assessment_compute,
     run_detection as assessment_detect, _detection_execution as assessment_execution)
 from porygon_api.config import get_settings
@@ -246,6 +247,7 @@ app = FastAPI(
 
 
 app.include_router(kernel_router)
+app.include_router(evaluation_router)
 app.include_router(credential_router)
 app.include_router(health_metrics_router)
 app.include_router(notifications_router)
@@ -316,10 +318,13 @@ def health_ready(db: Session = Depends(get_db)) -> HealthResponse:
 )
 def record_heartbeat(payload: HeartbeatIn, db: Session = Depends(get_db)) -> ServiceHeartbeat:
     record_health(db,payload)
+    host = payload.metadata.get("docker_host_id")
+    host = host if isinstance(host, str) and host and host != "auto" else "unknown"
     heartbeat = db.scalar(
         select(ServiceHeartbeat).where(
             ServiceHeartbeat.service_name == payload.service_name,
             ServiceHeartbeat.instance_id == payload.instance_id,
+            ServiceHeartbeat.docker_host_id == host,
         )
     )
 
@@ -331,6 +336,7 @@ def record_heartbeat(payload: HeartbeatIn, db: Session = Depends(get_db)) -> Ser
         heartbeat = ServiceHeartbeat(
             service_name=payload.service_name,
             instance_id=payload.instance_id,
+            docker_host_id=host,
             status=payload.status,
             service_metadata=payload.metadata,
             first_seen_at=effective_seen_at,

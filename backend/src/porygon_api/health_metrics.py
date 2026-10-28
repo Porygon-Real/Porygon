@@ -3,7 +3,7 @@ from datetime import datetime,timezone,timedelta
 from typing import Annotated,Literal
 from fastapi import APIRouter,Depends,HTTPException,Query,Request
 from pydantic import BaseModel,ConfigDict,Field,model_validator,ValidationError
-from sqlalchemy import select,func
+from sqlalchemy import select,func,delete
 from sqlalchemy.orm import Session
 from porygon_api.auth import utc
 from porygon_api.db import get_db
@@ -33,6 +33,24 @@ class HealthIn(BaseModel):
         return self
 
 
+def prune_health(db,host,service,now=None):
+    """Bound heartbeat history independently of optional raw-retention scheduling.
+
+    Assessment coverage is copied into immutable job evidence before completion.
+    Windows older than raw retention already abstain; retain an extra two-minute
+    boundary on both event and receipt clocks so eligible windows keep context.
+    """
+    from porygon_api.config import get_settings
+    now=now or datetime.now(timezone.utc)
+    cutoff=now-timedelta(days=get_settings().raw_event_retention_days,minutes=2)
+    ids=list(db.scalars(select(SensorHealthSample.sample_id).where(
+        SensorHealthSample.docker_host_id==host,SensorHealthSample.service_name==service,
+        SensorHealthSample.observed_at<cutoff,SensorHealthSample.received_at<cutoff)
+        .order_by(SensorHealthSample.received_at,SensorHealthSample.sample_id).limit(64)))
+    if ids:db.execute(delete(SensorHealthSample).where(SensorHealthSample.sample_id.in_(ids)))
+    return len(ids)
+
+
 def record_health(db,payload):
     raw=payload.metadata.get('health')
     if raw is None:return None
@@ -41,9 +59,15 @@ def record_health(db,payload):
     host=payload.metadata.get('docker_host_id')
     if not isinstance(host,str) or not host or host=='auto':
         return None # Compatibility sensors without assigned hosts remain explicitly unknown.
-    key={'service':payload.service_name,'instance':payload.instance_id,'epoch':sample.counter_epoch,'sequence':sample.sequence}
+    prune_health(db,host,payload.service_name)
+    key={'host':host,'service':payload.service_name,'instance':payload.instance_id,'epoch':sample.counter_epoch,'sequence':sample.sequence}
     identifier=sha256_document(key)
     existing=db.get(SensorHealthSample,identifier)
+    if existing is None:
+        # Pre-host-identity migrations used another hash; preserve their immutable row ID.
+        existing=db.scalar(select(SensorHealthSample).where(SensorHealthSample.docker_host_id==host,
+            SensorHealthSample.service_name==payload.service_name,SensorHealthSample.instance_id==payload.instance_id,
+            SensorHealthSample.counter_epoch==sample.counter_epoch,SensorHealthSample.sequence==sample.sequence))
     metrics=sample.model_dump()
     if existing:
         if existing.metrics!=metrics:raise HTTPException(409,'Health sequence cannot change contents')
@@ -69,6 +93,8 @@ def health_coverage(db,host,start,end):
         if not before or not after:
             output['reasons'].append(service+'_health_interval_unknown');continue
         old,new=before.metrics,after.metrics
+        if before.instance_id != after.instance_id:
+            output['reasons'].append(service+'_instance_changed');continue
         if before.counter_epoch!=after.counter_epoch:
             output['reasons'].append(service+'_counter_reset');continue
         previous,current=old['metrics'],new['metrics']
@@ -79,12 +105,22 @@ def health_coverage(db,host,start,end):
         if current.get('backpressure_events',0)>previous.get('backpressure_events',0):
             output['reasons'].append(service+'_backpressure_observed')
         source_epoch=old.get('source_epoch')
-        if source_epoch and source_epoch==new.get('source_epoch') and 'falco_drops' in previous and 'falco_drops' in current:
-            delta=current['falco_drops']-previous['falco_drops']
-            if delta<0:output['reasons'].append('falco_counter_regression')
-            elif delta>0:
-                output['source_loss']='known-loss';output['reasons'].append('falco_drops_observed')
-            output['boundaries']['falco_drop_delta']=delta
+        if source_epoch != new.get('source_epoch'):
+            output['reasons'].append(service+'_source_epoch_changed')
+            continue
+        if source_epoch:
+            for metric, boundary, reason in (
+                ('falco_drops','falco_kernel_drop_delta','falco_kernel_drops_observed'),
+                ('falco_output_drops','falco_output_drop_delta','falco_output_drops_observed'),
+            ):
+                if metric not in previous or metric not in current:
+                    output['reasons'].append(metric+'_interval_unknown');continue
+                delta=current[metric]-previous[metric]
+                if delta<0:
+                    output['reasons'].append(metric+'_counter_regression');continue
+                output['boundaries'][boundary]=delta
+                if delta>0:
+                    output['source_loss']='known-loss';output['reasons'].append(reason)
         # Even zero observed drops does not establish global completeness.
     return output
 
@@ -94,9 +130,9 @@ def health_status(request: Request,limit: int=Query(100,ge=1,le=1000),db: Sessio
     rows=db.scalars(select(SensorHealthSample).order_by(SensorHealthSample.observed_at.desc()).limit(limit)).all()
     latest={}
     for row in rows:
-        key=(row.service_name,row.instance_id)
+        key=(row.docker_host_id,row.service_name,row.instance_id)
         if key not in latest:
-            latest[key]={'service':row.service_name,'instance_id':row.instance_id,'counter_epoch':row.counter_epoch,
+            latest[key]={'docker_host_id':row.docker_host_id,'service':row.service_name,'instance_id':row.instance_id,'counter_epoch':row.counter_epoch,
                 'observed_at':row.observed_at,'received_at':row.received_at,'health':row.metrics}
     notification=dict(db.execute(select(NotificationDelivery.state,func.count()).group_by(NotificationDelivery.state)).all())
     oldest=db.scalar(select(func.min(AssessmentJob.window_end)).where(AssessmentJob.state.in_(['pending','claimed'])))

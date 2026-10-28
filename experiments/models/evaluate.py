@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+from datetime import datetime,timezone
 from pathlib import Path
 from experiments.models.common import load_dataset,digest,FEATURE_NAMES
 from experiments.artifacts import atomic_write_json
@@ -10,6 +11,7 @@ from experiments.artifacts import atomic_write_json
 def evaluate(dataset_path,model_path):
     from porygon_api.model_registry import ModelArtifact,predict
     dataset,groups=load_dataset(dataset_path)
+    if Path(model_path).stat().st_size>4*1024*1024:raise ValueError('Model exceeds bounded size')
     model=ModelArtifact.model_validate(json.loads(Path(model_path).read_text()))
     actual_plan=[{key:row[key] for key in ('run_id','family','host_id','release','day','image_digest')} for row in groups['test']]
     expected={row['run_id']:row for row in model.provenance['heldout_plan']}
@@ -22,7 +24,7 @@ def evaluate(dataset_path,model_path):
         result=predict({'contract':model.feature_contract,'values':row['features'],
             'identity_coverage':row['identity_coverage'],'observations':row['observations']},model.model_dump())
         records.append({'run_id':row['run_id'],'family':row['family'],'label':row['label'],
-            'probability':result['probability'],'positive':result['positive'],'container_hours':row['container_hours']})
+            'probability':result['probability'],'positive':result['positive'],'container_hours':row['container_hours'],'ground_truth_sha256':row['ground_truth_sha256']})
     def metrics(rows):
         tp=sum(row['positive'] and row['label']=='attack' for row in rows)
         fp=sum(row['positive'] and row['label']=='benign' for row in rows)
@@ -35,7 +37,8 @@ def evaluate(dataset_path,model_path):
             'independent_runs':len(rows),'abstention':0,'coverage':1.0}
     return {'contract':'porygon.model-evaluation','artifact_sha256':model.artifact_sha256,
         'data_kind':dataset['data_kind'],'test_dataset_sha256':digest(dataset),
-        'first_test_collection_at':min(row['collection_started_at'] for row in groups['test']),
+        'first_test_collection_at':min(datetime.fromisoformat(row['collection_started_at']).astimezone(timezone.utc) for row in groups['test']).isoformat(),
+        'last_test_collection_at':max(datetime.fromisoformat(row['collection_finished_at']).astimezone(timezone.utc) for row in groups['test']).isoformat(),
         'test_run_ids':[row['run_id'] for row in records],
         'split_manifest_sha256':model.provenance['split_manifest_sha256'],'metrics':metrics(records),
         'by_family':{family:metrics([row for row in records if row['family']==family]) for family in sorted({row['family'] for row in records})},

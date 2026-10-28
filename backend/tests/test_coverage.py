@@ -79,6 +79,7 @@ def test_real_schema_healthy_heartbeats_clear_stale_reasons(assessment_engine):
             )
             db.add(
                 ServiceHeartbeat(
+                    docker_host_id="host-a",
                     service_name=value.service_name,
                     instance_id=value.instance_id,
                     status=value.status,

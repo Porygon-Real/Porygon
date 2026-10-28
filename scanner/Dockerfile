@@ -5,6 +5,13 @@ ARG TRIVY_VERSION=0.72.0
 ARG TRIVY_SHA256_AMD64=bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea
 ARG TRIVY_SHA256_ARM64=2ca2c023109c2db6b2b77366b6717291452d4531167377d95c79547f0c8e3467
 
+ARG SOURCE_COMMIT=unrecorded
+ARG SOURCE_TREE_SHA256=unrecorded
+ARG DEPENDENCY_LOCK_SHA256=unrecorded
+LABEL org.opencontainers.image.revision=$SOURCE_COMMIT \
+      com.porygon.source-tree-sha256=$SOURCE_TREE_SHA256 \
+      com.porygon.dependency-lock-sha256=$DEPENDENCY_LOCK_SHA256
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -32,11 +39,13 @@ RUN groupadd --gid 10005 porygon \
     && mkdir -p /var/lib/trivy \
     && chown -R porygon:porygon /var/lib/trivy /app
 
-COPY pyproject.toml ./
+COPY pyproject.toml requirements.lock ./
 COPY src ./src
 COPY tests ./tests
 
-RUN pip install --no-cache-dir ".[test]" \
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r requirements.lock \
+    && pip install --no-cache-dir --no-deps --no-build-isolation ".[test]" \
+    && pip check \
     && chown -R porygon:porygon /app
 
 USER 10005:10005

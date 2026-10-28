@@ -40,16 +40,18 @@ def webhook_headers(delivery_id,payload,secret,timestamp=None):
 def send_webhook(destination,delivery_id,payload,timeout=10):
     """Resolve once, validate egress, connect that address, verify TLS hostname."""
     parsed=urlsplit(destination.url);host=parsed.hostname;port=parsed.port or (443 if parsed.scheme=='https' else 80)
-    addresses=socket.getaddrinfo(host,port,type=socket.SOCK_STREAM)
-    accepted=[]
-    for family,_,_,_,address in addresses:
-        ip=ip_address(address[0])
-        if not ip.is_global and not (destination.allow_loopback and host in {'127.0.0.1','::1'} and ip.is_loopback):
-            raise ValueError('Webhook egress address is not allowed')
-        accepted.append((family,address))
-    if not accepted:raise ValueError('No allowed webhook address')
-    family,address=accepted[0]
+    # Operator-pinned IP avoids unbounded resolver work and DNS rebinding.
+    ip=ip_address(destination.connect_ip or host)
+    if not ip.is_global and not (destination.allow_loopback and host in {'127.0.0.1','::1'} and ip.is_loopback):
+        raise ValueError('Webhook egress address is not allowed')
+    family=socket.AF_INET6 if ip.version==6 else socket.AF_INET
+    address=(str(ip),port,0,0) if ip.version==6 else (str(ip),port)
     sock=socket.socket(family,socket.SOCK_STREAM);sock.settimeout(timeout)
+    def expire():
+        try:sock.shutdown(socket.SHUT_RDWR)
+        except OSError:pass
+        sock.close()
+    deadline=threading.Timer(timeout,expire);deadline.daemon=True;deadline.start()
     try:
         sock.connect(address)
         if parsed.scheme=='https':sock=ssl.create_default_context().wrap_socket(sock,server_hostname=host)
@@ -60,7 +62,7 @@ def send_webhook(destination,delivery_id,payload,timeout=10):
         if not 200<=status<300:
             raise ValueError('Webhook did not acknowledge delivery')
     finally:
-        sock.close()
+        deadline.cancel();sock.close()
 
 
 class NotificationWorker:
@@ -102,6 +104,7 @@ class NotificationWorker:
     def run_once(self):
         destinations=load_destinations(self.settings)
         for _ in range(self.settings.notification_batch_size):
+            if self.stop_event.is_set():break
             claim=self.claim()
             if claim is None:break
             identifier,generation,destination_id,config_hash,payload=claim

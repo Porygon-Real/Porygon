@@ -5,7 +5,6 @@ from datetime import datetime,timezone
 from ipaddress import ip_address
 from sqlalchemy import select
 from fastapi import HTTPException
-from porygon_api.models import ProcessExecEvent,KernelRuntimeEvent
 from porygon_api.vulnerability import sha256_document
 
 CONTRACT='porygon.runtime-evidence'
@@ -45,6 +44,7 @@ def identity(event):
 
 
 def query_events(db,scope,start,end,*,process_ids=None,kernel_ids=None):
+    from porygon_api.models import ProcessExecEvent,KernelRuntimeEvent
     records=[]
     for model,ids in ((ProcessExecEvent,process_ids),(KernelRuntimeEvent,kernel_ids)):
         query=select(model).where(model.docker_host_id==scope.docker_host_id,model.container_id==scope.container_id,
@@ -64,6 +64,25 @@ def query_events(db,scope,start,end,*,process_ids=None,kernel_ids=None):
         raise HTTPException(413,'Runtime evidence selection exceeds its bounded contract')
     return sorted(records,key=lambda event:(event['time_nano'],event['event_id']))
 
+
+
+def successful_exec(event):
+    return event.get('channel')=='process' and event.get('exec_return_value')==0 and event.get('event_direction')=='<'
+
+
+def completed_outbound(event):
+    if event.get('runtime_action')!='net_outbound' or type(event.get('return_value')) is not int or event['return_value']<0:
+        return False
+    try:
+        if type(event.get('remote_port')) is not int or not 1<=event['remote_port']<=65535:return False
+        address=ip_address(event.get('remote_address'))
+        return not (address.is_loopback or address.is_unspecified or (getattr(address,'ipv4_mapped',None) and address.ipv4_mapped.is_loopback))
+    except (ValueError,TypeError):return False
+
+
+def positive_sensitive_write(event):
+    return (event.get('runtime_action')=='file_write' and type(event.get('return_value')) is int and event['return_value']>0
+        and isinstance(event.get('file_path'),str) and event['file_path'].startswith(('/etc/','/root/.ssh/','/usr/bin/','/bin/')))
 
 def build_bundle(events,scope,window_start,window_end,known_executables):
     """Pure deterministic replay over a deliberately argument-free evidence subset."""
@@ -132,22 +151,12 @@ def build_bundle(events,scope,window_start,window_end,known_executables):
         if not process or not process.get('executable') or process['executable'] in known_executables:
             continue
         parent=parents.get(process['event_id'])
-        outbound=False
-        if event['runtime_action']=='net_outbound' and event['return_value'] is not None and event['return_value']>=0:
-            try:
-                if not isinstance(event['remote_port'],int) or isinstance(event['remote_port'],bool) or not 1<=event['remote_port']<=65535:
-                    raise ValueError('Unavailable peer port')
-                address=ip_address(event['remote_address'])
-                outbound=not (address.is_loopback or address.is_unspecified or
-                    (getattr(address,'ipv4_mapped',None) and address.ipv4_mapped.is_loopback))
-            except (ValueError,TypeError):
-                pass
+        outbound=completed_outbound(event)
         if outbound and parent:
             emit('POR-EVD-CHILD-NET',event,[parent['event_id'],process['event_id'],event['event_id']])
         if outbound and process['exe_writable'] is True:
             emit('POR-EVD-WRITABLE-NET',event,[process['event_id'],event['event_id']])
-        if (parent and event['runtime_action']=='file_write' and (event.get('return_value') or 0)>0
-                and isinstance(event['file_path'],str) and event['file_path'].startswith(('/etc/','/root/.ssh/','/usr/bin/','/bin/'))):
+        if parent and positive_sensitive_write(event):
             emit('POR-EVD-SENSITIVE-WRITE',event,[parent['event_id'],process['event_id'],event['event_id']])
     document={'contract':CONTRACT,'rules_hash':RULES_HASH,'scope':scope.manifest(),
         'window_start':window_start.isoformat(),'window_end':window_end.isoformat(),

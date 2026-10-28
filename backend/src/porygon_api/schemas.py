@@ -57,6 +57,8 @@ class HeartbeatIn(BaseModel):
 class HeartbeatOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    docker_host_id: str
+
     service_name: str
     instance_id: str
     status: str

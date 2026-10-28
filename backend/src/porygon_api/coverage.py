@@ -72,6 +72,7 @@ def coverage_for(db, target, window_start, settings, now=None):
         records = db.scalars(
             select(ServiceHeartbeat).where(
                 ServiceHeartbeat.service_name == service,
+                ServiceHeartbeat.docker_host_id == target.docker_host_id,
                 ServiceHeartbeat.last_seen_at
                 >= now
                 - timedelta(seconds=settings.assessment_heartbeat_max_age_seconds),

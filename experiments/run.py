@@ -159,6 +159,11 @@ def run_smoke(run_dir: Path, run_id: str = "smoke-fixture") -> Path:
 
 
 def validate(run_dir: Path) -> None:
+    if (run_dir/'plan.json').is_file():
+        from experiments.confirmatory import read_document,replay as frozen_replay
+        if read_document(run_dir/'plan.json').get('contract')=='porygon.frozen-collection-plan':
+            frozen_replay(run_dir);return
+        raise ArtifactError('Unknown planned collection contract')
     manifests = versioned_artifact_paths(run_dir, "artifact-manifest")
     if not (run_dir / "run.json").is_file() or not manifests:
         raise ArtifactError("missing artifact: run.json or artifact-manifest.json")
@@ -185,6 +190,8 @@ def validate(run_dir: Path) -> None:
     unlisted = sorted(present - set(manifest["artifact_hashes"]))
     if unlisted:
         raise ArtifactError(f"artifacts present but absent from the manifest: {unlisted}")
+    if run.get("kind") not in {"smoke_fixture","real_container_pilot"}:
+        raise ArtifactError("Unknown collection kind; no pilot fallback")
     if run.get("kind") != "smoke_fixture":
         _validate_pilot(run_dir, run)
         return
@@ -234,6 +241,9 @@ def _validate_smoke(run_dir: Path, run: dict[str, Any]) -> None:
 
 
 def replay(run_dir: Path) -> None:
+    if (run_dir/'plan.json').is_file():
+        from experiments.confirmatory import replay as frozen_replay
+        frozen_replay(run_dir);return
     validate(run_dir)
     run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
     if run.get("kind") != "smoke_fixture":
@@ -460,46 +470,15 @@ def run_pilot(
     return run_dir
 
 
-def confirmatory(protocol: Path) -> None:
-    """Always refuse. No confirmatory runner exists; this only reports exactly why
-    collection is not currently permitted.
-
-    The refusal reason comes from `scripts/review_gate.py:gate_state()` -- the single
-    source of truth for whether the protocol is frozen and both independent human
-    reviews are in -- rather than a generic string-grep against the protocol text, so
-    every specific blocking reason it names (per-role approval problems, reviewer
-    independence) is surfaced. `gate_state()` always reads the canonical protocol
-    document at its own fixed path; `protocol` is accepted for CLI/signature
-    compatibility but does not change what is checked.
-    """
+def confirmatory(protocol: Path,plan: Path | None=None,run_dir: Path | None=None,base_url='http://127.0.0.1:8000') -> None:
+    """Dispatch the implemented frozen runner only with concrete prelocked inputs."""
+    from experiments.confirmatory import collect,read_document
     from experiments.sample_size import _load_review_gate
-
-    review_gate = _load_review_gate()
-    state = review_gate.gate_state()
-
-    if state.get("confirmatory_permitted"):
-        # The review gate itself is satisfied, but this codebase still has no real
-        # confirmatory collection path -- that is a separate, deliberate gap, not
-        # something this function is implementing.
-        raise ArtifactError(
-            "confirmatory runner is intentionally gated until the approved workload matrix "
-            "is implemented; the review gate reports confirmatory_permitted=true, but no "
-            "real confirmatory collection path exists in this codebase yet"
-        )
-
-    reasons: list[str] = []
-    for role, problems in (state.get("approval_problems") or {}).items():
-        for problem in problems:
-            reasons.append(f"{role} review: {problem}")
-    independence = state.get("independence") or {}
-    if independence.get("independent") is False:
-        reasons.append(f"reviewer independence: {independence.get('reason')}")
-    if state.get("protocol_status") != "frozen":
-        reasons.append(f"protocol_status is {state.get('protocol_status')!r}, not 'frozen'")
-    if not reasons:
-        reasons.append("scripts/review_gate.py:gate_state() reports confirmatory_permitted=false")
-
-    raise ArtifactError("confirmatory collection is refused: " + "; ".join(reasons))
+    if not _load_review_gate().gate_state().get('confirmatory_permitted'):
+        raise ArtifactError('confirmatory collection is refused: frozen independent security/methodology reviews are required')
+    if protocol.resolve()!=(ROOT/'docs/research/research-protocol.md').resolve():raise ArtifactError('Use the canonical frozen protocol')
+    if plan is None or run_dir is None:raise ArtifactError('Provide the immutable --plan and a fresh --run-dir; use experiments.confirmatory plan first')
+    collect(read_document(plan),run_dir,base_url)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -533,8 +512,12 @@ def main(argv: list[str] | None = None) -> int:
     study.add_argument("--operations", type=int, default=20)
     study.add_argument("--seed", type=int, default=20260905)
     study.add_argument("--window-seconds", type=int, default=10)
+    study.add_argument("--analysis-policy",type=Path)
     study.add_argument("--base-url", default="http://127.0.0.1:8000")
     confirm = subparsers.add_parser("confirmatory")
+    confirm.add_argument("--plan",type=Path)
+    confirm.add_argument("--run-dir",type=Path)
+    confirm.add_argument("--base-url",default="http://127.0.0.1:8000")
     confirm.add_argument("--protocol", type=Path, default=ROOT / "docs/research/research-protocol.md")
     args = parser.parse_args(argv)
     try:
@@ -575,11 +558,12 @@ def main(argv: list[str] | None = None) -> int:
                 replicas=args.replicas,
                 operations=args.operations,
                 seed=args.seed,
+                analysis_policy=json.loads(args.analysis_policy.read_text()) if args.analysis_policy else None,
                 window_seconds=args.window_seconds,
                 base_url=args.base_url,
             )
         else:
-            confirmatory(args.protocol)
+            confirmatory(args.protocol,args.plan,args.run_dir,args.base_url)
     except real.PilotError as exc:
         print(f"[blocked] {exc}", file=sys.stderr)
         return 2

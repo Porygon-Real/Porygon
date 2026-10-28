@@ -193,3 +193,9 @@ Next source work is plan 003 causal evidence and the operational components in p
 ## Remaining engineering batch — 2026-10-27
 
 The user requested that all remaining implementation be completed before any new testing. One executor now owns the combined003–005 source batch: additive causal evidence and optional validated model pipeline; operational coverage, notification durability, restore/capacity/release tooling; split-safe and protocol-faithful confirmatory/prospective evaluation tooling. The advisor and independent reviewer perform source review only. No pytest/checker/lint/build/live/benchmark execution is allowed until that complete source freeze. Physical study collection, real held-out model promotion, the three-node load envelope and seven-day soak remain measured gates, not generated results.
+
+### Resumed source review
+
+The resumed checkout is at `6f845d5`; the advisor did not create that commit. The previous executor is no longer active. A replacement sole executor continues in the same isolated checkout, preserving its existing source. No validation command has been run in this resumed batch.
+
+Source review confirmed remaining host identity collisions in heartbeat/sample keys, missing output-drop/reset coverage, an unused comparator-report digest in model activation, and an unbounded DNS stage in webhook delivery. These are implementation corrections within plans 003–004. Plan 005 still requires the split-safe analysis, actual gated confirmatory runner, offline replay and immutable publication work; its old unconditional refusal is not completion. All remaining source and test definitions must be finished before the combined verification window opens.
