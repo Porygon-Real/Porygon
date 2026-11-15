@@ -20,7 +20,13 @@ def canonical_json(value: Any) -> str:
     # same codebase) will reject. Raising here, at encode time, surfaces a non-finite
     # value in an experiment artifact immediately instead of producing a file that
     # looks like JSON but silently isn't.
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -37,10 +43,17 @@ def _walk_strings(value: Any, path: str = "$") -> list[tuple[str, str]]:
         return [
             pair
             for key, item in value.items()
-            for pair in [(f"{path}.{key}", str(key)), *_walk_strings(item, f"{path}.{key}")]
+            for pair in [
+                (f"{path}.{key}", str(key)),
+                *_walk_strings(item, f"{path}.{key}"),
+            ]
         ]
     if isinstance(value, list):
-        return [pair for index, item in enumerate(value) for pair in _walk_strings(item, f"{path}[{index}]")]
+        return [
+            pair
+            for index, item in enumerate(value)
+            for pair in _walk_strings(item, f"{path}[{index}]")
+        ]
     if isinstance(value, str):
         return [(path, value)]
     return []
@@ -52,7 +65,14 @@ REDACTION_PLACEHOLDERS = frozenset({"flag:<secret>", "<secret-value>"})
 
 
 def reject_secrets(value: Any) -> None:
-    secret_markers = ("password", "token", "secret", "credential", "api_key", "private_key")
+    secret_markers = (
+        "password",
+        "token",
+        "secret",
+        "credential",
+        "api_key",
+        "private_key",
+    )
     for path, text in _walk_strings(value):
         if text in REDACTION_PLACEHOLDERS:
             continue
@@ -93,8 +113,10 @@ def atomic_write_bytes(path: Path, encoded: bytes) -> str:
             if path.is_symlink() or path.read_bytes() != encoded:
                 raise ArtifactError(f"completed artifact cannot be overwritten: {path}")
         descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:os.fsync(descriptor)
-        finally:os.close(descriptor)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
     finally:
         temporary.unlink(missing_ok=True)
     return sha256_bytes(encoded)
@@ -109,7 +131,9 @@ def _artifact_version(path: Path, pattern: "re.Pattern[str]") -> int:
     return int(match.group(1)) if match and match.group(1) else 1
 
 
-def versioned_artifact_paths(directory: Path, stem: str, suffix: str = ".json") -> list[Path]:
+def versioned_artifact_paths(
+    directory: Path, stem: str, suffix: str = ".json"
+) -> list[Path]:
     """Every existing version of a versioned artifact, oldest first.
 
     The bare `<stem><suffix>` is the implicit first version; `<stem>.vN<suffix>` (N >= 2)
@@ -119,11 +143,17 @@ def versioned_artifact_paths(directory: Path, stem: str, suffix: str = ".json") 
     if not directory.is_dir():
         return []
     pattern = _versioned_pattern(stem, suffix)
-    found = [path for path in directory.glob(f"{stem}*{suffix}") if path.is_file() and pattern.match(path.name)]
+    found = [
+        path
+        for path in directory.glob(f"{stem}*{suffix}")
+        if path.is_file() and pattern.match(path.name)
+    ]
     return sorted(found, key=lambda path: _artifact_version(path, pattern))
 
 
-def write_versioned_json(directory: Path, stem: str, value: Any, suffix: str = ".json") -> Path:
+def write_versioned_json(
+    directory: Path, stem: str, value: Any, suffix: str = ".json"
+) -> Path:
     """Write a JSON artifact that must never be silently changed once completed.
 
     `atomic_write_bytes` already refuses to overwrite a completed artifact whose content
@@ -170,7 +200,9 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def reconcile_boundaries(events: list[dict[str, Any]], boundaries: list[str]) -> dict[str, Any]:
+def reconcile_boundaries(
+    events: list[dict[str, Any]], boundaries: list[str]
+) -> dict[str, Any]:
     """Reconcile sequence-numbered canaries without treating unknown boundaries as zero."""
     if not boundaries:
         raise ArtifactError("at least one observable boundary is required")
@@ -196,7 +228,9 @@ def reconcile_boundaries(events: list[dict[str, Any]], boundaries: list[str]) ->
 SPLITS = ("fit", "calibration", "pilot", "test")
 
 
-def assign_split(run_id: str, splits: tuple[str, ...] = ("fit", "calibration", "test")) -> str:
+def assign_split(
+    run_id: str, splits: tuple[str, ...] = ("fit", "calibration", "test")
+) -> str:
     """Deterministically assign a whole run to one split from its run ID alone.
 
     Assignment is by complete run, never by window, and is computed before execution so
@@ -217,7 +251,9 @@ def check_split_isolation(records: list[dict[str, Any]]) -> None:
         run_id = record.get("run_id")
         split = record.get("split")
         if run_id is None or split is None:
-            raise ArtifactError("split isolation requires both run_id and split on every record")
+            raise ArtifactError(
+                "split isolation requires both run_id and split on every record"
+            )
         if split not in SPLITS:
             raise ArtifactError(f"unknown split: {split}")
         if seen.setdefault(run_id, split) != split:

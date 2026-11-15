@@ -21,6 +21,7 @@ import pytest
 
 from experiments import conformance, run, sample_size, study
 from experiments.artifacts import ArtifactError, atomic_write_json
+from experiments.runtime_binding import REQUIRED_SERVICES, RuntimeBinding
 
 
 def _build_pilot_run(run_dir: Path, run_id: str) -> None:
@@ -200,7 +201,7 @@ def test_conformance_stage_findings_land_in_the_study_manifest(tmp_path, monkeyp
 
 
 # ---------------------------------------------------------------------------
-# Task 2: run.py's confirmatory() always refuses, with specific reasons
+# Confirmatory collection requires review approval and immutable execution inputs
 # ---------------------------------------------------------------------------
 
 
@@ -215,10 +216,10 @@ def test_confirmatory_reports_specific_blocking_reasons_from_the_live_review_gat
     assert "independence" in message.lower()
 
 
-def test_confirmatory_always_refuses_even_when_the_review_gate_is_fully_satisfied(monkeypatch) -> None:
-    """Even a hypothetical fully-satisfied review gate must not make confirmatory()
-    actually run anything -- no real confirmatory runner exists, and that refusal is
-    deliberate, not a side effect of an unmet review gate."""
+def test_confirmatory_requires_fresh_run_directory_after_review_approval(tmp_path, monkeypatch) -> None:
+    """A locked plan cannot overwrite an existing run, even with approved reviews."""
+    from experiments import confirmatory
+
     fake_module = types.SimpleNamespace(
         gate_state=lambda: {
             "confirmatory_permitted": True,
@@ -228,8 +229,43 @@ def test_confirmatory_always_refuses_even_when_the_review_gate_is_fully_satisfie
         }
     )
     monkeypatch.setattr(sample_size, "_load_review_gate", lambda: fake_module)
-    with pytest.raises(ArtifactError, match="no real confirmatory collection path exists"):
-        run.confirmatory(run.ROOT / "docs/research/research-protocol.md")
+    binding = RuntimeBinding(
+        compose_project="study-fixture",
+        docker_context="test-context",
+        docker_transport="local-unix-socket",
+        daemon_id="fixture-daemon",
+        compose_file_sha256="a" * 64,
+        api_origin="http://127.0.0.1:8000",
+        services={
+            service: {
+                "container_id": f"container-{service}",
+                "container_name": f"study-fixture-{service}-1",
+                "image_id": f"image-{service}",
+                "state": "running",
+                "health": "healthy",
+                **(
+                    {"published_api_port": {"host_ip": "127.0.0.1", "host_port": "8000"}}
+                    if service == "gateway"
+                    else {}
+                ),
+            }
+            for service in REQUIRED_SERVICES
+        },
+    )
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps({"run_id": "confirmatory-fixture", "entries": [], "runtime_binding": binding.to_dict()}),
+        encoding="utf-8",
+    )
+    existing = tmp_path / "existing-run"
+    existing.mkdir()
+    # Isolate the directory safeguard after the separately tested strict plan gate.
+    monkeypatch.setattr(confirmatory, "validate_plan", lambda document: None)
+    monkeypatch.setattr(confirmatory, "resolve_runtime_binding", lambda *args: binding)
+    monkeypatch.setattr(confirmatory, "require_run_targets_absent", lambda *args: None)
+    with pytest.raises(ArtifactError, match="fresh run directory"):
+        run.confirmatory(run.ROOT / "docs/research/research-protocol.md", plan, existing)
+    assert list(existing.iterdir()) == []
 
 
 def test_confirmatory_surfaces_every_specific_approval_problem(monkeypatch) -> None:

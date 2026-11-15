@@ -19,6 +19,8 @@ ROUND_TRIP_CASES = [
     'executable not in ["sh", "bash", "dash"]',
     "privileged == true",
     "user_uid == 0",
+    'return_value > 0 and remote_port <= 443',
+    'file_path startswith "/etc/"',
 ]
 
 
@@ -40,6 +42,11 @@ def test_comparison_operators_map_to_condition_vocabulary() -> None:
     assert parse_expression('executable in ["nc"]')["op"] == "in"
     assert parse_expression('executable not in ["nc"]')["op"] == "not_in"
     assert parse_expression('command_line contains "nc"')["op"] == "contains"
+    assert parse_expression("return_value > 0")["op"] == "gt"
+    assert parse_expression("remote_port >= 443")["op"] == "gte"
+    assert parse_expression("remote_port < 1024")["op"] == "lt"
+    assert parse_expression("remote_port <= 1024")["op"] == "lte"
+    assert parse_expression('file_path startswith "/etc/"')["op"] == "startswith"
 
 
 def test_ancestor_prefix_sets_scope() -> None:

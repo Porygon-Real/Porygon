@@ -9,8 +9,14 @@ from typing import Any
 from porygon_api.baseline import (
     FEATURE_SCHEMA_VERSION,
     COMMAND_LINEAGE_SCHEMA,
+    SUPPORT_AWARE_SCHEMA,
+    MIN_SUPPORT_AWARE_BASELINE_EVENTS,
+    MAX_TEMPORAL_SEGMENTS_PER_WINDOW,
+    MAX_TEMPORAL_FEATURE_RECORDS,
+    MAX_TEMPORAL_EVENTS,
     MIN_COMMAND_COVERAGE,
     command_lineage_contract,
+    support_aware_contract,
 )
 
 ALGORITHM_VERSION = "porygon.distance.v1"
@@ -58,6 +64,8 @@ SCORING_CONFIG: dict[str, Any] = {
 
 
 COMMAND_LINEAGE_ALGORITHM = "porygon.distance.command-lineage"
+SUPPORT_AWARE_ALGORITHM = "porygon.distance.support-aware"
+SUPPORT_AWARE_SMOOTHING_POLICY = "fixed-total-common-minimum-support-mixture"
 COMMAND_LINEAGE_CONFIG = deepcopy(SCORING_CONFIG)
 COMMAND_LINEAGE_CONFIG.update(
     {
@@ -78,6 +86,29 @@ COMMAND_LINEAGE_CONFIG.update(
     }
 )
 
+SUPPORT_AWARE_CONFIG = deepcopy(COMMAND_LINEAGE_CONFIG)
+SUPPORT_AWARE_CONFIG.update(
+    {
+        "algorithm_version": SUPPORT_AWARE_ALGORITHM,
+        "feature_schema_version": SUPPORT_AWARE_SCHEMA,
+        "feature_extractor_contract": support_aware_contract(),
+        "minimum_baseline_process_events": MIN_SUPPORT_AWARE_BASELINE_EVENTS,
+        "minimum_baseline_family_events": 20,
+        "minimum_observed_process_events": 3,
+        "minimum_observed_family_events": 3,
+        "minimum_eligible_families": 3,
+        "minimum_baseline_nonempty_windows_for_numeric": 3,
+        "dirichlet_smoothing_alpha": 0.5,
+        "smoothing_policy": SUPPORT_AWARE_SMOOTHING_POLICY,
+        "max_baseline_support_tokens": 128,
+        "maximum_temporal_segments_per_window": MAX_TEMPORAL_SEGMENTS_PER_WINDOW,
+        "maximum_temporal_feature_records": MAX_TEMPORAL_FEATURE_RECORDS,
+        "maximum_temporal_events": MAX_TEMPORAL_EVENTS,
+        "temporal_minimum_family_events": 3,
+        "temporal_aggregation": "maximum-supported-subwindow-and-aggregate",
+    }
+)
+
 
 RARE_EXECUTION_ALGORITHM = "porygon.distance.rare-execution"
 
@@ -90,6 +121,8 @@ def get_scoring_config(
         config = deepcopy(SCORING_CONFIG)
     elif feature_schema_version == COMMAND_LINEAGE_SCHEMA:
         config = deepcopy(COMMAND_LINEAGE_CONFIG)
+    elif feature_schema_version == SUPPORT_AWARE_SCHEMA:
+        config = deepcopy(SUPPORT_AWARE_CONFIG)
     else:
         raise ValueError("Unsupported feature schema")
     if algorithm_version in {None, config["algorithm_version"]}:
@@ -266,13 +299,13 @@ def build_observation_key(
         "selected_event_ids_sha256": selected_event_ids_sha256,
         "scoring_config": get_scoring_config(feature_schema_version, algorithm_version),
     }
-    if feature_schema_version == COMMAND_LINEAGE_SCHEMA:
+    if feature_schema_version in (COMMAND_LINEAGE_SCHEMA, SUPPORT_AWARE_SCHEMA):
         if (
             observation_features_sha256 is None
             or len(observation_features_sha256) != 64
             or any(c not in "0123456789abcdef" for c in observation_features_sha256)
         ):
-            raise ValueError("Command-lineage observations require their feature document hash")
+            raise ValueError("Contract-aware observations require their feature document hash")
         # Parent reconciliation can repair links without changing event IDs.
         document["observation_features_sha256"] = observation_features_sha256
     return sha256_json(document)
@@ -283,12 +316,20 @@ def score_feature_documents(
     baseline_features: dict[str, Any],
     observation_features: dict[str, Any],
     algorithm_version: str | None = None,
-) -> tuple[float, str, dict[str, Any], dict[str, Any]]:
+) -> tuple[float | None, str, dict[str, Any], dict[str, Any]]:
     schema = baseline_features.get("schema_version")
     config = get_scoring_config(schema, algorithm_version)
     if observation_features.get("schema_version") != schema:
         raise ValueError(
             "Unsupported observation feature schema: baseline and observation must match"
+        )
+    if schema == SUPPORT_AWARE_SCHEMA:
+        from porygon_api.scoring_support import score_support_aware_feature_documents
+
+        return score_support_aware_feature_documents(
+            baseline_features=baseline_features,
+            observation_features=observation_features,
+            config=config,
         )
     if schema == COMMAND_LINEAGE_SCHEMA:
         for document in (baseline_features, observation_features):

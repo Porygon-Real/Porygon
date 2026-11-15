@@ -28,7 +28,7 @@ Deferred parent reconciliation can change lineage while retaining the same event
 
 The existing random-forest classifier retains its original feature contract and drift scale. New-contract scores do not feed that classifier automatically, and direct document classification rejects incompatible schemas. Container event classification selects legacy-scale scores for its drift input. Training and evaluating a classifier on the new contract is a separate model change.
 
-Custom detection rules preserve raw executable paths for `executable_path` and `parent_executable_path`, including BusyBox/Toybox binaries. Basename rules still resolve dispatched applets. Path-bearing comparisons, including `contains`, use case-sensitive Linux path semantics. The matcher identity is `porygon.detection.matcher.raw-multicall-paths`; existing stored detection runs are preserved.
+Custom detection rules preserve raw executable paths for `executable_path` and `parent_executable_path`, including BusyBox/Toybox binaries. Basename rules still resolve dispatched applets. Path-bearing comparisons, including `contains`, use case-sensitive Linux path semantics. The matcher identity is `porygon.detection.matcher.path-aware-structural-independent-on-score-abstention`; existing stored detection runs are preserved.
 
 ## Verification
 

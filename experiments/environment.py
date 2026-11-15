@@ -33,18 +33,17 @@ from pathlib import Path
 from typing import Any
 
 from experiments.artifacts import sha256_file, sha256_json
+from experiments.runtime_binding import RuntimeBinding
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = "porygon.run-environment.v1"
 
 FALCO_DIR = ROOT / "falco"
-COMPOSE_PATH = ROOT / "compose.yaml"
 BACKEND_SRC = ROOT / "backend/src/porygon_api"
 EXPERIMENTS_DIR = ROOT / "experiments"
 
-SERVICE_NAMES = ("backend", "collector", "telemetry", "responder", "scanner", "gateway", "postgres")
+SERVICE_NAMES = ("backend", "collector", "falco", "gateway", "postgres", "responder", "scanner", "telemetry")
 SCORING_FILES = ("baseline.py", "command_shapes.py", "scoring.py", "calibrated_rarity.py", "detection.py", "rule_expression.py")
-COMPOSE_PROJECT_DEFAULT = "porygon"
 DOCKER_TIMEOUT = 30
 
 
@@ -52,7 +51,15 @@ def _unavailable(reason: str) -> dict[str, Any]:
     return {"status": "unavailable", "reason": reason}
 
 
-def _run(args: list[str], timeout: int = DOCKER_TIMEOUT) -> subprocess.CompletedProcess[str]:
+def _run(
+    args: list[str],
+    timeout: int = DOCKER_TIMEOUT,
+    binding: RuntimeBinding | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if args and args[0] == "docker":
+        if binding is None:
+            raise RuntimeError("an explicit validated Docker runtime binding is required")
+        args = binding.docker_argv(*args[1:])
     return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
 
 
@@ -108,33 +115,6 @@ def kernel_fingerprint() -> dict[str, Any]:
     }
 
 
-# --------------------------------------------------------------------------
-# compose.yaml -- a narrow line-oriented scan, not a YAML parser. experiments/ is
-# stdlib-only and the file's service blocks are flat enough (2-space service key,
-# 4-space-indented body) that this is reliable for the one field read here.
-# --------------------------------------------------------------------------
-
-
-def _compose_service_image(service: str) -> str | None:
-    try:
-        lines = COMPOSE_PATH.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return None
-    in_service = False
-    for line in lines:
-        if line.startswith(f"  {service}:"):
-            in_service = True
-            continue
-        if not in_service:
-            continue
-        if line.strip() and not line.startswith((" " * 4, "\t")):
-            break  # dedented back to a sibling top-level key: this service block ended
-        stripped = line.strip()
-        if stripped.startswith("image:"):
-            return stripped.split(":", 1)[1].strip()
-    return None
-
-
 def _hash_directory(directory: Path) -> dict[str, Any]:
     if not directory.is_dir():
         return _unavailable(f"{directory} does not exist")
@@ -158,49 +138,20 @@ def _hash_directory(directory: Path) -> dict[str, Any]:
     return {"status": "measured", "combined_sha256": digest.hexdigest(), "files": per_file}
 
 
-def falco_ruleset_fingerprint() -> dict[str, Any]:
-    """Combined sha256 of every file under `falco/`, plus the Falco image reference.
-
-    The image reference is read from `compose.yaml` (digest-pinned there per the
-    repository's image-pinning convention), which is available whether or not the
-    stack is up. If it isn't found there, a running container named `falco` is
-    tried as a fallback; either miss degrades to "unavailable" rather than failing.
-    """
+def falco_ruleset_fingerprint(
+    binding: RuntimeBinding | None = None,
+) -> dict[str, Any]:
+    """Hash the repository ruleset and bind the image to the selected Falco service."""
     ruleset = _hash_directory(FALCO_DIR)
-    reference = _compose_service_image("falco")
-    if reference is not None:
-        image: dict[str, Any] = {"status": "measured", "reference": reference, "source": "compose.yaml"}
+    if binding is None:
+        image = _unavailable("validated runtime binding is required")
     else:
-        inspected = _docker_image_inspect_by_container("falco")
-        if inspected is None:
-            image = _unavailable("no falco image reference in compose.yaml and no running falco container")
-        else:
-            image = {
-                "status": "measured",
-                "reference": inspected.get("Image", ""),
-                "source": "docker inspect (running container)",
-            }
+        image = {
+            "status": "measured",
+            "reference": binding.services["falco"]["image_id"],
+            "source": "selected Compose project container identity",
+        }
     return {"ruleset": ruleset, "image": image}
-
-
-def _docker_image_inspect_by_container(container: str) -> dict[str, Any] | None:
-    """`.Config` of a running container inspect -- `.Config.Image` is the reference
-    the container was created from. Container inspect has no `RepoDigests`; that
-    field only exists on an image inspect, which `service_image_fingerprint` covers.
-    """
-    try:
-        completed = _run(["docker", "inspect", container])
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if completed.returncode != 0:
-        return None
-    try:
-        parsed = json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        return None
-    if not parsed:
-        return None
-    return parsed[0].get("Config") or {}
 
 
 # --------------------------------------------------------------------------
@@ -208,9 +159,11 @@ def _docker_image_inspect_by_container(container: str) -> dict[str, Any] | None:
 # --------------------------------------------------------------------------
 
 
-def _docker_image_inspect(reference: str) -> dict[str, Any] | None:
+def _docker_image_inspect(
+    reference: str, binding: RuntimeBinding | None = None
+) -> dict[str, Any] | None:
     try:
-        completed = _run(["docker", "image", "inspect", reference])
+        completed = _run(["docker", "image", "inspect", reference], binding=binding)
     except (OSError, subprocess.SubprocessError):
         return None
     if completed.returncode != 0:
@@ -222,33 +175,32 @@ def _docker_image_inspect(reference: str) -> dict[str, Any] | None:
     return parsed[0] if parsed else None
 
 
-def service_image_fingerprint() -> dict[str, Any]:
+def service_image_fingerprint(
+    binding: RuntimeBinding | None = None,
+) -> dict[str, Any]:
     """Per-service `docker inspect` identity; one missing service never fails the rest.
 
-    `postgres` and `gateway` pull an explicitly pinned external reference recorded
-    in compose.yaml. `backend`/`collector`/`telemetry`/`responder`/`scanner` are
-    built locally with no explicit `image:` in compose.yaml, so they fall back to
-    Compose's default build-tag convention (`<project>-<service>:latest`).
+    Images are resolved from the inspected service container IDs in the validated
+    Compose project. No implicit Compose project or global tag fallback is used.
     """
     result: dict[str, Any] = {}
     for service in SERVICE_NAMES:
-        pinned = _compose_service_image(service)
-        candidates = [pinned] if pinned else [f"{COMPOSE_PROJECT_DEFAULT}-{service}:latest"]
-        entry: dict[str, Any] | None = None
-        for reference in candidates:
-            inspected = _docker_image_inspect(reference)
-            if inspected is not None:
-                entry = {
-                    "status": "measured",
-                    "reference": reference,
-                    "image_id": inspected.get("Id"),
-                    "repo_digests": inspected.get("RepoDigests") or [],
-                }
-                break
-        if entry is None:
-            entry = _unavailable(
-                "docker is unreachable or no local image matched: " + ", ".join(candidates)
-            )
+        if binding is None:
+            result[service] = _unavailable("validated runtime binding is required")
+            continue
+        container = binding.services[service]
+        inspected = _docker_image_inspect(container["image_id"], binding)
+        entry = (
+            {
+                "status": "measured",
+                "reference": container["image_id"],
+                "image_id": inspected.get("Id"),
+                "repo_digests": inspected.get("RepoDigests") or [],
+                "container_id": container["container_id"],
+            }
+            if inspected is not None
+            else _unavailable("selected service image could not be inspected")
+        )
         result[service] = entry
     return result
 
@@ -332,14 +284,15 @@ def code_fingerprint() -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 
-def run_environment() -> dict[str, Any]:
+def run_environment(binding: RuntimeBinding | None = None) -> dict[str, Any]:
     """Combine every fingerprint into one immutable, captured-at-run-start document."""
     return {
         "schema_version": SCHEMA_VERSION,
         "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+        "runtime_binding": binding.to_dict() if binding is not None else _unavailable("validated runtime binding is required"),
         "kernel": kernel_fingerprint(),
-        "falco_ruleset": falco_ruleset_fingerprint(),
-        "service_images": service_image_fingerprint(),
+        "falco_ruleset": falco_ruleset_fingerprint(binding),
+        "service_images": service_image_fingerprint(binding),
         "scoring_config": scoring_config_fingerprint(),
         "code": code_fingerprint(),
     }

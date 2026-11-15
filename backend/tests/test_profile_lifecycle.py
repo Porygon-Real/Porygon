@@ -10,6 +10,7 @@ from test_assessment_service import (
     assessment_engine as assessment_engine,
 )
 from porygon_api.models import AssessmentTarget, ManagedProfile, AssessmentAudit
+from porygon_api.baseline import COMMAND_LINEAGE_SCHEMA
 from porygon_api.profile_lifecycle import (
     CandidateIn,
     BenignInterval,
@@ -46,6 +47,27 @@ def test_quality_failure_blocks_shadow_and_unapproved_activation(assessment_engi
             ),
             db,
         )
+        enrollment_count = db.scalar(
+            select(func.count()).select_from(ManagedProfile)
+        )
+        replay = propose_profile(
+            target_id,
+            CandidateIn(
+                reference="empty controlled interval",
+                intervals=[
+                    BenignInterval(
+                        name="empty",
+                        label="benign",
+                        start_at=NOW - timedelta(seconds=900),
+                        end_at=NOW - timedelta(seconds=800),
+                    )
+                ],
+            ),
+            db,
+        )
+        assert replay["enrollment"].enrollment_id == empty["enrollment"].enrollment_id
+        assert replay["quality"] == empty["quality"]
+        assert db.scalar(select(func.count()).select_from(ManagedProfile)) == enrollment_count
         assert not empty["quality"]["passed"]
         with pytest.raises(HTTPException):
             shadow_profile(
@@ -89,6 +111,7 @@ def test_activation_rollback_preserves_hash_and_transition_history(assessment_en
             target_id,
             CandidateIn(
                 reference="second benign configuration",
+                feature_schema_version=COMMAND_LINEAGE_SCHEMA,
                 intervals=[
                     BenignInterval(
                         name="second",

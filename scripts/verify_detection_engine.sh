@@ -30,9 +30,21 @@ curl --fail --silent --show-error "${base_url}/api/v1/detection-rules/config" \
   > artifacts/detection-ruleset.json
 python3 - <<'PY' || fail "Detection ruleset metadata is invalid"
 import json
+import ast
+from pathlib import Path
+
 cfg=json.load(open('artifacts/detection-ruleset.json'))
+module=ast.parse(Path('backend/src/porygon_api/detection.py').read_text(encoding='utf-8'))
+matcher_revision=next(
+    node.value.value
+    for node in module.body
+    if isinstance(node, ast.Assign)
+    and any(isinstance(target, ast.Name) and target.id == 'MATCHER_REVISION' for target in node.targets)
+    and isinstance(node.value, ast.Constant)
+    and isinstance(node.value.value, str)
+)
 assert cfg['ruleset_version']=='porygon.detection.v1'
-assert cfg['matcher_revision']=='porygon.detection.matcher.raw-multicall-paths'
+assert cfg['matcher_revision']==matcher_revision
 assert len(cfg['ruleset_hash'])==64
 assert len(cfg['rules']) >= 7
 assert 'Neither is a probability of compromise' in cfg['interpretation']

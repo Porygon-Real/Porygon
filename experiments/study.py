@@ -25,12 +25,17 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 from experiments import conformance, real
-from experiments.artifacts import assign_split, check_split_isolation, write_versioned_json
+from experiments.run import timestamp_run_id
+from experiments.runtime_binding import resolve_runtime_binding
+from experiments.artifacts import (
+    assign_split,
+    check_split_isolation,
+    write_versioned_json,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 STUDY_ROOT = ROOT / "artifacts/experiments/local"
@@ -49,7 +54,9 @@ class Stage:
 
 
 def _sh(*args: str, timeout: int = 1800) -> tuple[int, str]:
-    done = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
+    done = subprocess.run(
+        args, cwd=ROOT, capture_output=True, text=True, timeout=timeout
+    )
     return done.returncode, (done.stdout + done.stderr).strip()
 
 
@@ -74,19 +81,32 @@ def _token(name: str) -> str:
 
 
 def stage_environment(ctx: dict) -> dict:
+    binding = resolve_runtime_binding(
+        ctx["compose_project"], ctx["docker_context"], ctx["base_url"]
+    )
+    ctx["runtime_binding"] = binding
     usage = shutil.disk_usage(ROOT)
-    code, docker_version = _sh("docker", "version", "--format", "{{.Server.Version}}", timeout=60)
+    with real.use_runtime_binding(binding):
+        docker_version = real.docker(
+            "version", "--format", "{{.Server.Version}}", check=False, timeout=60
+        )
+    code = 0 if docker_version else 1
     result = {
         "docker_version": docker_version if code == 0 else "unavailable",
         "kernel_btf": Path("/sys/kernel/btf/vmlinux").exists(),
         "disk_free_gb": round(usage.free / 1e9, 1),
         "disk_total_gb": round(usage.total / 1e9, 1),
         "cpu_count": _sh("nproc")[1],
+        "runtime_binding_sha256": binding.sha256,
     }
-    code, _ = _sh("curl", "--fail", "--silent", f"{ctx['base_url']}/health/live", timeout=60)
+    code, _ = _sh(
+        "curl", "--fail", "--silent", f"{ctx['base_url']}/health/live", timeout=60
+    )
     result["stack_reachable"] = code == 0
     if not result["stack_reachable"]:
-        raise RuntimeError(f"the stack is not reachable on {ctx['base_url']}; run `make up`")
+        raise RuntimeError(
+            f"the stack is not reachable on {ctx['base_url']}; run `make up`"
+        )
     if not result["kernel_btf"]:
         raise RuntimeError("kernel BTF is unavailable; the sensor cannot attach")
     services = _api(ctx["base_url"], "/api/v1/services")
@@ -103,7 +123,9 @@ def stage_protocol(ctx: dict) -> dict:
     code, output = _sh("python3", "scripts/check_research_protocol.py", timeout=600)
     if code != 0:
         raise RuntimeError(f"protocol structural validation failed: {output}")
-    code, gate = _sh("python3", "scripts/review_gate.py", "status", "--json", timeout=300)
+    code, gate = _sh(
+        "python3", "scripts/review_gate.py", "status", "--json", timeout=300
+    )
     state = json.loads(gate) if code == 0 else {}
     ctx["confirmatory_permitted"] = bool(state.get("confirmatory_permitted"))
     return {
@@ -121,7 +143,9 @@ def stage_protocol(ctx: dict) -> dict:
 
 
 def stage_harness(ctx: dict) -> dict:
-    code, output = _sh("python3", "-m", "pytest", "experiments/tests", "-q", timeout=1200)
+    code, output = _sh(
+        "python3", "-m", "pytest", "experiments/tests", "-q", timeout=1200
+    )
     if code != 0:
         raise RuntimeError(f"harness tests failed:\n{output[-1500:]}")
     passed = [line for line in output.splitlines() if "passed" in line]
@@ -134,22 +158,44 @@ def stage_harness(ctx: dict) -> dict:
 
 
 def _database_bytes(ctx: dict) -> int | None:
-    code, out = _sh(
-        "docker", "exec", "porygon-postgres-1", "psql", "-U",
-        ctx.get("db_user", "porygon"), "-d", ctx.get("db_name", "porygon"),
-        "-tAc", "select pg_database_size(current_database());", timeout=300,
-    )
+    binding = ctx.get("runtime_binding")
+    if binding is None:
+        return None
+    with real.use_runtime_binding(binding):
+        out = real.docker(
+            "exec",
+            binding.services["postgres"]["container_id"],
+            "psql",
+            "-U",
+            ctx.get("db_user", "porygon"),
+            "-d",
+            ctx.get("db_name", "porygon"),
+            "-tAc",
+            "select pg_database_size(current_database());",
+            timeout=300,
+            check=False,
+        )
     try:
-        return int(out.strip()) if code == 0 else None
+        return int(out.strip())
     except ValueError:
         return None
 
 
-def _sensor_log_bytes() -> int | None:
-    code, out = _sh("docker", "exec", real.TELEMETRY_CONTAINER, "sh", "-c",
-                    f"wc -c < {real.FALCO_EVENT_PATH}", timeout=120)
+def _sensor_log_bytes(binding) -> int | None:
+    if binding is None:
+        return None
+    with real.use_runtime_binding(binding):
+        out = real.docker(
+            "exec",
+            binding.services["telemetry"]["container_id"],
+            "wc",
+            "-c",
+            real.FALCO_EVENT_PATH,
+            timeout=120,
+            check=False,
+        )
     try:
-        return int(out.strip()) if code == 0 else None
+        return int(out.strip().split()[0])
     except ValueError:
         return None
 
@@ -157,21 +203,34 @@ def _sensor_log_bytes() -> int | None:
 def stage_storage_before(ctx: dict) -> dict:
     ctx["storage_before"] = {
         "database_bytes": _database_bytes(ctx),
-        "sensor_log_bytes": _sensor_log_bytes(),
+        "sensor_log_bytes": _sensor_log_bytes(ctx.get("runtime_binding")),
     }
     return ctx["storage_before"]
 
 
 def stage_storage_after(ctx: dict) -> dict:
     before = ctx.get("storage_before", {})
-    after = {"database_bytes": _database_bytes(ctx), "sensor_log_bytes": _sensor_log_bytes()}
+    after = {
+        "database_bytes": _database_bytes(ctx),
+        "sensor_log_bytes": _sensor_log_bytes(ctx.get("runtime_binding")),
+    }
     trials = ctx.get("trial_count", 0)
-    delta_db = (after["database_bytes"] - before["database_bytes"]
-                if after["database_bytes"] and before.get("database_bytes") else None)
-    delta_log = (after["sensor_log_bytes"] - before["sensor_log_bytes"]
-                 if after["sensor_log_bytes"] and before.get("sensor_log_bytes") else None)
+    delta_db = (
+        after["database_bytes"] - before["database_bytes"]
+        if after["database_bytes"] and before.get("database_bytes")
+        else None
+    )
+    delta_log = (
+        after["sensor_log_bytes"] - before["sensor_log_bytes"]
+        if after["sensor_log_bytes"] and before.get("sensor_log_bytes")
+        else None
+    )
     run_dir = ctx.get("run_dir")
-    artifact_bytes = sum(p.stat().st_size for p in Path(run_dir).rglob("*") if p.is_file()) if run_dir else 0
+    artifact_bytes = (
+        sum(p.stat().st_size for p in Path(run_dir).rglob("*") if p.is_file())
+        if run_dir
+        else 0
+    )
 
     per_trial = {}
     if trials:
@@ -194,7 +253,9 @@ def stage_storage_after(ctx: dict) -> dict:
         "trials_measured": trials,
         "per_trial_bytes": per_trial,
         "projected_confirmatory_trials": projected_trials,
-        "projected_total_gb": round(total_per_trial * projected_trials / 1e9, 2) if total_per_trial else None,
+        "projected_total_gb": round(total_per_trial * projected_trials / 1e9, 2)
+        if total_per_trial
+        else None,
         "note": (
             "Projection multiplies the measured per-trial cost by the frozen matrix size. "
             "It excludes the one-off cost of the pinned images and the platform itself."
@@ -226,10 +287,15 @@ def stage_collect(ctx: dict) -> dict:
         warmup_seconds=ctx["warmup_seconds"],
         settle_seconds=ctx["settle_seconds"],
         protocol=ROOT / "docs/research/research-protocol.md",
+        compose_project=ctx["compose_project"],
+        docker_context=ctx["docker_context"],
+        runtime_binding=ctx["runtime_binding"],
     )
     validate(run_dir)
-    trials = [json.loads(p.read_text(encoding="utf-8"))
-              for p in sorted((run_dir / "trials").glob("*.json"))]
+    trials = [
+        json.loads(p.read_text(encoding="utf-8"))
+        for p in sorted((run_dir / "trials").glob("*.json"))
+    ]
     ctx["trials"] = trials
     ctx["trial_count"] = len(trials)
     return {
@@ -238,7 +304,11 @@ def stage_collect(ctx: dict) -> dict:
         "completed": sum(t["status"] == "completed" for t in trials),
         "failed": sum(t["status"] == "failed" for t in trials),
         "distinct_context_identities": len(
-            {t.get("runtime_context_hash") for t in trials if t.get("runtime_context_hash")}
+            {
+                t.get("runtime_context_hash")
+                for t in trials
+                if t.get("runtime_context_hash")
+            }
         ),
         "canaries_generated": sum(
             (t.get("reconciliation") or {}).get("generated", 0) for t in trials
@@ -254,7 +324,9 @@ def stage_collect(ctx: dict) -> dict:
 def stage_splits(ctx: dict) -> dict:
     trials = ctx.get("trials", [])
     # A run is the independent unit. Every trial inside one run inherits that run's split.
-    records = [{"run_id": t["trial_id"], "split": assign_split(t["trial_id"])} for t in trials]
+    records = [
+        {"run_id": t["trial_id"], "split": assign_split(t["trial_id"])} for t in trials
+    ]
     check_split_isolation(records)
     ctx["splits"] = {r["run_id"]: r["split"] for r in records}
     counts: dict[str, int] = {}
@@ -285,7 +357,9 @@ def stage_conformance(ctx: dict) -> dict:
     """
     run_dir = ctx.get("run_dir")
     if run_dir is None:
-        raise RuntimeError("no run directory available; the collection stage did not run")
+        raise RuntimeError(
+            "no run directory available; the collection stage did not run"
+        )
     report = conformance.check_run_conformance(Path(run_dir))
     return conformance.report_to_dict(report)
 
@@ -295,46 +369,75 @@ def stage_conformance(ctx: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _post(base_url: str, path: str, payload: dict, token: str) -> Any:
+def _post(base_url: str, path: str, payload: dict, token: str, runtime_binding) -> Any:
     request = urllib.request.Request(
-        f"{base_url}{path}", data=json.dumps(payload).encode("utf-8"),
+        f"{base_url}{path}",
+        data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", "X-Porygon-Internal-Token": token},
         method="POST",
     )
-    with open_api(request, timeout=120) as response:
+    with open_api(request, timeout=120, runtime_binding=runtime_binding) as response:
         return json.loads(response.read())
 
 
 def stage_analysis(ctx: dict) -> dict:
     """Use assigned whole runs and exact snapshots; never fit broad time ranges."""
-    from experiments.frozen_analysis import evaluate_trials,validate_policy
+    from experiments.frozen_analysis import evaluate_trials, validate_policy
     from experiments.confirmatory import operator_snapshot
-    trials=list(ctx.get('trials',[]));assignments=ctx.get('splits',{})
-    if not trials:raise RuntimeError('no collected trials to analyse')
-    if set(assignments)!={row['trial_id'] for row in trials}:raise RuntimeError('every collected trial needs an actual assignment')
-    policy=ctx.get('analysis_policy')
+
+    trials = list(ctx.get("trials", []))
+    assignments = ctx.get("splits", {})
+    if not trials:
+        raise RuntimeError("no collected trials to analyse")
+    if set(assignments) != {row["trial_id"] for row in trials}:
+        raise RuntimeError("every collected trial needs an actual assignment")
+    policy = ctx.get("analysis_policy")
     if policy is None:
-        ctx['analysis']={'status':'insufficient_data','reason':'explicit justified analysis policy required; no default quality thresholds invented',
-            'heldout_runs':[row['trial_id'] for row in trials if assignments[row['trial_id']]=='test']}
-        return ctx['analysis']
+        ctx["analysis"] = {
+            "status": "insufficient_data",
+            "reason": "explicit justified analysis policy required; no default quality thresholds invented",
+            "heldout_runs": [
+                row["trial_id"]
+                for row in trials
+                if assignments[row["trial_id"]] == "test"
+            ],
+        }
+        return ctx["analysis"]
     validate_policy(policy)
-    snapshots=dict(ctx.get('snapshots',{}))
+    snapshots = dict(ctx.get("snapshots", {}))
     for trial in trials:
-        truth=trial.get('ground_truth',{})
-        trial['ground_truth_class']=('controlled-positive' if truth.get('expected_outcome') in {'controlled_positive','context_shift','exploratory_attack_like_deviation'} else 'benign')
-        if trial.get('status')!='completed' or trial['trial_id'] in snapshots:continue
-        try:snapshots[trial['trial_id']]=operator_snapshot(ctx['base_url'],trial)
-        except (OSError,ValueError,KeyError):pass # Missingness is retained in every held-out denominator.
-    ctx['analysis']=evaluate_trials(trials,snapshots,assignments,policy)
-    return ctx['analysis']
+        truth = trial.get("ground_truth", {})
+        trial["ground_truth_class"] = (
+            "controlled-positive"
+            if truth.get("expected_outcome")
+            in {
+                "controlled_positive",
+                "context_shift",
+                "exploratory_attack_like_deviation",
+            }
+            else "benign"
+        )
+        if trial.get("status") != "completed" or trial["trial_id"] in snapshots:
+            continue
+        try:
+            snapshots[trial["trial_id"]] = operator_snapshot(
+                ctx["base_url"], trial, ctx["runtime_binding"]
+            )
+        except (OSError, ValueError, KeyError):
+            pass  # Missingness is retained in every held-out denominator.
+    ctx["analysis"] = evaluate_trials(trials, snapshots, assignments, policy)
+    return ctx["analysis"]
 
 
 def stage_results(ctx: dict) -> dict:
     code, output = _sh("python3", "scripts/render_results.py", timeout=600)
     if code != 0:
         raise RuntimeError(f"result rendering failed: {output}")
-    return {"rendered": output.splitlines()[-1] if output else "ok",
-            "results_json": "artifacts/results.json", "results_html": "artifacts/results.html"}
+    return {
+        "rendered": output.splitlines()[-1] if output else "ok",
+        "results_json": "artifacts/results.json",
+        "results_html": "artifacts/results.html",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -411,7 +514,9 @@ STAGES = [
 def run_study(**options: Any) -> Path:
     ctx: dict[str, Any] = {
         "base_url": options.get("base_url", "http://127.0.0.1:8000").rstrip("/"),
-        "run_id": options.get("run_id") or "study-" + datetime.now(timezone.utc).strftime("%Y%m%dt%H%M%SZ"),
+        "compose_project": options.get("compose_project"),
+        "docker_context": options.get("docker_context"),
+        "run_id": options.get("run_id") or timestamp_run_id("study"),
         "workloads": options.get("workloads", ["WL-NGX-V1", "WL-RDS-V1", "WL-PG-V1"]),
         "scenarios": options.get("scenarios", ["SCN-EXEC"]),
         "variants": options.get("variants", ["baseline"]),
@@ -440,14 +545,22 @@ def run_study(**options: Any) -> Path:
                 status = "failed"
         entry["duration_seconds"] = round(time.monotonic() - stage_started, 2)
         stages.append(entry)
-        print(f"[study] {stage.name}: {entry['status']}"
-              + (f" — {entry.get('error','')[:120]}" if entry["status"] == "failed" else ""))
+        print(
+            f"[study] {stage.name}: {entry['status']}"
+            + (
+                f" — {entry.get('error', '')[:120]}"
+                if entry["status"] == "failed"
+                else ""
+            )
+        )
         if entry["status"] == "failed" and stage.required:
             break
 
     run_dir = ctx.get("run_dir")
 
-    def _build_manifest(current_stages: list[dict[str, Any]], current_status: str) -> dict[str, Any]:
+    def _build_manifest(
+        current_stages: list[dict[str, Any]], current_status: str
+    ) -> dict[str, Any]:
         evidence_class, research_eligible = _run_evidence_class(run_dir)
         return {
             "schema_version": "porygon.study.manifest.v1",
@@ -460,13 +573,20 @@ def run_study(**options: Any) -> Path:
             "started_at_utc": stages[0]["started_at_utc"] if stages else real.now_utc(),
             "finished_at_utc": real.now_utc(),
             "duration_seconds": round(time.monotonic() - started, 2),
-            "configuration": {k: v for k, v in ctx.items() if k not in ("trials", "analysis", "splits", "run_dir", "storage_before")},
+            "configuration": {
+                k: (v.to_dict() if k == "runtime_binding" else v)
+                for k, v in ctx.items()
+                if k
+                not in ("trials", "analysis", "splits", "run_dir", "storage_before")
+            },
             "stages": current_stages,
         }
 
     out_dir = STUDY_ROOT / ctx["run_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = write_versioned_json(out_dir, "study-manifest", _build_manifest(stages, status))
+    path = write_versioned_json(
+        out_dir, "study-manifest", _build_manifest(stages, status)
+    )
     print(f"[study] manifest: {path.relative_to(ROOT)}")
 
     if run_dir is not None and Path(run_dir).is_dir():

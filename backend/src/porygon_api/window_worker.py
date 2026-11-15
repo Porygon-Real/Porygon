@@ -38,7 +38,8 @@ logger = logging.getLogger("porygon.assessments")
 router = APIRouter(tags=["continuous-assessment"])
 
 
-def configuration(db, target, profile, settings, now):
+def configuration(db, target, profile, settings, now, runtime_evidence_contract=None,
+                  legacy_rule_selection=False):
     allowlists = list(
         db.scalars(
             select(DetectionAllowlist)
@@ -53,39 +54,43 @@ def configuration(db, target, profile, settings, now):
             .order_by(DetectionAllowlist.allowlist_id)
         ).all()
     )
-    rules = list(
-        db.scalars(
-            select(CustomDetectionRule)
-            .where(CustomDetectionRule.enabled.is_(True))
-            .order_by(CustomDetectionRule.slug)
-        ).all()
-    )
-    documents = [
-        {
-            key: getattr(row, key)
-            for key in (
-                "slug",
-                "name",
-                "category",
-                "description",
-                "target",
-                "condition",
-                "severity_weight",
-                "confidence_weight",
-                "incident_eligible",
-                "enabled",
-            )
-        }
-        for row in rules
-    ]
-    from porygon_api.runtime_evidence import RULES_HASH
+    from porygon_api.runtime_evidence import PROCESS_CONTEXT_CONTRACT, RULES_HASH, rules_hash_for
+    from porygon_api.rule_workbench import resolve_active_snapshot
     from porygon_api.models import AdvisoryModel
-    model=db.scalar(select(AdvisoryModel).where(AdvisoryModel.active.is_(True)))
+    if legacy_rule_selection:
+        rules = list(db.scalars(select(CustomDetectionRule).where(
+            CustomDetectionRule.enabled.is_(True)
+        ).order_by(CustomDetectionRule.slug)).all())
+        documents = [{key: getattr(row, key) for key in (
+            "slug", "name", "category", "description", "target", "condition",
+            "severity_weight", "confidence_weight", "incident_eligible", "enabled",
+        )} for row in rules]
+        model = db.scalar(select(AdvisoryModel).where(AdvisoryModel.active.is_(True)))
+        return {
+            "runtime_evidence_rules_hash": RULES_HASH if settings.runtime_evidence_enabled else None,
+            "advisory_model_hash": model.artifact_hash if model and settings.runtime_evidence_enabled else None,
+            "ruleset_hash": ruleset_hash(),
+            "custom_ruleset_hash": custom_ruleset_hash(documents),
+            "allowlist_set_hash": allowlist_set_hash(allowlists),
+            "scoring": get_scoring_config(profile.feature_schema_version) if profile else None,
+            "minimum_process_events": settings.anomaly_min_process_events,
+            "allowed_lateness_seconds": target.allowed_lateness_seconds,
+            "target_context_hash": target.context_hash,
+        }
+    rule_snapshot = resolve_active_snapshot(db)
+    contract = runtime_evidence_contract or PROCESS_CONTEXT_CONTRACT
+    evidence_hash = (
+        rules_hash_for(contract) if settings.runtime_evidence_enabled else None
+    )
+    model = db.scalar(select(AdvisoryModel).where(AdvisoryModel.active.is_(True)))
     return {
-        "runtime_evidence_rules_hash":RULES_HASH if settings.runtime_evidence_enabled else None,
+        "runtime_evidence_contract": contract if settings.runtime_evidence_enabled else None,
+        "runtime_evidence_rules_hash": evidence_hash,
         "advisory_model_hash":model.artifact_hash if model and settings.runtime_evidence_enabled else None,
         "ruleset_hash": ruleset_hash(),
-        "custom_ruleset_hash": custom_ruleset_hash(documents),
+        "custom_ruleset_hash": rule_snapshot["ruleset_hash"],
+        "custom_rule_snapshot_hash": rule_snapshot["snapshot_hash"],
+        "custom_rule_interpreter_hash": rule_snapshot["interpreter_hash"],
         "allowlist_set_hash": allowlist_set_hash(allowlists),
         "scoring": get_scoring_config(profile.feature_schema_version)
         if profile
@@ -290,7 +295,13 @@ class AssessmentWorker:
                     reasons=coverage["reasons"] + ["profile_integrity"],
                 )
             elif (
-                sha256_document(configuration(db, target, profile, self.settings, now))
+                sha256_document(
+                    configuration(
+                        db, target, profile, self.settings, now,
+                        row.config_manifest.get("runtime_evidence_contract"),
+                        legacy_rule_selection="custom_rule_snapshot_hash" not in row.config_manifest,
+                    )
+                )
                 != row.config_hash
             ):
                 coverage.update(
@@ -304,7 +315,8 @@ class AssessmentWorker:
                     target.context_hash,
                     row.revision,
                     row.config_hash,
-                    "porygon.runtime-evidence" if self.settings.runtime_evidence_enabled else None,
+                    row.config_manifest.get("runtime_evidence_contract")
+                    or ("porygon.runtime-evidence" if self.settings.runtime_evidence_enabled else None),
                     row.config_manifest.get("runtime_evidence_rules_hash"),
                     row.config_manifest.get("advisory_model_hash"),
                 )
@@ -338,6 +350,15 @@ class AssessmentWorker:
                     != row.config_manifest["allowlist_set_hash"]
                     or actual.custom_ruleset_hash
                     != row.config_manifest["custom_ruleset_hash"]
+                    or (
+                        "custom_rule_snapshot_hash" in row.config_manifest
+                        and (
+                            actual.custom_rule_snapshot.get("snapshot_hash")
+                            != row.config_manifest["custom_rule_snapshot_hash"]
+                            or actual.custom_rule_interpreter_hash
+                            != row.config_manifest["custom_rule_interpreter_hash"]
+                        )
+                    )
                     or score.scoring_config != row.config_manifest["scoring"]
                 ):
                     raise ConfigurationChanged()
@@ -345,7 +366,13 @@ class AssessmentWorker:
                 row.detection_run_id = detected["run"].run_id
                 if score.status == "insufficient_data":
                     coverage["state"] = "insufficient_data"
-                    coverage["reasons"].append("missing_process_evidence")
+                    reason_codes = score.components.get("reason_codes", [])
+                    coverage["reasons"].extend(
+                        reason_codes
+                        if reason_codes
+                        else ["missing_process_evidence"]
+                    )
+                    coverage["score_status"] = "insufficient_data"
                 coverage["kernel_event_count"] = (
                     db.scalar(
                         select(func.count())

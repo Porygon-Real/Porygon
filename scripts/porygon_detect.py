@@ -66,7 +66,8 @@ def main() -> int:
     list_runs.add_argument("--image-digest")
     list_runs.add_argument(
         "--status",
-        choices=["insufficient_data", "no_findings", "findings_only", "incident_created", "incident_updated"],
+        choices=["insufficient_data", "no_findings", "findings_only", "incident_created", "incident_updated",
+                 "budget_exhausted", "rule_evidence_incomplete", "rule_error"],
     )
     list_runs.add_argument("--limit", type=int, default=100)
 

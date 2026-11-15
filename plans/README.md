@@ -79,19 +79,21 @@ Existing FULL-durability spools, response receipts and protected-container contr
 
 ### 4. Publish one defensible systems result
 
-The frozen study asks a specific profile-scope question (`docs/research/research-protocol.md:19–31`). Its confirmatory runner is still intentionally absent (`experiments/run.py:463–487`). Finish that path accurately or prospectively specify a separate extension; do not broaden the frozen study after seeing results. The proposed 2027 extension tests causal evidence and explicit uncertainty under workload change, with strong negative controls.
+The frozen study asks a specific profile-scope question (`docs/research/research-protocol.md:19–31`). Its confirmatory runner is now implemented and remains gated by independent reviews and locked collection inputs. Complete those empirical prerequisites or prospectively specify a separate extension; do not broaden the frozen study after seeing results. The proposed 2027 extension tests causal evidence and explicit uncertainty under workload change, with strong negative controls.
 
 ## Execution order and status
 
-The user explicitly requested a pathway plan, so this package covers that selected direction as five bounded workstreams rather than asking them to select individual audit rows. Start one implementation workstream at a time; each plan is self-contained and includes current source excerpts, scope, tests and stop conditions.
+The user explicitly requested a pathway plan, so this package covers that selected direction as five bounded workstreams rather than asking them to select individual audit rows. The combined plan 006 now coordinates scoped parallel executors, followed by one verification window; it supersedes the older execution ordering. Each plan retains its historical evidence and acceptance criteria.
 
 | Plan | Deliverable | Priority | Effort estimate | Dependencies | Status |
 |---|---|---|---|---|---|
 | [001](001-trust-and-accountability.md) | Least-privilege credentials, verified principals, consistent incident transitions | P1 local boundaries; remote identity integration conditional | 2–3 focused weeks | None | IN PROGRESS — self-hosted identities/host scopes APPROVED; conditional remote HTTPS/OIDC deferred |
 | [002](002-continuous-detection.md) | Durable window assessment, approved profile lifecycle, unattended incidents | P1 | 3–5 focused weeks | 001 | DONE — authenticated unattended canary and recovery accepted |
-| [003](003-evidence-driven-detection.md) | Truthful model contract, causal multisignal rules, optional trained/calibrated model | P1 | 5–8 focused weeks | 001; 002 for unattended validation | IN PROGRESS — metadata correction APPROVED; causal/training work pending |
-| [004](004-operational-proof.md) | Coverage, notification outbox, restore/upgrade/capacity tests, reproducible releases | P1; full fleet extensions deferred | 4–6 focused weeks | 001–002; repeat final soak after 003 | TODO |
-| [005](005-journal-evaluation.md) | Correct split consumption, actual confirmatory runner and prospective journal study | P1 | 6–10 focused weeks plus collection/review | Design now; freeze after 002–004 | TODO |
+| [003](003-evidence-driven-detection.md) | Truthful model contract, causal multisignal rules, optional trained/calibrated model | P1 | 5–8 focused weeks | 001; 002 for unattended validation | IN PROGRESS — causal evidence and optional training engineering accepted; independent empirical validation remains |
+| [004](004-operational-proof.md) | Coverage, notification outbox, restore/upgrade/capacity tests, reproducible releases | P1; full fleet extensions deferred | 4–6 focused weeks | 001–002; repeat final soak after 003 | IN PROGRESS — local delivery, restore and release evidence accepted; three-node capacity and real soak remain |
+| [005](005-journal-evaluation.md) | Correct split consumption, actual confirmatory runner and prospective journal study | P1 | 6–10 focused weeks plus collection/review | Design now; freeze after 002–004 | IN PROGRESS — runners and validators implemented; independent reviews, locks and collection remain |
+
+| [006](006-measured-validation-and-release.md) | Combined remaining work: safe collection binding, bounded observation, durable receipts, then measured validation | P1 | Three bounded engineering tracks plus real collection time | Accepted local batch; external human/node inputs for empirical gates | IN PROGRESS — local tracks executed and accepted; independent study, three-node capacity and real soak remain |
 
 Statuses: TODO, IN PROGRESS, DONE, BLOCKED (reason), REJECTED (reason), STALE (reconcile evidence). A plan is DONE only after its machine-checkable acceptance gates pass. These coarse estimates assume sustained work by one capable contributor; learning, hardware constraints and part-time availability can extend them. They are not delivery promises.
 
@@ -199,3 +201,33 @@ The user requested that all remaining implementation be completed before any new
 The resumed checkout is at `6f845d5`; the advisor did not create that commit. The previous executor is no longer active. A replacement sole executor continues in the same isolated checkout, preserving its existing source. No validation command has been run in this resumed batch.
 
 Source review confirmed remaining host identity collisions in heartbeat/sample keys, missing output-drop/reset coverage, an unused comparator-report digest in model activation, and an unbounded DNS stage in webhook delivery. These are implementation corrections within plans 003–004. Plan 005 still requires the split-safe analysis, actual gated confirmatory runner, offline replay and immutable publication work; its old unconditional refusal is not completion. All remaining source and test definitions must be finished before the combined verification window opens.
+
+### Source reconciliation — 2026-10-29
+
+The checkout is now clean at externally created commit `96333df`; the advisor did not commit it. Source reads confirm that host-aware health replay and retention, the paired-bootstrap probability correction, and the CI host dependency installation are present. These are source observations, not passing verification results. The bounded benchmark lab collector remains unfinished: its source-file cursor initialization, stable adapter counter epoch, measured assessment-window filter, orchestration and target evaluation require completion. A sole executor resumes that work in this isolated checkout. All tests, checkers, builds and live workloads remain deferred until the entire engineering batch and its regression definitions have a joint source freeze. No primary checkout changes, publication or git commit/push/merge are authorized.
+
+### Engineering acceptance — 2026-10-30
+
+[Engineering acceptance review](engineering-acceptance-review.md) records the
+completed implementation increment, service/host verification, meaningful
+455,165-row recovery drill, live containment evidence and the explicit targeted
+closure of ingestion's final verifier predicate. Final image/SBOM/source checks
+passed at tree `427f59427d6719e1a851c622d5d23656d69a67369cd01a5f26f5d1c4291dbb7e`.
+All eight isolated services were healthy with response execution disabled; changes
+remain uncommitted. The full five-plan pathway still has empirical model, study,
+capacity and soak gates; those are not completed by software fixtures or local
+packaging checks.
+
+
+### Combined execution acceptance — 2026-10-30
+
+[Plan 006](006-measured-validation-and-release.md) is the current combined ledger and next-step order. Scoped subagents completed runtime binding, bounded benchmark observation and durable acceptance receipts. Full service verification passed 506 tests; host failures were closed with focused regressions. Live ingestion retained 131 matching Docker/API/Postgres/replay events with zero replay growth and an empty queue. A source-bound exploratory pilot completed and five local images/SBOMs validated against final source `ad5f3f1b61acffb07d70a3fc1b639eb8c110f3c28faa08cb78fcec70b4ec5b79`. The failed supplemental-query attempt and safe naming preflight stop remain explicitly recorded in 006. Independent empirical study, three-node capacity and actual seven-day soak are open; this is not a declaration that all original 003–005 done criteria passed. No commits or pushes.
+
+
+### Active attack-focused engineering — 2026-11-02
+
+[007: Attack-aware scoring and rule workbench](007-attack-aware-scoring-and-rule-workbench.md) is the user-selected next engineering batch: support-aware temporal JS, immutable previewable rule lifecycle, real attack/control evidence and truthful vulnerability exposure. Status: LOCAL ACCEPTANCE COMPLETE. Eight owned attack/control cases, live support-aware scoring, the workbench lifecycle, all seven shell gates and five local SBOM bindings passed. Independent study collection, three-node measurements and the deferred seven-day soak remain open. No commits or pushes are authorized.
+
+[008: Rule review integrity](008-rule-review-integrity.md) closes the workbench review gap by requiring fresh, labelled receipts after staging and recording shadow state and evidence atomically. Status: LOCAL ACCEPTANCE COMPLETE.
+
+[009: Guided rule authoring](009-guided-rule-authoring.md) adds a visible rule assistant and matcher proof for generated drafts. Status: IN PROGRESS.

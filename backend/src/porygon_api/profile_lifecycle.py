@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import re
+from typing import Literal
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -9,7 +10,13 @@ from sqlalchemy import select, func, or_, and_
 from sqlalchemy.orm import Session
 from porygon_api.security import require_operator_token
 from porygon_api.auth import utc
-from porygon_api.baseline import COMMAND_LINEAGE_SCHEMA, build_profile_document
+from porygon_api.baseline import (
+    COMMAND_LINEAGE_SCHEMA,
+    SUPPORT_AWARE_SCHEMA,
+    MAX_SUPPORT_AWARE_EVENTS,
+    build_profile_document,
+    validate_support_aware_bounds,
+)
 from porygon_api.config import get_settings
 from porygon_api.assessment_service import utc_events
 from porygon_api.coverage import security_context, target_identity
@@ -25,9 +32,23 @@ from porygon_api.models import (
 )
 from porygon_api.principals import audit_subject
 from porygon_api.scoring import score_feature_documents
-from porygon_api.vulnerability import sha256_document
+from porygon_api.vulnerability import is_local_image_identity, sha256_document
 
 router = APIRouter(tags=["continuous-assessment"])
+
+
+def image_identity_matches_container(identity, image_identity: str) -> bool:
+    if identity is None:
+        return False
+    if is_local_image_identity(image_identity):
+        return identity.image_id == image_identity.removeprefix("local:")
+    return identity.image_digest == image_identity
+
+
+def _event_image_filter(model, image_identity: str):
+    if is_local_image_identity(image_identity):
+        return model.image_id == image_identity.removeprefix("local:")
+    return model.image_digest == image_identity
 
 
 class TargetIn(BaseModel):
@@ -72,9 +93,24 @@ class BenignInterval(BaseModel):
 class CandidateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     intervals: list[BenignInterval] = Field(min_length=1, max_length=32)
+    feature_schema_version: Literal[
+        "porygon.behaviour.command-lineage",
+        "porygon.behaviour.support-aware",
+    ] = SUPPORT_AWARE_SCHEMA
     reference: str = Field(min_length=1, max_length=255)
-    minimum_process_events: int = Field(default=10, ge=10, le=10000)
+    minimum_process_events: int = Field(default=20, ge=10, le=10000)
     minimum_nonempty_windows: int = Field(default=2, ge=2, le=1000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def preserve_legacy_support_default(cls, value):
+        if (
+            isinstance(value, dict)
+            and value.get("feature_schema_version") == COMMAND_LINEAGE_SCHEMA
+            and "minimum_process_events" not in value
+        ):
+            value = {**value, "minimum_process_events": 10}
+        return value
 
 
 def audit(db, target, action, detail):
@@ -104,7 +140,7 @@ def validate_identity(db, target):
     identity = target_identity(db, target)
     if (
         identity is None
-        or identity.image_digest != target.image_digest
+        or not image_identity_matches_container(identity, target.image_digest)
         or sha256_document(security_context(identity.current_snapshot))
         != target.context_hash
     ):
@@ -113,7 +149,15 @@ def validate_identity(db, target):
         )
 
 
-def document(db, target, intervals, minimum_events=0, minimum_windows=0):
+def document(
+    db,
+    target,
+    intervals,
+    minimum_events=0,
+    minimum_windows=0,
+    feature_schema_version=COMMAND_LINEAGE_SCHEMA,
+    include_temporal_windows=False,
+):
     settings = get_settings()
     ordered = sorted(intervals, key=lambda x: x.start_at)
     if len({item.name for item in ordered}) != len(ordered):
@@ -121,16 +165,26 @@ def document(db, target, intervals, minimum_events=0, minimum_windows=0):
     if any(a.end_at > b.start_at for a, b in zip(ordered, ordered[1:])):
         raise HTTPException(422, "Evidence intervals must be disjoint")
     start, end = ordered[0].start_at, ordered[-1].end_at
+    if feature_schema_version == SUPPORT_AWARE_SCHEMA:
+        try:
+            validate_support_aware_bounds(
+                start,
+                end,
+                target.window_seconds,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
     if (
         end - start
     ).total_seconds() / target.window_seconds > settings.baseline_max_windows:
         raise HTTPException(413, "Evidence interval spans too many windows")
-    data = []
+    query_specs = []
+    selected_event_count = 0
     for model in (ProcessExecEvent, RuntimeEvent):
         clauses = [
             model.docker_host_id == target.docker_host_id,
             model.container_id == target.container_id,
-            model.image_digest == target.image_digest,
+            _event_image_filter(model, target.image_digest),
             or_(
                 *(
                     and_(
@@ -143,6 +197,19 @@ def document(db, target, intervals, minimum_events=0, minimum_windows=0):
         ]
         if model is ProcessExecEvent:
             clauses.append(model.correlation_status == "resolved")
+        if feature_schema_version == SUPPORT_AWARE_SCHEMA:
+            selected_event_count += db.scalar(
+                select(func.count()).select_from(model).where(*clauses)
+            ) or 0
+            if selected_event_count > MAX_SUPPORT_AWARE_EVENTS:
+                raise HTTPException(
+                    413,
+                    "Support-aware profile event count exceeds its bounded contract",
+                )
+        query_specs.append((model, clauses))
+
+    data = []
+    for model, clauses in query_specs:
         rows = list(
             db.scalars(
                 select(model)
@@ -163,7 +230,8 @@ def document(db, target, intervals, minimum_events=0, minimum_windows=0):
         runtime_events=data[1],
         minimum_process_events=minimum_events,
         minimum_nonempty_windows=minimum_windows,
-        feature_schema_version=COMMAND_LINEAGE_SCHEMA,
+        feature_schema_version=feature_schema_version,
+        include_temporal_windows=include_temporal_windows,
     )
 
 
@@ -177,7 +245,7 @@ def enroll_target(payload: TargetIn, db: Session = Depends(get_db)):
             ContainerIdentity.container_id == payload.container_id,
         )
     )
-    if identity is None or identity.image_digest != payload.image_digest:
+    if not image_identity_matches_container(identity, payload.image_digest):
         raise HTTPException(
             409, "Target must match exact host/container inventory and immutable digest"
         )
@@ -235,6 +303,7 @@ def propose_profile(
         payload.intervals,
         payload.minimum_process_events,
         payload.minimum_nonempty_windows,
+        payload.feature_schema_version,
     )
     provenance = {
         "intervals": [x.model_dump(mode="json") for x in payload.intervals],
@@ -254,7 +323,10 @@ def propose_profile(
         )
     )
     if existing:
-        return existing
+        existing_profile = db.get(BehaviorProfile, existing.profile_id)
+        if existing_profile is None:
+            raise HTTPException(409, "Managed candidate profile is unavailable")
+        return {"enrollment": existing, "quality": existing_profile.quality}
     if db.get_bind().dialect.name == "postgresql":
         db.execute(
             select(func.pg_advisory_xact_lock(func.hashtext(target.image_digest)))
@@ -275,7 +347,7 @@ def propose_profile(
         image_digest=target.image_digest,
         profile_version=version,
         status="retired",
-        feature_schema_version=COMMAND_LINEAGE_SCHEMA,
+        feature_schema_version=payload.feature_schema_version,
         model_hash=artifact_hash,
         training_start=min(x.start_at for x in payload.intervals),
         training_end=max(x.end_at for x in payload.intervals),
@@ -347,7 +419,15 @@ def shadow_profile(
         profile.training_start
     ):
         raise HTTPException(409, "Shadow interval overlaps training")
-    features, quality, manifest, _ = document(db, target, [payload], 10, 1)
+    features, quality, manifest, _ = document(
+        db,
+        target,
+        [payload],
+        10,
+        1,
+        profile.feature_schema_version,
+        include_temporal_windows=True,
+    )
     if not quality.get("passed"):
         raise HTTPException(409, "Shadow interval failed evidence quality gates")
     candidate = score_feature_documents(

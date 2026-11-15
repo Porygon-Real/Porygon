@@ -15,12 +15,17 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install --require-hashes --only-binary=:all: -r backend/requirements.lock
+      - run: pip install --require-hashes --only-binary=:all: -r collector/requirements.lock
       - run: pip install ruff==0.14.3 pyyaml==6.0.3
-      - run: echo "PYTHONPATH=$PWD/backend/src" >> "$GITHUB_ENV"
+      - run: echo "PYTHONPATH=$PWD/backend/src:$PWD/collector/src" >> "$GITHUB_ENV"
       - run: ruff check --select E4,E7,E9,F backend collector telemetry responder scanner scripts experiments
       - run: python scripts/check_research_protocol.py
       - run: python scripts/check_source_secrets.py
       - run: pytest experiments/tests scripts/tests -q
+        env:
+          PORYGON_DB_PASSWORD: ci-disposable-database-fixture
+          PORYGON_INTERNAL_API_TOKEN: ci-disposable-internal-fixture-token-0001
+          PORYGON_OPERATOR_API_TOKEN: ci-disposable-operator-fixture-token-0002
   services:
     runs-on: ubuntu-latest
     strategy:

@@ -106,3 +106,24 @@ def test_exec_action_excludes_command_detail_but_preserves_raw_event(tmp_path) -
     assert event["command"] == command
     assert event["raw_event"]["Action"] == raw["Action"]
     assert len(event["action"]) <= 64
+
+
+def test_snapshot_preserves_actual_and_configured_publication_separately():
+    from porygon_collector.normalizer import build_container_snapshot
+
+    class PortsAPI(FakeDockerAPI):
+        def inspect_container(self, container_id):
+            value = super().inspect_container(container_id)
+            value["HostConfig"]["PortBindings"] = {"80/tcp": [{"HostIp": "", "HostPort": ""}]}
+            value["NetworkSettings"]["Ports"] = {"80/tcp": [
+                {"HostIp": "127.0.0.1", "HostPort": "49152"},
+                {"HostIp": "::", "HostPort": "49152"}], "443/tcp": None}
+            value["Config"]["Env"] = ["IGNORED_TEST_VALUE=not-exported"]
+            return value
+
+    snapshot = build_container_snapshot(PortsAPI(), "a" * 64)
+    assert snapshot["host_config"]["port_bindings"]["80/tcp"][0]["HostPort"] == ""
+    assert snapshot["network_settings"]["ports"]["80/tcp"][0]["HostPort"] == "49152"
+    assert snapshot["network_settings"]["ports"]["443/tcp"] is None
+    assert "Env" not in snapshot["config"]
+    assert build_container_snapshot(FakeDockerAPI(), "a" * 64)["network_settings"]["ports"] is None

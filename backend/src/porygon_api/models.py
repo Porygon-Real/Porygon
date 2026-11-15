@@ -139,6 +139,13 @@ class ProcessExecEvent(Base):
             "received_at",
             postgresql_where=text("parent_event_id IS NULL AND container_id IS NOT NULL"),
         ),
+        Index(
+            "ix_process_exec_lifetime_context",
+            "docker_host_id", "container_id", "sensor_instance_id", "sensor_epoch",
+            "pid_namespace_start_ns", "process_pid", "process_start_ns", "time_nano", "event_id",
+            postgresql_where=text("correlation_status = 'resolved' AND exec_return_value = 0 AND event_direction = '<'"),
+            sqlite_where=text("correlation_status = 'resolved' AND exec_return_value = 0 AND event_direction = '<'"),
+        ),
     )
 
     event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -541,7 +548,7 @@ class CustomDetectionRule(Base):
     __tablename__ = "custom_detection_rules"
     __table_args__ = (
         CheckConstraint(
-            "target IN ('process', 'runtime')", name="ck_custom_detection_rules_target"
+            "target IN ('process', 'runtime', 'kernel')", name="ck_custom_detection_rules_target"
         ),
         CheckConstraint(
             "severity_weight >= 0 AND severity_weight <= 1",
@@ -551,19 +558,40 @@ class CustomDetectionRule(Base):
             "confidence_weight >= 0 AND confidence_weight <= 1",
             name="ck_custom_detection_rules_confidence_range",
         ),
-        # Partial (enabled-only) uniqueness: a disabled rule must not permanently burn
-        # its slug. Recreating a rule under the same slug after disabling the old one
-        # is a normal "fix and re-enable" workflow, not a conflict.
+        # One stable slug can have a single draft/shadow/active identity at a time;
+        # disabled rules release it for deliberate replacement.
         Index(
-            "uq_custom_detection_rules_slug_enabled",
+            "uq_custom_detection_rules_slug_live",
             "slug",
             unique=True,
-            postgresql_where=text("enabled"),
+            postgresql_where=text("lifecycle_state <> 'disabled'"),
+            sqlite_where=text("lifecycle_state <> 'disabled'"),
         ),
         Index("ix_custom_detection_rules_enabled", "enabled"),
+        CheckConstraint(
+            "lifecycle_state IN ('legacy_active', 'draft', 'shadow', 'active', 'disabled')",
+            name="ck_custom_detection_rules_lifecycle_state",
+        ),
+        CheckConstraint(
+            "candidate_state IN ('draft', 'shadow', 'none')",
+            name="ck_custom_detection_rules_candidate_state",
+        ),
     )
 
     custom_rule_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # New rules move through the workbench lifecycle. Existing rows are marked
+    # `legacy_active`/`disabled` by the additive migration and retain their old
+    # enabled bit for compatibility with older readers.
+    lifecycle_state: Mapped[str] = mapped_column(String(24), nullable=False, default="draft")
+    current_revision_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    active_revision_hash: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey(
+            "custom_detection_rule_revisions.revision_hash", ondelete="RESTRICT",
+            use_alter=True, name="fk_custom_detection_rules_active_revision",
+        ),
+        nullable=True,
+    )
+    candidate_state: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
     slug: Mapped[str] = mapped_column(String(40), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -581,11 +609,68 @@ class CustomDetectionRule(Base):
     disabled_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
+class CustomDetectionRuleRevision(Base):
+    """Immutable canonical content for one logical custom-rule revision."""
+
+    __tablename__ = "custom_detection_rule_revisions"
+
+    revision_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    custom_rule_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("custom_detection_rules.custom_rule_id", ondelete="RESTRICT"), nullable=False
+    )
+    document: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    provenance: Mapped[str] = mapped_column(String(32), nullable=False, default="authored")
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CustomDetectionRuleReceipt(Base):
+    """Bounded preview/shadow evidence; deliberately stores no raw event payloads."""
+
+    __tablename__ = "custom_detection_rule_receipts"
+
+    receipt_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    custom_rule_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("custom_detection_rules.custom_rule_id", ondelete="RESTRICT"), nullable=False
+    )
+    revision_hash: Mapped[str] = mapped_column(
+        String(64), ForeignKey("custom_detection_rule_revisions.revision_hash", ondelete="RESTRICT"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    interpreter_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    receipt_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CustomDetectionRuleAudit(Base):
+    """Append-only lifecycle audit entries with authenticated actor identity."""
+
+    __tablename__ = "custom_detection_rule_audit"
+
+    audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    custom_rule_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("custom_detection_rules.custom_rule_id", ondelete="RESTRICT"), nullable=False
+    )
+    revision_hash: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("custom_detection_rule_revisions.revision_hash", ondelete="RESTRICT"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class DetectionRun(Base):
     __tablename__ = "detection_runs"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('insufficient_data', 'no_findings', 'findings_only', 'incident_created', 'incident_updated')",
+            "status IN ('insufficient_data', 'no_findings', 'findings_only', 'incident_created', 'incident_updated', 'budget_exhausted', 'rule_evidence_incomplete', 'rule_error')",
             name="ck_detection_runs_status",
         ),
         UniqueConstraint("run_key", name="uq_detection_runs_run_key"),
@@ -620,6 +705,10 @@ class DetectionRun(Base):
     matches_count: Mapped[int] = mapped_column(Integer, nullable=False)
     incident_created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    # Null on historical rows means their custom ruleset content is unavailable;
+    # never reconstruct a past configuration from today's mutable rule table.
+    custom_rule_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    custom_rule_interpreter_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

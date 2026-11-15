@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shlex
 from collections import Counter
+from copy import deepcopy
 from urllib.parse import urlsplit
 
 MAX_COMMAND_CHARS = 32768
@@ -122,6 +123,15 @@ CONTRACT = {
     "operators": sorted(OPERATORS),
 }
 
+# Separate feature contract: CONTRACT and command_shape_counts are historical
+# inputs to immutable profile hashes and must not change.
+SUPPORT_AWARE_CONTRACT = {
+    **deepcopy(CONTRACT),
+    "descriptor_extension": "bounded-oov-option-form-and-argument-position-classes",
+    "argument_position_buckets": ["early", "middle", "late"],
+    "raw_argument_values": False,
+}
+
 
 def _value_shape(value: str) -> str:
     # No source string or hash of a source string is returned. Hashing secrets
@@ -227,3 +237,78 @@ def command_shape_counts(command_line: str | None, *, depth: int = 0) -> Counter
         else:
             counts[_value_shape(token)] += 1
     return counts
+
+
+def command_shape_counts_support_aware(
+    command_line: str | None, *, depth: int = 0
+) -> Counter[str]:
+    """Return bounded, value-free command descriptors for the newer contract.
+
+    The legacy extractor stays untouched so old feature documents and hashes
+    remain reproducible. The added descriptors distinguish broad argument
+    order and out-of-vocabulary syntax classes without retaining values.
+    """
+
+    counts = command_shape_counts(command_line, depth=depth)
+    if not counts or any(
+        token
+        in {
+            "syntax:malformed",
+            "syntax:oversized",
+            "syntax:token-limit",
+            "syntax:nesting-limit",
+        }
+        for token in counts
+    ):
+        return counts
+    if not command_line or len(command_line) > MAX_COMMAND_CHARS:
+        return counts
+    try:
+        tokens = shlex.split(command_line, posix=False)
+    except ValueError:
+        return counts
+    if len(tokens) > MAX_TOKENS:
+        return counts
+    if tokens:
+        executable = _clean_token(tokens[0].rsplit("/", 1)[-1])
+        if executable not in PROGRAMS:
+            counts["syntax:oov-program"] += 1
+    argument_count = max(0, len(tokens) - 1)
+    for index, token in enumerate(tokens[1:]):
+        if argument_count <= 2 or index == 0:
+            position = "early"
+        elif index == argument_count - 1 or index >= 5:
+            position = "late"
+        else:
+            position = "middle"
+        flag, separator, value = token.partition("=")
+        clean_flag = _clean_token(flag)
+        if token.startswith("-") and clean_flag not in FLAGS:
+            prefix = "long" if token.startswith("--") else "short"
+            form = "assignment" if separator else "separate-value"
+            counts[f"syntax:oov-option:{position}:{prefix}:{form}"] += 1
+        else:
+            # Only emit a broad value class; neither source text nor a digest
+            # of a potentially sensitive argument is retained.
+            value_class = _value_shape(value if separator else token)
+            counts["argument:" + position + ":" + value_class] += 1
+    return counts
+
+
+def command_shape_coverage(command_line: str | None) -> tuple[Counter[str], str]:
+    """Return new-contract descriptors and a safe evidence-coverage class."""
+
+    if not command_line or not command_line.strip():
+        return Counter(), "unavailable"
+    counts = command_shape_counts_support_aware(command_line)
+    if any(
+        marker in counts
+        for marker in (
+            "syntax:malformed",
+            "syntax:oversized",
+            "syntax:token-limit",
+            "syntax:nesting-limit",
+        )
+    ):
+        return counts, "fallback"
+    return counts, "usable" if counts else "fallback"

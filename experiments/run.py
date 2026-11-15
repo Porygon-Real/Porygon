@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -22,6 +23,14 @@ from experiments.artifacts import (
     versioned_artifact_paths,
     write_versioned_json,
 )
+from experiments.runtime_binding import (
+    RuntimeBinding,
+    RuntimeBindingError,
+    assert_binding_matches,
+    binding_from_document,
+    require_run_targets_absent,
+    resolve_runtime_binding,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,16 +38,28 @@ PROTOCOL_ID = "porygon.research.protocol.v1"
 BOUNDARIES = ["generator", "source", "spool", "api", "database"]
 
 
+def timestamp_run_id(prefix: str, now: datetime | None = None) -> str:
+    """Create a lowercase Docker-safe timestamp ID for automatic runs."""
+    timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dt%H%M%Sz")
+    return f"{prefix}-{timestamp}"
+
+
 def _git_sha() -> str:
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 
 
 def _git_dirty() -> bool:
     try:
-        return bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip())
+        return bool(
+            subprocess.check_output(
+                ["git", "status", "--porcelain"], cwd=ROOT, text=True
+            ).strip()
+        )
     except (OSError, subprocess.CalledProcessError):
         return True
 
@@ -50,10 +71,16 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> str:
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
-def _smoke_trial(run_id: str, index: int, scenario: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _smoke_trial(
+    run_id: str, index: int, scenario: str
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     trial_id = f"smoke-{index:03d}"
     events: list[dict[str, Any]] = []
     for sequence in range(1, 13):
@@ -86,12 +113,22 @@ def _smoke_trial(run_id: str, index: int, scenario: str) -> tuple[dict[str, Any]
     return trial, events
 
 
-def _write_summary(path: Path, trials: list[dict[str, Any]], events: list[dict[str, Any]], reconciliation: dict[str, Any]) -> str:
+def _write_summary(
+    path: Path,
+    trials: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    reconciliation: dict[str, Any],
+) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = []
     for trial in trials:
-        trial_events = [event for event in events if event["trial_id"] == trial["trial_id"]]
-        latencies_us = [(event["persisted_ns"] - event["occurred_ns"]) / 1_000 for event in trial_events]
+        trial_events = [
+            event for event in events if event["trial_id"] == trial["trial_id"]
+        ]
+        latencies_us = [
+            (event["persisted_ns"] - event["occurred_ns"]) / 1_000
+            for event in trial_events
+        ]
         rows.append(
             {
                 "trial_id": trial["trial_id"],
@@ -99,7 +136,9 @@ def _write_summary(path: Path, trials: list[dict[str, Any]], events: list[dict[s
                 "research_eligible": str(trial["research_eligible"]).lower(),
                 "event_count": len(trial_events),
                 "latency_p50_us": f"{sorted(latencies_us)[len(latencies_us) // 2]:.1f}",
-                "source_loss_fraction": reconciliation["boundaries"]["source"]["loss_fraction"],
+                "source_loss_fraction": reconciliation["boundaries"]["source"][
+                    "loss_fraction"
+                ],
             }
         )
     fieldnames = list(rows[0])
@@ -115,7 +154,10 @@ def run_smoke(run_dir: Path, run_id: str = "smoke-fixture") -> Path:
     if (run_dir / "artifact-manifest.json").exists():
         validate(run_dir)
         return run_dir
-    trials_and_events = [_smoke_trial(run_id, 0, "SCN-LOW"), _smoke_trial(run_id, 1, "SCN-FLOOD")]
+    trials_and_events = [
+        _smoke_trial(run_id, 0, "SCN-LOW"),
+        _smoke_trial(run_id, 1, "SCN-FLOOD"),
+    ]
     trials = [item[0] for item in trials_and_events]
     events = [event for _, trial_events in trials_and_events for event in trial_events]
     metadata = {
@@ -140,7 +182,9 @@ def run_smoke(run_dir: Path, run_id: str = "smoke-fixture") -> Path:
     event_hash = _write_jsonl(run_dir / "events.jsonl", events)
     reconciliation = reconcile_boundaries(events, BOUNDARIES)
     atomic_write_json(run_dir / "reconciliation.json", reconciliation)
-    summary_hash = _write_summary(run_dir / "summary.csv", trials, events, reconciliation)
+    summary_hash = _write_summary(
+        run_dir / "summary.csv", trials, events, reconciliation
+    )
     manifest = {
         "schema_version": "porygon.experiment.artifact-manifest.v1",
         "run_id": run_id,
@@ -159,11 +203,16 @@ def run_smoke(run_dir: Path, run_id: str = "smoke-fixture") -> Path:
 
 
 def validate(run_dir: Path) -> None:
-    if (run_dir/'plan.json').is_file():
-        from experiments.confirmatory import read_document,replay as frozen_replay
-        if read_document(run_dir/'plan.json').get('contract')=='porygon.frozen-collection-plan':
-            frozen_replay(run_dir);return
-        raise ArtifactError('Unknown planned collection contract')
+    if (run_dir / "plan.json").is_file():
+        from experiments.confirmatory import read_document, replay as frozen_replay
+
+        if (
+            read_document(run_dir / "plan.json").get("contract")
+            == "porygon.frozen-collection-plan"
+        ):
+            frozen_replay(run_dir)
+            return
+        raise ArtifactError("Unknown planned collection contract")
     manifests = versioned_artifact_paths(run_dir, "artifact-manifest")
     if not (run_dir / "run.json").is_file() or not manifests:
         raise ArtifactError("missing artifact: run.json or artifact-manifest.json")
@@ -189,8 +238,10 @@ def validate(run_dir: Path) -> None:
     }
     unlisted = sorted(present - set(manifest["artifact_hashes"]))
     if unlisted:
-        raise ArtifactError(f"artifacts present but absent from the manifest: {unlisted}")
-    if run.get("kind") not in {"smoke_fixture","real_container_pilot"}:
+        raise ArtifactError(
+            f"artifacts present but absent from the manifest: {unlisted}"
+        )
+    if run.get("kind") not in {"smoke_fixture", "real_container_pilot"}:
         raise ArtifactError("Unknown collection kind; no pilot fallback")
     if run.get("kind") != "smoke_fixture":
         _validate_pilot(run_dir, run)
@@ -199,9 +250,14 @@ def validate(run_dir: Path) -> None:
 
 
 def _validate_pilot(run_dir: Path, run: dict[str, Any]) -> None:
-    trials = [json.loads(path.read_text(encoding="utf-8")) for path in sorted((run_dir / "trials").glob("*.json"))]
+    trials = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((run_dir / "trials").glob("*.json"))
+    ]
     if not trials:
-        raise ArtifactError("a real-container run must contain at least one trial record")
+        raise ArtifactError(
+            "a real-container run must contain at least one trial record"
+        )
     if len({trial["trial_id"] for trial in trials}) != len(trials):
         raise ArtifactError("duplicate trial_id")
     for trial in trials:
@@ -213,10 +269,14 @@ def _validate_pilot(run_dir: Path, run: dict[str, Any]) -> None:
             raise ArtifactError(f"trial {trial['trial_id']} has no terminal status")
         if trial["status"] == "failed":
             if not trial.get("failure_reason"):
-                raise ArtifactError(f"failed trial {trial['trial_id']} records no reason")
+                raise ArtifactError(
+                    f"failed trial {trial['trial_id']} records no reason"
+                )
             continue
         if "@sha256:" not in trial["image"]["reference"]:
-            raise ArtifactError(f"trial {trial['trial_id']} did not pin an immutable digest")
+            raise ArtifactError(
+                f"trial {trial['trial_id']} did not pin an immutable digest"
+            )
         for name, boundary in trial["reconciliation"]["boundaries"].items():
             if boundary["status"] not in ("measured", "unmeasured"):
                 raise ArtifactError(f"boundary {name} has an undeclared status")
@@ -241,9 +301,11 @@ def _validate_smoke(run_dir: Path, run: dict[str, Any]) -> None:
 
 
 def replay(run_dir: Path) -> None:
-    if (run_dir/'plan.json').is_file():
+    if (run_dir / "plan.json").is_file():
         from experiments.confirmatory import replay as frozen_replay
-        frozen_replay(run_dir);return
+
+        frozen_replay(run_dir)
+        return
     validate(run_dir)
     run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
     if run.get("kind") != "smoke_fixture":
@@ -261,12 +323,29 @@ def replay(run_dir: Path) -> None:
 
 
 PILOT_SUMMARY_FIELDS = [
-    "trial_id", "workload_id", "human_tag", "mode", "scenario_id", "context_variant",
-    "replica_index", "status", "research_eligible", "runtime_context_hash",
-    "canaries_generated", "source_observed", "source_missing", "database_observed",
-    "database_missing", "database_duplicates", "operations_planned", "operations_succeeded",
-    "operations_failed", "workload_latency_p50_ms", "workload_latency_p95_ms",
-    "workload_latency_p99_ms", "harness_induced_execs",
+    "trial_id",
+    "workload_id",
+    "human_tag",
+    "mode",
+    "scenario_id",
+    "context_variant",
+    "replica_index",
+    "status",
+    "research_eligible",
+    "runtime_context_hash",
+    "canaries_generated",
+    "source_observed",
+    "source_missing",
+    "database_observed",
+    "database_missing",
+    "database_duplicates",
+    "operations_planned",
+    "operations_succeeded",
+    "operations_failed",
+    "workload_latency_p50_ms",
+    "workload_latency_p95_ms",
+    "workload_latency_p99_ms",
+    "harness_induced_execs",
 ]
 
 
@@ -275,7 +354,11 @@ def _pilot_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
         entry = boundaries.get(name) or {}
         if entry.get("status") != "measured":
             return "unmeasured"
-        return len(entry["missing_sequences"]) if field == "missing" else entry.get(field, "")
+        return (
+            len(entry["missing_sequences"])
+            if field == "missing"
+            else entry.get(field, "")
+        )
 
     rows = []
     for trial in sorted(trials, key=lambda item: item["trial_id"]):
@@ -295,7 +378,9 @@ def _pilot_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "status": trial["status"],
                 "research_eligible": str(trial["research_eligible"]).lower(),
                 "runtime_context_hash": trial.get("runtime_context_hash", "unmeasured"),
-                "canaries_generated": (trial.get("reconciliation") or {}).get("generated", "unmeasured"),
+                "canaries_generated": (trial.get("reconciliation") or {}).get(
+                    "generated", "unmeasured"
+                ),
                 "source_observed": boundary(boundaries, "source", "observed"),
                 "source_missing": boundary(boundaries, "source", "missing"),
                 "database_observed": boundary(boundaries, "database", "observed"),
@@ -304,10 +389,18 @@ def _pilot_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "operations_planned": load.get("operations_planned", "unmeasured"),
                 "operations_succeeded": load.get("successes", "unmeasured"),
                 "operations_failed": load.get("failures", "unmeasured"),
-                "workload_latency_p50_ms": real.percentile(samples, 0.50) if samples else "unmeasured",
-                "workload_latency_p95_ms": real.percentile(samples, 0.95) if samples else "unmeasured",
-                "workload_latency_p99_ms": real.percentile(samples, 0.99) if samples else "unmeasured",
-                "harness_induced_execs": load.get("harness_induced_exec_count", "unmeasured"),
+                "workload_latency_p50_ms": real.percentile(samples, 0.50)
+                if samples
+                else "unmeasured",
+                "workload_latency_p95_ms": real.percentile(samples, 0.95)
+                if samples
+                else "unmeasured",
+                "workload_latency_p99_ms": real.percentile(samples, 0.99)
+                if samples
+                else "unmeasured",
+                "harness_induced_execs": load.get(
+                    "harness_induced_exec_count", "unmeasured"
+                ),
             }
         )
     return rows
@@ -316,7 +409,9 @@ def _pilot_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _write_pilot_summary(path: Path, trials: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=PILOT_SUMMARY_FIELDS, lineterminator="\n")
+        writer = csv.DictWriter(
+            handle, fieldnames=PILOT_SUMMARY_FIELDS, lineterminator="\n"
+        )
         writer.writeheader()
         writer.writerows(_pilot_rows(trials))
 
@@ -337,7 +432,9 @@ def _replay_pilot(run_dir: Path) -> None:
         raise ArtifactError("analysis replay differs from the recorded summary")
 
 
-def _write_manifest(run_dir: Path, run_id: str, analysis_status: str, source_of_truth: str) -> Path:
+def _write_manifest(
+    run_dir: Path, run_id: str, analysis_status: str, source_of_truth: str
+) -> Path:
     """Write (or version) the run's artifact manifest.
 
     This can legitimately be called more than once against the same run directory -- e.g.
@@ -347,7 +444,9 @@ def _write_manifest(run_dir: Path, run_id: str, analysis_status: str, source_of_
     produces a new `artifact-manifest.vN.json` and the previous version is left untouched;
     see `write_versioned_json`.
     """
-    manifest_names = {path.name for path in versioned_artifact_paths(run_dir, "artifact-manifest")}
+    manifest_names = {
+        path.name for path in versioned_artifact_paths(run_dir, "artifact-manifest")
+    }
     hashes = {
         str(path.relative_to(run_dir)): sha256_file(path)
         for path in sorted(run_dir.rglob("*"))
@@ -381,6 +480,100 @@ def run_pilot(
     warmup_seconds: float,
     settle_seconds: float,
     protocol: Path,
+    compose_project: str,
+    docker_context: str,
+    runtime_binding: RuntimeBinding | None = None,
+) -> Path:
+    if not isinstance(run_id, str) or not re.fullmatch(
+        r"[a-z0-9][a-z0-9_.-]{0,63}", run_id
+    ):
+        raise ArtifactError("Run ID must use the bounded Docker-safe identifier format")
+    try:
+        live_binding = resolve_runtime_binding(
+            compose_project, docker_context, base_url
+        )
+        if runtime_binding is not None:
+            assert_binding_matches(runtime_binding, live_binding)
+        matrix = real.build_matrix(workloads, modes, scenarios, variants, replicas)
+        require_run_targets_absent(
+            live_binding,
+            [real.container_name_for(run_id, item["trial_id"]) for item in matrix],
+            f"porygon-exp-{run_id}",
+        )
+        run_dir = Path(run_dir)
+        run_path = run_dir / "run.json"
+        if run_path.exists():
+            recorded = json.loads(run_path.read_text(encoding="utf-8"))
+            prior_binding = binding_from_document(recorded.get("runtime_binding"))
+            assert_binding_matches(prior_binding, live_binding)
+            if recorded.get("runtime_binding_sha256") != prior_binding.sha256:
+                raise RuntimeBindingError("Run runtime binding hash is invalid")
+            if (
+                recorded.get("run_id") != run_id
+                or recorded.get("matrix") != matrix
+                or recorded.get("seed") != seed
+                or recorded.get("protocol_sha256") != sha256_file(protocol)
+            ):
+                raise RuntimeBindingError(
+                    "Run ID, matrix, seed, or frozen protocol changed; resume is refused"
+                )
+            environment_path = run_dir / "environment.json"
+            if not environment_path.is_file():
+                raise RuntimeBindingError("Run environment provenance is missing")
+            environment_document = json.loads(
+                environment_path.read_text(encoding="utf-8")
+            )
+            recorded_environment_binding = binding_from_document(
+                environment_document.get("runtime_binding")
+            )
+            assert_binding_matches(prior_binding, recorded_environment_binding)
+            if recorded.get("environment_hash") != environment.environment_hash(
+                environment_document
+            ):
+                raise RuntimeBindingError("Run environment hash is invalid")
+            if environment_document.get("code") != environment.code_fingerprint():
+                raise RuntimeBindingError("Experiment source identity changed; resume is refused")
+        elif run_dir.exists() and any(run_dir.iterdir()):
+            raise RuntimeBindingError(
+                "Existing pilot artifacts lack a binding; create a fresh run directory"
+            )
+    except (RuntimeBindingError, OSError, json.JSONDecodeError) as error:
+        raise ArtifactError(f"runtime target preflight refused collection: {error}") from error
+    with real.use_runtime_binding(live_binding):
+        return _run_pilot_bound(
+            run_dir,
+            run_id=run_id,
+            workloads=workloads,
+            modes=modes,
+            scenarios=scenarios,
+            variants=variants,
+            replicas=replicas,
+            seed=seed,
+            base_url=base_url,
+            operations=operations,
+            warmup_seconds=warmup_seconds,
+            settle_seconds=settle_seconds,
+            protocol=protocol,
+            runtime_binding=live_binding,
+        )
+
+
+def _run_pilot_bound(
+    run_dir: Path,
+    *,
+    run_id: str,
+    workloads: list[str],
+    modes: list[str] | None,
+    scenarios: list[str],
+    variants: list[str],
+    replicas: int,
+    seed: int,
+    base_url: str,
+    operations: int,
+    warmup_seconds: float,
+    settle_seconds: float,
+    protocol: Path,
+    runtime_binding: RuntimeBinding,
 ) -> Path:
     """Execute a real-container pilot. Pilot evidence is never confirmatory evidence."""
     status = real.protocol_status(protocol)
@@ -392,7 +585,9 @@ def run_pilot(
     images = {}
     for workload_id in sorted({entry["workload_id"] for entry in matrix}):
         if workload_id not in coordinates:
-            raise ArtifactError(f"{workload_id} has no pinned digest in the profile-scope document")
+            raise ArtifactError(
+                f"{workload_id} has no pinned digest in the profile-scope document"
+            )
         image = real.pull_pinned_image(coordinates[workload_id]["index_digest_ref"])
         image["human_tag"] = coordinates[workload_id]["human_tag"]
         images[workload_id] = image
@@ -404,7 +599,7 @@ def run_pilot(
     # any trial executes, not reconstructed later from whatever happens to still be true.
     run_path = run_dir / "run.json"
     if not run_path.exists():
-        environment_document = environment.run_environment()
+        environment_document = environment.run_environment(runtime_binding)
         atomic_write_json(run_dir / "environment.json", environment_document)
         atomic_write_json(
             run_path,
@@ -423,7 +618,9 @@ def run_pilot(
                 "git_dirty": _git_dirty(),
                 "python": platform.python_version(),
                 "platform": platform.platform(),
-                "docker_version": real.docker("version", "--format", "{{.Server.Version}}", check=False),
+                "docker_version": real.docker(
+                    "version", "--format", "{{.Server.Version}}", check=False
+                ),
                 "kernel_btf_present": Path("/sys/kernel/btf/vmlinux").exists(),
                 "created_at_utc": datetime.now(timezone.utc).isoformat(),
                 "monotonic_origin_ns": time.monotonic_ns(),
@@ -431,11 +628,27 @@ def run_pilot(
                 "boundaries": ["generator", "source", "spool", "api", "database"],
                 "matrix": matrix,
                 "environment_hash": environment.environment_hash(environment_document),
+                "runtime_binding": runtime_binding.to_dict(),
+                "runtime_binding_sha256": runtime_binding.sha256,
             },
         )
-    if not (run_dir / "images.json").exists():
+    images_path = run_dir / "images.json"
+    if images_path.exists():
+        recorded_images = json.loads(images_path.read_text(encoding="utf-8"))
+        if recorded_images != images:
+            raise ArtifactError("Pinned image identity changed; resume is refused")
+    else:
         atomic_write_json(run_dir / "images.json", images)
 
+    try:
+        current_binding = resolve_runtime_binding(
+            runtime_binding.compose_project,
+            runtime_binding.docker_context,
+            base_url,
+        )
+        assert_binding_matches(runtime_binding, current_binding)
+    except RuntimeBindingError as error:
+        raise ArtifactError(f"runtime binding changed before workload launch: {error}") from error
     network = f"porygon-exp-{run_id}"
     real.docker("network", "create", "--label", f"{real.LABEL_RUN}={run_id}", network)
     try:
@@ -470,30 +683,69 @@ def run_pilot(
     return run_dir
 
 
-def confirmatory(protocol: Path,plan: Path | None=None,run_dir: Path | None=None,base_url='http://127.0.0.1:8000') -> None:
+def confirmatory(
+    protocol: Path,
+    plan: Path | None = None,
+    run_dir: Path | None = None,
+    base_url="http://127.0.0.1:8000",
+    compose_project: str | None = None,
+    docker_context: str | None = None,
+) -> None:
     """Dispatch the implemented frozen runner only with concrete prelocked inputs."""
-    from experiments.confirmatory import collect,read_document
+    from experiments.confirmatory import collect, read_document
     from experiments.sample_size import _load_review_gate
-    if not _load_review_gate().gate_state().get('confirmatory_permitted'):
-        raise ArtifactError('confirmatory collection is refused: frozen independent security/methodology reviews are required')
-    if protocol.resolve()!=(ROOT/'docs/research/research-protocol.md').resolve():raise ArtifactError('Use the canonical frozen protocol')
-    if plan is None or run_dir is None:raise ArtifactError('Provide the immutable --plan and a fresh --run-dir; use experiments.confirmatory plan first')
-    collect(read_document(plan),run_dir,base_url)
+
+    state = _load_review_gate().gate_state()
+    if not state.get("confirmatory_permitted"):
+        reasons = []
+        for role, problems in (state.get("approval_problems") or {}).items():
+            reasons.extend(f"{role} review: {problem}" for problem in problems)
+        independence = state.get("independence") or {}
+        if independence.get("independent") is False:
+            reasons.append(f"reviewer independence: {independence.get('reason')}")
+        if state.get("protocol_status") != "frozen":
+            reasons.append(f"protocol_status is {state.get('protocol_status')!r}, not 'frozen'")
+        if not reasons:
+            reasons.append("scripts/review_gate.py:gate_state() reports confirmatory_permitted=false")
+        raise ArtifactError("confirmatory collection is refused: " + "; ".join(reasons))
+    if protocol.resolve() != (ROOT / "docs/research/research-protocol.md").resolve():
+        raise ArtifactError("Use the canonical frozen protocol")
+    if plan is None or run_dir is None:
+        raise ArtifactError(
+            "Provide the immutable --plan and a fresh --run-dir; use experiments.confirmatory plan first"
+        )
+    collect(
+        read_document(plan),
+        run_dir,
+        base_url,
+        compose_project=compose_project,
+        docker_context=docker_context,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Porygon reproducible experiment artifacts")
+    parser = argparse.ArgumentParser(
+        description="Porygon reproducible experiment artifacts"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     smoke = subparsers.add_parser("smoke")
-    smoke.add_argument("--run-dir", type=Path, default=Path("artifacts/experiments/local/smoke-fixture"))
+    smoke.add_argument(
+        "--run-dir",
+        type=Path,
+        default=Path("artifacts/experiments/local/smoke-fixture"),
+    )
     smoke.add_argument("--run-id", default="smoke-fixture")
     replay_parser = subparsers.add_parser("replay")
     replay_parser.add_argument("run_dir", type=Path)
-    pilot = subparsers.add_parser("pilot", help="real-container pilot; never confirmatory evidence")
+    pilot = subparsers.add_parser(
+        "pilot", help="real-container pilot; never confirmatory evidence"
+    )
     pilot.add_argument("--run-id", default=None)
     pilot.add_argument("--run-dir", type=Path, default=None)
     pilot.add_argument("--workloads", default="WL-NGX-V1,WL-RDS-V1,WL-PG-V1")
-    pilot.add_argument("--modes", default=None, help="default: the steady mode of each family")
+    pilot.add_argument(
+        "--modes", default=None, help="default: the steady mode of each family"
+    )
     pilot.add_argument("--scenarios", default="SCN-EXEC")
     pilot.add_argument("--variants", default="baseline")
     pilot.add_argument("--replicas", type=int, default=1)
@@ -502,7 +754,11 @@ def main(argv: list[str] | None = None) -> int:
     pilot.add_argument("--settle-seconds", type=float, default=12.0)
     pilot.add_argument("--seed", type=int, default=20260905)
     pilot.add_argument("--base-url", default="http://127.0.0.1:8000")
-    pilot.add_argument("--protocol", type=Path, default=ROOT / "docs/research/research-protocol.md")
+    pilot.add_argument("--compose-project", required=True)
+    pilot.add_argument("--docker-context", required=True)
+    pilot.add_argument(
+        "--protocol", type=Path, default=ROOT / "docs/research/research-protocol.md"
+    )
     study = subparsers.add_parser("study", help="run the full orchestrated pipeline")
     study.add_argument("--run-id", default=None)
     study.add_argument("--workloads", default="WL-NGX-V1,WL-RDS-V1,WL-PG-V1")
@@ -512,13 +768,19 @@ def main(argv: list[str] | None = None) -> int:
     study.add_argument("--operations", type=int, default=20)
     study.add_argument("--seed", type=int, default=20260905)
     study.add_argument("--window-seconds", type=int, default=10)
-    study.add_argument("--analysis-policy",type=Path)
+    study.add_argument("--analysis-policy", type=Path)
     study.add_argument("--base-url", default="http://127.0.0.1:8000")
+    study.add_argument("--compose-project", required=True)
+    study.add_argument("--docker-context", required=True)
     confirm = subparsers.add_parser("confirmatory")
-    confirm.add_argument("--plan",type=Path)
-    confirm.add_argument("--run-dir",type=Path)
-    confirm.add_argument("--base-url",default="http://127.0.0.1:8000")
-    confirm.add_argument("--protocol", type=Path, default=ROOT / "docs/research/research-protocol.md")
+    confirm.add_argument("--plan", type=Path)
+    confirm.add_argument("--run-dir", type=Path)
+    confirm.add_argument("--base-url", default="http://127.0.0.1:8000")
+    confirm.add_argument("--compose-project", required=True)
+    confirm.add_argument("--docker-context", required=True)
+    confirm.add_argument(
+        "--protocol", type=Path, default=ROOT / "docs/research/research-protocol.md"
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "smoke":
@@ -529,13 +791,15 @@ def main(argv: list[str] | None = None) -> int:
             replay(args.run_dir)
             print(f"replay matched recorded summary: {args.run_dir}")
         elif args.command == "pilot":
-            run_id = args.run_id or "pilot-" + datetime.now(timezone.utc).strftime("%Y%m%dt%H%M%SZ")
+            run_id = args.run_id or timestamp_run_id("pilot")
             run_dir = args.run_dir or ROOT / "artifacts/experiments/local" / run_id
             run_pilot(
                 run_dir,
                 run_id=run_id,
                 workloads=[item for item in args.workloads.split(",") if item],
-                modes=[item for item in args.modes.split(",") if item] if args.modes else None,
+                modes=[item for item in args.modes.split(",") if item]
+                if args.modes
+                else None,
                 scenarios=[item for item in args.scenarios.split(",") if item],
                 variants=[item for item in args.variants.split(",") if item],
                 replicas=args.replicas,
@@ -545,11 +809,14 @@ def main(argv: list[str] | None = None) -> int:
                 warmup_seconds=args.warmup_seconds,
                 settle_seconds=args.settle_seconds,
                 protocol=args.protocol,
+                compose_project=args.compose_project,
+                docker_context=args.docker_context,
             )
             validate(run_dir)
             print(f"pilot artifacts validated: {run_dir}")
         elif args.command == "study":
             from experiments.study import run_study
+
             run_study(
                 run_id=args.run_id,
                 workloads=[x for x in args.workloads.split(",") if x],
@@ -558,12 +825,23 @@ def main(argv: list[str] | None = None) -> int:
                 replicas=args.replicas,
                 operations=args.operations,
                 seed=args.seed,
-                analysis_policy=json.loads(args.analysis_policy.read_text()) if args.analysis_policy else None,
+                analysis_policy=json.loads(args.analysis_policy.read_text())
+                if args.analysis_policy
+                else None,
                 window_seconds=args.window_seconds,
                 base_url=args.base_url,
+                compose_project=args.compose_project,
+                docker_context=args.docker_context,
             )
         else:
-            confirmatory(args.protocol,args.plan,args.run_dir,args.base_url)
+            confirmatory(
+                args.protocol,
+                args.plan,
+                args.run_dir,
+                args.base_url,
+                args.compose_project,
+                args.docker_context,
+            )
     except real.PilotError as exc:
         print(f"[blocked] {exc}", file=sys.stderr)
         return 2

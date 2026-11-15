@@ -151,8 +151,18 @@ def test_run_environment_has_the_expected_top_level_shape():
     document = environment.run_environment()
     assert document["schema_version"] == environment.SCHEMA_VERSION
     assert document["captured_at_utc"]
+    assert document["runtime_binding"]["status"] == "unavailable"
     for key in ("kernel", "falco_ruleset", "service_images", "scoring_config", "code"):
         assert key in document
+
+
+def test_service_image_fingerprint_never_uses_an_implicit_project(monkeypatch):
+    calls = []
+    monkeypatch.setattr(environment, "_run", lambda *args, **kwargs: calls.append(args))
+    result = environment.service_image_fingerprint()
+    assert set(result) == set(environment.SERVICE_NAMES)
+    assert all(entry["status"] == "unavailable" for entry in result.values())
+    assert calls == []
 
 
 def test_environment_hash_requires_the_declared_schema_version():

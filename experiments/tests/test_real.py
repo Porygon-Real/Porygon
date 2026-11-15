@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+import re
 import subprocess
 import types
 from pathlib import Path
@@ -14,6 +16,8 @@ from experiments.artifacts import (
     atomic_write_json,
     check_split_isolation,
 )
+from experiments import environment
+from experiments.runtime_binding import REQUIRED_SERVICES, RuntimeBinding
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,6 +40,20 @@ def test_image_coordinates_come_from_the_frozen_document():
 def test_mutable_references_are_refused():
     with pytest.raises(real.PilotError, match="mutable"):
         real.pull_pinned_image("nginx:latest")
+
+
+def test_pilot_default_run_id_is_lowercase_and_docker_safe(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(run, "run_pilot", lambda run_dir, **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(run, "validate", lambda _run_dir: None)
+
+    assert run.main(
+        ["pilot", "--compose-project", "study-fixture", "--docker-context", "test-context"]
+    ) == 0
+    run_id = captured["run_id"]
+    assert re.fullmatch(r"pilot-\d{8}t\d{6}z", run_id)
+    fixed = datetime(2026, 10, 30, 15, 1, 32, tzinfo=timezone.utc)
+    assert run.timestamp_run_id("pilot", fixed) == "pilot-20261030t150132z"
 
 
 def test_matrix_refuses_analysis_only_scenarios():
@@ -280,12 +298,8 @@ def test_confirmatory_stays_refused_while_the_review_gate_is_not_satisfied(tmp_p
         run.confirmatory(pending)
 
 
-def test_confirmatory_stays_refused_even_once_frozen_until_the_matrix_is_implemented(tmp_path, monkeypatch):
-    """confirmatory() is a deliberate two-stage gate: the review gate reporting
-    confirmatory_permitted=true is necessary but not sufficient. It must also stay
-    refused until the approved workload matrix runner actually exists, so a fully
-    satisfied review gate alone can never accidentally start collecting confirmatory
-    data."""
+def test_confirmatory_requires_immutable_plan_even_when_reviews_are_frozen(tmp_path, monkeypatch):
+    """Review approval alone cannot launch collection without a concrete locked plan."""
     fake_module = types.SimpleNamespace(
         gate_state=lambda: {
             "confirmatory_permitted": True,
@@ -295,10 +309,8 @@ def test_confirmatory_stays_refused_even_once_frozen_until_the_matrix_is_impleme
         }
     )
     monkeypatch.setattr(sample_size, "_load_review_gate", lambda: fake_module)
-    frozen = tmp_path / "frozen.md"
-    frozen.write_text("Status: **FROZEN**\n", encoding="utf-8")
-    with pytest.raises(ArtifactError, match="workload matrix"):
-        run.confirmatory(frozen)
+    with pytest.raises(ArtifactError, match="immutable --plan and a fresh --run-dir"):
+        run.confirmatory(run.ROOT / "docs/research/research-protocol.md")
 
 
 def test_long_trial_names_stay_unique_instead_of_colliding():
@@ -434,11 +446,15 @@ def test_run_hard_negative_executes_the_registered_container_command(monkeypatch
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr(real.subprocess, "run", fake_run)
-    ground_truth = real.run_hard_negative(
-        "cnt", "abc123", "nginx@sha256:" + "a" * 64, "run-1", "trial-1",
-        "WL-NGX", "config validation/reload", 8080,
+    binding = types.SimpleNamespace(
+        docker_argv=lambda *args: ["docker", "--context", "study-context", *args]
     )
-    assert captured["cmd"][:3] == ["docker", "exec", "cnt"]
+    with real.use_runtime_binding(binding):
+        ground_truth = real.run_hard_negative(
+            "cnt", "abc123", "nginx@sha256:" + "a" * 64, "run-1", "trial-1",
+            "WL-NGX", "config validation/reload", 8080,
+        )
+    assert captured["cmd"][:5] == ["docker", "--context", "study-context", "exec", "cnt"]
     assert captured["cmd"][-1] == real.HARD_NEGATIVES["WL-NGX"]["config validation/reload"]["command"]
     assert ground_truth["attack_like"] is False
     assert ground_truth["hard_negative_id"] == "config validation/reload"
@@ -528,12 +544,20 @@ def test_run_trial_dispatches_a_hard_negative_and_tags_ground_truth_benign(monke
         real, "reconcile_trial",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("reconcile_trial must not be called for a hard negative")),
     )
-    record = real.run_trial(
-        run_id="run-1", trial_id="t-2", workload_id="WL-NGX-V1", mode="idle",
-        scenario_id="config validation/reload", variant="baseline", replica=1,
-        image={"human_tag": "nginx:1.26.3-alpine", "reference": "nginx@sha256:" + "a" * 64},
-        network="net", base_url="http://x", seed=1, warmup_seconds=0, operations=0, settle_seconds=0,
+    binding = types.SimpleNamespace(
+        compose_project="study-fixture",
+        docker_context="test-context",
+        daemon_id="fixture-daemon",
+        sha256="b" * 64,
+        docker_argv=lambda *args: ["docker", "--context", "test-context", *args],
     )
+    with real.use_runtime_binding(binding):
+        record = real.run_trial(
+            run_id="run-1", trial_id="t-2", workload_id="WL-NGX-V1", mode="idle",
+            scenario_id="config validation/reload", variant="baseline", replica=1,
+            image={"human_tag": "nginx:1.26.3-alpine", "reference": "nginx@sha256:" + "a" * 64},
+            network="net", base_url="http://x", seed=1, warmup_seconds=0, operations=0, settle_seconds=0,
+        )
     assert record["status"] == "completed"
     assert record["hard_negative_id"] == "config validation/reload"
     assert record["ground_truth"]["attack_like"] is False
@@ -551,6 +575,7 @@ def test_run_trial_leaves_hard_negative_id_none_for_an_ordinary_scenario(monkeyp
         lambda container, container_id, image_digest, run_id, trial_id, scenario_id: {
             "schema_version": "porygon.experiment.ground-truth.v1", "run_id": run_id, "trial_id": trial_id,
             "scenario_id": scenario_id, "expected_outcome": "controlled_positive", "attack_like": False,
+            "canary_sequences_planned": [1, 2],
             "canary_sequences_executed": [1, 2],
         },
     )
@@ -646,3 +671,179 @@ def test_conf_hn_001_is_satisfied_by_a_run_built_from_the_new_trial_types(tmp_pa
     report = conformance.check_run_conformance(run_dir, manifest=_tiny_hn_manifest())
     hn_finding = next(f for f in report.findings if f.check_id == "CONF-HN-001")
     assert hn_finding.satisfied is True, hn_finding.detail
+
+
+def test_falco_source_missing_file_is_unknown_not_measured_zero(monkeypatch):
+    binding = types.SimpleNamespace(services={"telemetry": {"container_id": "telemetry-id"}})
+    calls = []
+    monkeypatch.setattr(
+        real,
+        "_docker_run",
+        lambda *args, **kwargs: calls.append(args)
+        or subprocess.CompletedProcess(args, 1, "", "not readable"),
+    )
+    with real.use_runtime_binding(binding):
+        result = real._falco_observed("run-1", "trial-1")
+    assert result["status"] == "unmeasured"
+    assert len(calls) == 1 and calls[0][1] == "telemetry-id"
+
+
+def test_docker_helper_refuses_implicit_context():
+    with pytest.raises(real.PilotError, match="validated Docker runtime binding"):
+        real.docker("info", "--format", "{{.ID}}")
+
+
+def test_falco_source_empty_file_is_measured_zero(monkeypatch):
+    binding = types.SimpleNamespace(services={"telemetry": {"container_id": "telemetry-id"}})
+    calls = []
+
+    def docker_run(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        return subprocess.CompletedProcess(args, 1, "", "")
+
+    monkeypatch.setattr(real, "_docker_run", docker_run)
+    with real.use_runtime_binding(binding):
+        result = real._falco_observed("run-1", "trial-1")
+    assert result == {"status": "measured", "sequences": []}
+    assert all(call[1] == "telemetry-id" for call in calls)
+
+
+def test_falco_source_grep_read_error_is_unknown_not_measured_zero(monkeypatch):
+    binding = types.SimpleNamespace(services={"telemetry": {"container_id": "telemetry-id"}})
+    calls = []
+
+    def docker_run(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        return subprocess.CompletedProcess(args, 2, "", "source read failed")
+
+    monkeypatch.setattr(real, "_docker_run", docker_run)
+    with real.use_runtime_binding(binding):
+        result = real._falco_observed("run-1", "trial-1")
+    assert result["status"] == "unmeasured"
+    assert len(calls) == 2 and calls[1][2] == "grep"
+
+
+def test_falco_source_rejects_shell_metacharacters_in_run_identifiers(monkeypatch):
+    calls = []
+    monkeypatch.setattr(real, "_docker_run", lambda *args, **kwargs: calls.append(args))
+    binding = types.SimpleNamespace(services={"telemetry": {"container_id": "telemetry-id"}})
+    with real.use_runtime_binding(binding):
+        result = real._falco_observed("run-1; touch /tmp/bad", "trial-1")
+    assert result["status"] == "unmeasured"
+    assert calls == []
+
+
+def test_pilot_binding_failure_stops_before_artifact_or_docker_creation(monkeypatch, tmp_path):
+    from experiments.runtime_binding import RuntimeBindingError
+
+    calls = []
+    monkeypatch.setattr(
+        run,
+        "resolve_runtime_binding",
+        lambda *args: (_ for _ in ()).throw(RuntimeBindingError("wrong target")),
+    )
+    monkeypatch.setattr(real, "docker", lambda *args, **kwargs: calls.append(args))
+    run_dir = tmp_path / "blocked-pilot"
+    with pytest.raises(ArtifactError, match="runtime target preflight"):
+        run.run_pilot(
+            run_dir,
+            run_id="pilot-fixture",
+            workloads=["WL-NGX-V1"],
+            modes=None,
+            scenarios=["SCN-EXEC"],
+            variants=["baseline"],
+            replicas=1,
+            seed=1,
+            base_url="http://127.0.0.1:8000",
+            operations=1,
+            warmup_seconds=0,
+            settle_seconds=0,
+            protocol=ROOT / "docs/research/research-protocol.md",
+            compose_project="study-fixture",
+            docker_context="test-context",
+        )
+    assert not run_dir.exists()
+    assert calls == []
+
+
+def test_pilot_resume_binding_drift_refuses_before_image_or_network_commands(
+    monkeypatch, tmp_path
+):
+    def binding(backend_id):
+        return RuntimeBinding(
+            compose_project="study-fixture",
+            docker_context="test-context",
+            docker_transport="local-unix-socket",
+            daemon_id="daemon-fixture",
+            compose_file_sha256="a" * 64,
+            api_origin="http://127.0.0.1:8000",
+            services={
+                service: {
+                    "container_id": backend_id if service == "backend" else service,
+                    "container_name": service,
+                    "image_id": "image-" + service,
+                    "state": "running",
+                    "health": "healthy",
+                }
+                for service in REQUIRED_SERVICES
+            },
+        )
+
+    prior = binding("backend-before")
+    current = binding("backend-after")
+    run_dir = tmp_path / "existing-pilot"
+    run_dir.mkdir()
+    matrix = real.build_matrix(
+        ["WL-NGX-V1"], None, ["SCN-EXEC"], ["baseline"], 1
+    )
+    protocol = ROOT / "docs/research/research-protocol.md"
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": "pilot-fixture",
+                "matrix": matrix,
+                "seed": 1,
+                "protocol_sha256": run.sha256_file(protocol),
+                "runtime_binding": prior.to_dict(),
+                "runtime_binding_sha256": prior.sha256,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "environment.json").write_text(
+        json.dumps(
+            {
+                "schema_version": environment.SCHEMA_VERSION,
+                "runtime_binding": prior.to_dict(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(run, "resolve_runtime_binding", lambda *args: current)
+    monkeypatch.setattr(run, "require_run_targets_absent", lambda *args: None)
+    docker_calls = []
+    monkeypatch.setattr(real, "docker", lambda *args, **kwargs: docker_calls.append(args))
+
+    with pytest.raises(ArtifactError, match="runtime target preflight"):
+        run.run_pilot(
+            run_dir,
+            run_id="pilot-fixture",
+            workloads=["WL-NGX-V1"],
+            modes=None,
+            scenarios=["SCN-EXEC"],
+            variants=["baseline"],
+            replicas=1,
+            seed=1,
+            base_url="http://127.0.0.1:8000",
+            operations=1,
+            warmup_seconds=0,
+            settle_seconds=0,
+            protocol=protocol,
+            compose_project="study-fixture",
+            docker_context="test-context",
+        )
+    assert docker_calls == []

@@ -1,11 +1,12 @@
 """Verify signed retry transport against a loopback-only disposable HTTP sink."""
+
 import argparse
 import json
 from pathlib import Path
 import subprocess
 
-ROOT=Path(__file__).resolve().parents[1]
-PROGRAM=r'''
+ROOT = Path(__file__).resolve().parents[1]
+PROGRAM = r"""
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from threading import Thread
 import hashlib,hmac,json,secrets,time
@@ -33,13 +34,23 @@ try:
  else:raise AssertionError('Redirect must not count as delivery')
  print(json.dumps({'passed':True,'hmac':'verified','stable_retry_id':'verified','redirects':'refused','destination':'loopback-only','external_messages':0}))
 finally:server.shutdown();server.server_close();thread.join(timeout=3)
-'''
+"""
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--local-sink',action='store_true',required=True);parser.parse_args()
-    result=subprocess.run(['docker','compose','exec','-T','backend','python','-c',PROGRAM],cwd=ROOT,capture_output=True,text=True,timeout=30,check=True)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--local-sink", action="store_true", required=True)
+    parser.parse_args()
+    result = subprocess.run(
+        ["docker", "compose", "exec", "-T", "backend", "python", "-c", PROGRAM],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
     print(json.dumps(json.loads(result.stdout)))
 
 
-if __name__=='__main__':main()
+if __name__ == "__main__":
+    main()

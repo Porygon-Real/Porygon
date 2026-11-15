@@ -1,12 +1,27 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from experiments import run, study
 from experiments.artifacts import ArtifactError, atomic_write_json, versioned_artifact_paths
+from experiments.runtime_binding import RuntimeBindingError
+
+
+def test_study_default_run_id_is_lowercase_and_docker_safe(tmp_path, monkeypatch):
+    monkeypatch.setattr(study, "STUDY_ROOT", tmp_path)
+    monkeypatch.setattr(study, "ROOT", tmp_path)
+    monkeypatch.setattr(study, "STAGES", [])
+    monkeypatch.setattr(study, "_sh", lambda *args, **kwargs: (0, "fixture"))
+
+    manifest_path = study.run_study(
+        compose_project="study-fixture", docker_context="test-context"
+    )
+    run_id = json.loads(manifest_path.read_text(encoding="utf-8"))["run_id"]
+    assert re.fullmatch(r"study-\d{8}t\d{6}z", run_id)
 
 
 def _build_pilot_run(run_dir: Path, run_id: str) -> None:
@@ -152,3 +167,44 @@ def test_run_study_raises_if_the_final_revalidation_fails(tmp_path, monkeypatch)
 
     with pytest.raises(ArtifactError, match="forced failure"):
         study.run_study(run_id=run_id)
+
+
+def test_study_environment_binding_fails_before_any_api_or_runtime_probe(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        study,
+        "resolve_runtime_binding",
+        lambda *args: (_ for _ in ()).throw(RuntimeBindingError("wrong project")),
+    )
+    monkeypatch.setattr(study, "_sh", lambda *args, **kwargs: calls.append(args))
+    with pytest.raises(RuntimeBindingError, match="wrong project"):
+        study.stage_environment(
+            {
+                "compose_project": "study-fixture",
+                "docker_context": "test-context",
+                "base_url": "http://127.0.0.1:8000",
+            }
+        )
+    assert calls == []
+
+
+def test_study_storage_uses_exact_bound_service_ids(monkeypatch):
+    from types import SimpleNamespace
+
+    from experiments import real
+
+    binding = SimpleNamespace(
+        services={
+            "postgres": {"container_id": "postgres-container-id"},
+            "telemetry": {"container_id": "telemetry-container-id"},
+        }
+    )
+    calls = []
+    monkeypatch.setattr(real, "docker", lambda *args, **kwargs: calls.append(args) or "23")
+    ctx = {"runtime_binding": binding, "db_user": "study-user", "db_name": "study-db"}
+
+    assert study._database_bytes(ctx) == 23
+    assert study._sensor_log_bytes(binding) == 23
+    assert calls[0][:2] == ("exec", "postgres-container-id")
+    assert "porygon-postgres-1" not in calls[0]
+    assert calls[1][:2] == ("exec", "telemetry-container-id")

@@ -137,14 +137,28 @@ class DockerEventSource:
             if not batch:
                 deadline = time.monotonic() + 0.05
                 return True
+            batch_cursor = max(int(event["time_nano"]) for event in batch)
             while not self.stop_event.is_set():
-                try:
-                    inserted, depth = self.store.enqueue_batch(
-                        batch, cursor=max(int(event["time_nano"]) for event in batch)
-                    )
+                candidate_size = len(batch)
+                while not self.stop_event.is_set():
+                    # Keep the checkpoint behind every event in the original batch.
+                    cursor = batch_cursor if candidate_size == len(batch) else None
+                    try:
+                        inserted, depth = self.store.enqueue_batch(
+                            batch[:candidate_size], cursor=cursor
+                        )
+                    except SpoolFullError as exc:
+                        if candidate_size > 1:
+                            candidate_size = max(1, candidate_size // 2)
+                            continue
+                        self.state.increment(spool_overflow_count=1)
+                        self.state.set(docker_last_error=str(exc))
+                        self.stop_event.wait(1.0)
+                        continue
+
                     self.state.increment(
                         events_enqueued=inserted,
-                        duplicate_events_ignored=len(batch) - inserted,
+                        duplicate_events_ignored=candidate_size - inserted,
                     )
                     self.state.set(
                         docker_last_success_at=datetime.now(timezone.utc),
@@ -152,13 +166,14 @@ class DockerEventSource:
                         queue_depth=depth,
                         docker_last_error=None,
                     )
-                    batch.clear()
+                    del batch[:candidate_size]
+                    break
+
+                if self.stop_event.is_set():
+                    return False
+                if not batch:
                     deadline = time.monotonic() + 0.05
                     return True
-                except SpoolFullError as exc:
-                    self.state.increment(spool_overflow_count=1)
-                    self.state.set(docker_last_error=str(exc))
-                    self.stop_event.wait(1.0)
             return False
 
         try:

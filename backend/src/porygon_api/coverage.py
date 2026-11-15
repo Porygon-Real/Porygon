@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from porygon_api.models import ContainerIdentity, ServiceHeartbeat
-from porygon_api.vulnerability import sha256_document
+from porygon_api.vulnerability import is_local_image_identity, sha256_document
 from porygon_api.auth import utc
 
 
@@ -61,7 +61,11 @@ def coverage_for(db, target, window_start, settings, now=None):
     identity = target_identity(db, target)
     if (
         identity is None
-        or identity.image_digest != target.image_digest
+        or not (
+            identity.image_id == target.image_digest.removeprefix("local:")
+            if is_local_image_identity(target.image_digest)
+            else identity.image_digest == target.image_digest
+        )
         or sha256_document(security_context(identity.current_snapshot))
         != target.context_hash
     ):

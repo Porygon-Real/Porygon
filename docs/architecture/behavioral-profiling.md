@@ -1,97 +1,142 @@
-# Digest-Bound Behavioral Profiling & Rarity Scoring
+# Behavioral profiling and scoring
 
-> **Component:** `porygon-backend` (Behavioral Profiling, Anomaly Scoring, Detection Engine)  
-> **Schema:** `porygon.behaviour.v1`, `porygon.rarity.provenance.calibrated`  
-> **Core Concept:** Provenance-bound statistical baselines vs naive heuristic alerts
+## Profile identity
 
----
+Profiles are tied to an immutable image digest and a feature schema. The historical schemas `porygon.behaviour.v1` and `porygon.behaviour.command-lineage` remain readable and reproducible. Existing scores retain the algorithm version and scoring configuration that created them. New managed-profile candidates default to `porygon.behaviour.support-aware`; operators can explicitly select `porygon.behaviour.command-lineage` for compatibility. The internal baseline CLI still defaults to the historical `porygon.behaviour.v1` schema.
 
-## 1. The Scoping Granularity Problem
+A schema identifies the feature extractor as well as its data shape. Command-lineage and support-aware profiles bind the extractor contract hash into the feature document. The support-aware schema has its own bounded command-shape descriptors; it never stores raw command argument values or hashes of those values. An unsupported schema or mismatched extractor hash is rejected rather than reinterpreted.
 
-Traditional runtime detection systems profile workloads using mutable metadata like container names or image tags (e.g., `redis:latest`, `node:alpine`). This approach suffers from two severe vulnerabilities:
+## Historical distance scoring
 
-1. **Tag Poisoning / Registry Drift:** A malicious actor or upstream rebuild modifies the image behind `myapp:latest`. The security system applies an outdated profile or fails to flag unexpected binaries.
-2. **Context Blindness:** A container running with `--privileged` exhibits vastly different attack surfaces than the identical image running with a read-only root filesystem and dropped capabilities.
+The historical distance algorithms compare aggregate categorical distributions using the base-2 square-root Jensen–Shannon distance:
 
-Porygon solves this through the **Profile Scope Experiment**, evaluating four experimental arms:
+\[
+D(P,Q)=\sqrt{\tfrac12 KL_2(P\parallel M)+\tfrac12 KL_2(Q\parallel M)},\qquad M=\tfrac12(P+Q).
+\]
 
-| Profile Arm | Scope Key | Description | Granularity |
-|---|---|---|:---:|
-| `ARM-GLOBAL` | `*` | Single global baseline across all containers on the host. | Lowest |
-| `ARM-TAG` | `repo:tag` | Baseline keyed by mutable Docker tag (e.g. `nginx:latest`). | Low |
-| `ARM-DIGEST` | `sha256:...` | Baseline strictly bound to the immutable image SHA-256 content digest. | **High (Porygon Core)** |
-| `ARM-CONTEXT` | `sha256:... + perms` | Bound to digest PLUS host security context (privileged, caps, mounts). | **Optimal (Porygon Context)** |
+The distance is symmetric and bounded in `[0, 1]`. Empty observed families are unavailable evidence; they are not treated as a normal zero distribution. A nonempty family with no baseline support is maximally unsupported. The scorer renormalizes configured family and group weights across available evidence. `porygon.distance.v1` and `porygon.distance.command-lineage` retain their historical weights and outputs.
 
----
+Before replacing the isolated backend image, retain the accepted baseline/scoring/command-shape sources in a fresh ignored verification directory. After source freeze, compare those hash-verified modules against current legacy outputs on benign and novel fixtures:
 
-## 2. Baseline Profile Construction
-
-A Porygon baseline profile is generated during an explicitly approved observation or training interval for a specific image digest.
-
-```
-       +--------------------------------------------------------------+
-       |          Training Window Ingestion (Baseline Profiling)       |
-       |  - 500+ benign transactions exercised across container      |
-       |  - Extract every distinct process execution (exe, cmd, user) |
-       |  - Record parent-child lineage (ppid_comm -> child_comm)     |
-       +------------------------------+-------------------------------+
-                                      |
-                                      v
-       +--------------------------------------------------------------+
-       |             Deterministic Baseline Construction              |
-       |                                                              |
-       | 1. Executable Set:                                           |
-       |    {"/usr/sbin/nginx", "/usr/bin/find", "/bin/sh"}           |
-       |                                                              |
-       | 2. Execution Frequency Histogram:                            |
-       |    nginx: 94.2%, find: 4.8%, sh: 1.0%                        |
-       |                                                              |
-       | 3. Lineage Tree Allowlist:                                   |
-       |    init -> nginx                                             |
-       |    nginx -> worker_process                                   |
-       |    worker_process -> (no further forks permitted)            |
-       +------------------------------+-------------------------------+
-                                      |
-                                      v
-               Stored in PostgreSQL: container_baselines table
+```bash
+.venv/bin/python scripts/verify_legacy_scoring_reference.py \
+  --reference-dir "$LEGACY_REFERENCE_DIR" \
+  --manifest artifacts/local/remaining-verification/release-validation-20261030t151041z-1026137/manifest/release-manifest.json
 ```
 
----
+The verifier checks the accepted source tree and each archived file before importing them under an isolated package prefix. It compares legacy features, manifests, model hashes, scoring configs, observation keys, scores, components and explanations. It does not reuse fixtures from the current scorer as expected outputs.
 
-## 3. Rarity Scoring & Anomaly Formulas
+## Support-aware distance scoring
 
-When an event occurs in production, Porygon calculates an objective, calibrated rarity score rather than an arbitrary heuristic number.
+`porygon.behaviour.support-aware` uses the purpose-named scorer `porygon.distance.support-aware`. It records raw category counts, contributing-event counts, token mass, missing/unknown counts, process/runtime event counts, command evidence coverage, and fitted-window counts. Fitted windows are observations within an interval; they are not independent runs.
 
-### 1. Unseen Executable Penalty ($S_{exe}$)
-If the executable path $e$ was never observed during baseline training for digest $D$:
-$$S_{exe}(e, D) = 1.0$$
-If $e$ was observed during training:
-$$S_{exe}(e, D) = 0.0$$
+The support-aware scorer compares counts after a deterministic bounded-support mapping. It selects at most 128 tokens from the baseline/observation union by descending combined count with lexical tie-breaking; only counts outside that retained set are pooled into one `OTHER` bucket. A fixed-total `alpha = 0.5` uniform prior uses the same mixture weight for both distributions, `alpha / (min(N_baseline, N_observation) + alpha)`. This keeps identical empirical proportions at zero distance when sample sizes differ while letting the smaller sample control the shared smoothing weight. All empirical event mass remains represented, while an attacker cannot increase smoothing mass by introducing an arbitrary number of new tokens. The score includes the weighted aggregate distance and, when sufficiently supported, the maximum supported short-window distance. That maximum is an uncalibrated behavioral signal, not a false-positive probability.
 
-### 2. Frequency Rarity Score ($S_{freq}$)
-For binaries that appeared during training but with very low frequency:
-$$S_{freq}(e, D) = -\log_{10}\left(\frac{\text{count}(e) + 1}{\sum_{i} \text{count}(e_i) + |E|}\right)$$
-Where $|E|$ is Laplace smoothing over the vocabulary of observed executables.
+The initial support contract requires at least 20 baseline process events, at least 20 contributing baseline events for a categorical family, at least 3 observed process/family events, at least 3 eligible categorical families, and at least 80% usable command evidence. Modern profile intervals are capped at 30 days, 4,096 windows and 100,000 events; those bounds are included in the feature contract and checked before per-window allocation. A sparse interval over the bound is rejected, not truncated or treated as many independent runs. Malformed, oversized, token-limited, nesting-limited, and absent command lines are tracked as fallback or unavailable rather than usable. Temporal comparison divides each native scoring window into up to four deterministic segments; a supported segment needs at least three process events and three events for an eligible family. Temporal feature output is capped at 4,096 segment records and 100,000 events. If those bounds are exceeded, the temporal component is marked unsupported; valid aggregate evidence remains available.
 
-### 3. Parent Lineage Rarity ($S_{lineage}$)
-An executable may be benign in isolation (e.g., `/bin/bash`), but anomalous when spawned by an unauthorized parent (e.g., `apache2 -> bash` vs `sshd -> bash`):
-$$S_{lineage}(e_{child}, e_{parent}) = \begin{cases} 1.0 & \text{if } (e_{parent}, e_{child}) \notin \text{AllowedEdges}(D) \\ 0.0 & \text{otherwise} \end{cases}$$
+These are explicit engineering gates, not empirically calibrated thresholds. Insufficient baseline or observation support persists as `insufficient_data`; it is not converted to a baseline-like score. Structural process, runtime, and kernel rules remain independently evaluable. The advisory classifier currently accepts only `porygon.behaviour.v1`; other profile contracts report that incompatibility and do not get silently transformed for classifier input.
 
-### 4. Jensen-Shannon Divergence ($D_{JS}$)
-To detect slow-burn attacks and operational drift, Porygon computes the Jensen-Shannon Divergence between the baseline distribution $P$ and the recent observation window $Q$:
-$$M = \frac{1}{2}(P + Q)$$
-$$D_{JS}(P \parallel Q) = \frac{1}{2} D_{KL}(P \parallel M) + \frac{1}{2} D_{KL}(Q \parallel M)$$
-Where $D_{KL}$ is the Kullback-Leibler divergence. When $D_{JS} > 0.45$, a statistical distribution drift alert is fired.
+Continuous assessment currently requires an enrolled, quality-passing managed profile before it creates an anomaly score and detection run. With that profile present, `insufficient_data` skips only the behavioral-distance rule; process, runtime, custom and selected kernel rules can still be evaluated. A target without any profile is marked unprofiled and the scheduled worker does not create a detection run, so it has no continuous baseline-independent rule coverage yet. Workbench preview can evaluate an explicit bounded selection, but it is not a continuous alert. Do not claim always-on structural coverage for unprofiled targets.
 
----
+## Numeric and score-band interpretation
 
-## 4. Calibrated Decision Thresholds
+Numeric deviations use the configured median, standard deviation, robust scale derived from the 95th percentile, scale floors, and z-score tolerance/saturation in the persisted scoring configuration. Score bands are descriptive routing labels from that configuration. Neither the legacy bands nor the support-aware temporal maximum establish probability of compromise or empirical calibration. Operators must review the event evidence and support/coverage explanations.
 
-Rather than guessing alert thresholds, Porygon provides `scripts/check_research_protocol.py` and `scripts/probe_context_variants.py` to calibrate anomaly thresholds:
+## Operator workflow
 
-| Rarity Score Range | Classification | Action |
-|---|---|---|
-| $S < 0.15$ | **Benign / Normal** | Permitted without alert |
-| $0.15 \le S < 0.65$ | **Low-Confidence Drift** | Telemetry recorded; logged for operator review |
-| $0.65 \le S < 0.85$ | **Elevated Anomaly** | Incident generated; dashboard alert; MITRE tagging |
-| $S \ge 0.85$ | **Critical Anomaly** | Immediate containment recommendation issued |
+Select a schema explicitly when building a profile and retain the returned feature and scoring contract with the profile. The managed-profile workflow uses the support-aware schema by default; historical profiles are not rewritten. The CLI accepts both historical and support-aware contracts:
+
+```bash
+python3 scripts/porygon_baseline.py build --feature-schema porygon.behaviour.support-aware ...
+python3 scripts/porygon_score.py compute --algorithm porygon.distance.support-aware ...
+```
+
+Use `insufficient_data` and coverage explanations to distinguish unavailable telemetry from baseline-like behavior. A score is behavioral evidence only and does not trigger automatic containment.
+
+For one observed, owned disposable-container window, `scripts/verify_support_aware_live.py` reads the actual selected event IDs, derives support/coverage/temporal metadata, and computes a non-persisted score. It requires a managed support-aware baseline whose approved host and container exactly match the observed target and whose benign training sample meets the support gates. An optional legacy profile ID produces an explicit historical comparison through that profile's own feature and algorithm contract. The verifier does not create profiles or scores, promote models, or invoke response actions.
+
+### Preparing a fresh owned target
+
+Use a new disposable target for this workflow. Existing acceptance targets are often removed and cannot be reused as managed baseline scope. Run this only in the isolated `porygon-service-trust` project after the joint verification window opens. Keep containment disabled. The cached backend image ID is an acceptable immutable target identity when that local build has no repository digest; the managed target records `local:sha256:<image-id>` and selects events by exact `image_id` under the same host and container. Repository digests continue to use the existing digest path. Never pull an image for this check.
+
+The ignored executable `artifacts/local/prepare_support_aware_live.py` automates this path from the selected backend image ID. It creates an owned internal network and bounded target, generates 30 benign executions in both the baseline and separate observation windows, requires 20 resolved events across at least three five-second buckets, proposes a managed support-aware candidate without activating it, writes a private receipt, and removes only its labeled target and network. It reads `PORYGON_OPERATOR_API_TOKEN` from the process environment or `.env` without printing it. Invoke it only during the joint verification window:
+
+```bash
+.venv/bin/python artifacts/local/prepare_support_aware_live.py "$DOCKER_CONTEXT" "$API_ORIGIN"
+```
+
+The explicit `list_owned_window_events.py` and `verify_support_aware_live.py` commands below remain useful for inspecting an already prepared target and profile.
+
+Create an internal network and a bounded disposable container with no mounts. The target stays alive for profile and observation collection; its only work is local Python process creation.
+
+```bash
+set -eu
+RUN_ID="support-aware-$(date -u +%Y%m%dT%H%M%SZ)"
+NETWORK="porygon-attack-control-${RUN_ID}"
+docker --context "$DOCKER_CONTEXT" network create --internal \
+  --label "io.porygon.attack-control.run=${RUN_ID}" "$NETWORK"
+TARGET_ID=$(docker --context "$DOCKER_CONTEXT" run -d --pull=never \
+  --network "$NETWORK" --name "$RUN_ID" \
+  --label "io.porygon.attack-control.run=${RUN_ID}" \
+  --label io.porygon.owned-disposable=true \
+  --label com.porygon.protected=false \
+  --cap-drop=ALL --security-opt=no-new-privileges:true \
+  --pids-limit=32 --memory=128m --cpus=0.5 \
+  --entrypoint python "$IMAGE_ID" -c 'import time; time.sleep(3600)')
+HOST_ID=$(docker --context "$DOCKER_CONTEXT" info --format '{{.ID}}')
+```
+
+Generate 30 benign process executions, spaced across at least three five-second windows. Record controller start/end times, then allow ingestion to finish. Use the event lister to confirm at least 20 resolved events for this exact daemon, container and digest, with actual timestamps across at least three distinct five-second buckets. Build training bounds from the first/last observed event timestamps with a small margin, and ensure those bounds cover at least three windows.
+
+```bash
+WORKLOAD_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+for index in $(seq 1 30); do
+  docker --context "$DOCKER_CONTEXT" exec "$TARGET_ID" \
+    python -c 'import os; os.getpid()' >/dev/null
+  sleep 0.55
+done
+WORKLOAD_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
+After telemetry ingestion, list the actual IDs and timestamps. The lister validates the isolated stack binding, exact target label, no mounts, and the target's owned internal network; it emits no command arguments. Require at least 20 rows and at least three nonempty five-second buckets, then set training bounds around the first and last actual event timestamps.
+
+```bash
+.venv/bin/python scripts/list_owned_window_events.py \
+  --compose-project porygon-service-trust \
+  --docker-context "$DOCKER_CONTEXT" --api-origin "$API_ORIGIN" \
+  --host "$HOST_ID" --container "$TARGET_ID" --image-digest "$IMAGE_DIGEST" \
+  --start "$WORKLOAD_START" --end "$WORKLOAD_END"
+```
+
+Enroll the exact host/container/digest through `POST /operator/v1/assessment-targets` with a completed timezone-aware `start_at` and `window_seconds: 5`. Its JSON fields are `docker_host_id: HOST_ID`, `container_id: TARGET_ID`, `image_digest: IMAGE_DIGEST`, `start_at: WORKLOAD_START`, and `allowed_lateness_seconds: 0`. Then propose, without activating, a managed candidate through `POST /operator/v1/assessment-targets/{target_id}/profiles` with this body shape:
+
+```json
+{
+  "intervals": [
+    {
+      "name": "owned-benign-sample",
+      "label": "benign",
+      "start_at": "FIRST_EVENT_MINUS_MARGIN",
+      "end_at": "LAST_EVENT_PLUS_MARGIN"
+    }
+  ],
+  "feature_schema_version": "porygon.behaviour.support-aware",
+  "reference": "owned disposable target benign baseline",
+  "minimum_process_events": 20,
+  "minimum_nonempty_windows": 3
+}
+```
+
+Supply actual event-derived timestamp values for the bounds, covering only the benign workload. Keep the returned `profile_id`, `artifact_hash`, and complete quality checks. Stop if the event list or quality report misses any support requirement; do not lower thresholds or add attack-shaped events to training.
+
+Generate a separate completed window on the same still-running target, wait for collection, and call:
+
+```bash
+.venv/bin/python scripts/verify_support_aware_live.py \
+  --compose-project porygon-service-trust \
+  --docker-context "$DOCKER_CONTEXT" --api-origin "$API_ORIGIN" \
+  --host "$HOST_ID" --container "$TARGET_ID" --image-digest "$IMAGE_DIGEST" \
+  --profile-id "$SUPPORT_PROFILE_ID" --start "$OBSERVATION_START" --end "$OBSERVATION_END"
+```
+
+The receipt must show the exact selected event IDs, support and missingness, temporal component status, and aggregate score. It is an integration observation, not a measured attack-detection rate. To confirm legacy compatibility, pass `--legacy-profile-id` for an existing quality-passing historical profile with the same image digest; this comparison uses that profile's own schema and algorithm. Do not activate the candidate or promote a model for this check. After preserving the receipt, inspect the run label and remove only this target and its matching internal network.

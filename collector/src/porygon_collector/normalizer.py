@@ -13,6 +13,22 @@ from porygon_collector.event_identity import (
 from porygon_collector.spool import OutboxStore
 
 
+def _reduce_port_bindings(value: Any) -> dict[str, Any] | None:
+    """Retain only Docker publication identity; absent inspection stays unknown."""
+    if not isinstance(value, dict):
+        return None
+    result = {}
+    for port, bindings in sorted(value.items()):
+        if not isinstance(port, str):
+            continue
+        result[port] = (
+            [{"HostIp": item.get("HostIp"), "HostPort": item.get("HostPort")}
+             for item in bindings if isinstance(item, dict)]
+            if isinstance(bindings, list) else None
+        )
+    return result
+
+
 def _canonical_repository(value: str | None) -> str | None:
     if not value:
         return None
@@ -86,6 +102,7 @@ def _reduce_mounts(mounts: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
 
 def build_container_snapshot(api_client, container_id: str) -> dict[str, Any]:
     container = api_client.inspect_container(container_id)
+    inspected_at = datetime.now(timezone.utc).isoformat()
     config = container.get("Config") or {}
     host_config = container.get("HostConfig") or {}
     state = container.get("State") or {}
@@ -121,6 +138,7 @@ def build_container_snapshot(api_client, container_id: str) -> dict[str, Any]:
 
     name = (container.get("Name") or "").lstrip("/") or None
     return {
+        "observed_at": inspected_at,
         "container": {
             "id": container.get("Id") or container_id,
             "name": name,
@@ -154,6 +172,7 @@ def build_container_snapshot(api_client, container_id: str) -> dict[str, Any]:
             "privileged": host_config.get("Privileged"),
             "readonly_rootfs": host_config.get("ReadonlyRootfs"),
             "network_mode": host_config.get("NetworkMode"),
+            "port_bindings": _reduce_port_bindings(host_config.get("PortBindings")),
             "pid_mode": host_config.get("PidMode"),
             "ipc_mode": host_config.get("IpcMode"),
             "uts_mode": host_config.get("UTSMode"),
@@ -163,6 +182,9 @@ def build_container_snapshot(api_client, container_id: str) -> dict[str, Any]:
             "security_opt": host_config.get("SecurityOpt") or [],
             "devices": host_config.get("Devices") or [],
         },
+        "network_settings": {"ports": _reduce_port_bindings(
+            (container.get("NetworkSettings") or {}).get("Ports")
+        )},
         "networks": _reduce_networks(container.get("NetworkSettings") or {}),
         "mounts": _reduce_mounts(container.get("Mounts")),
         "image": image_details,
@@ -234,6 +256,15 @@ def normalize_event(
                 snapshot = store.get_cached_container(
                     container_id, docker_host_id=docker_host_id
                 ) or {}
+
+    if container_id and event_type == "container" and action in {"die", "stop", "destroy"}:
+        # Lifecycle evidence is separate from the cached inspection. Never renew
+        # observed_at or erase immutable identity when Docker has removed it.
+        snapshot = {**snapshot, "lifecycle_observation": {
+            "action": action, "occurred_at": occurred_at.isoformat(),
+            "time_nano": time_nano, "running": False,
+        }}
+        store.cache_container(container_id, snapshot, docker_host_id=docker_host_id)
 
     container_info = snapshot.get("container", {})
     config = snapshot.get("config", {})

@@ -69,6 +69,7 @@ def main() -> int:
         choices=[
             "porygon.distance.v1",
             "porygon.distance.command-lineage",
+            "porygon.distance.support-aware",
             "porygon.distance.rare-execution",
         ],
         help="Explicit scoring policy; defaults to the profile contract",

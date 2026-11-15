@@ -41,7 +41,10 @@ with response:
 
 
 def open_backend(
-    request: urllib.request.Request, timeout: float = 30
+    request: urllib.request.Request,
+    timeout: float = 30,
+    *,
+    runtime_binding=None,
 ) -> urllib.response.addinfourl:
     parsed = urllib.parse.urlsplit(request.full_url)
     path = parsed.path + ("?" + parsed.query if parsed.query else "")
@@ -53,8 +56,13 @@ def open_backend(
         "timeout": timeout,
     }
     try:
+        if runtime_binding is None:
+            argv = ["docker", "compose", "exec", "-T", "backend", "python", "-c", BRIDGE]
+        else:
+            backend_id = runtime_binding.services["backend"]["container_id"]
+            argv = runtime_binding.docker_argv("exec", "-i", backend_id, "python", "-c", BRIDGE)
         result = subprocess.run(
-            ["docker", "compose", "exec", "-T", "backend", "python", "-c", BRIDGE],
+            argv,
             input=json.dumps(payload),
             capture_output=True,
             text=True,
@@ -83,11 +91,14 @@ def open_backend(
 
 
 def open_api(
-    request: urllib.request.Request, timeout: float = 30
+    request: urllib.request.Request,
+    timeout: float = 30,
+    *,
+    runtime_binding=None,
 ) -> urllib.response.addinfourl:
     parsed = urllib.parse.urlsplit(request.full_url)
     if parsed.hostname in {"127.0.0.1", "localhost", "::1"} and (
         parsed.path == "/internal" or parsed.path.startswith("/internal/")
     ):
-        return open_backend(request, timeout)
+        return open_backend(request, timeout, runtime_binding=runtime_binding)
     return urllib.request.urlopen(request, timeout=timeout)

@@ -19,10 +19,12 @@ and its output is refused if run against a dataset that already contains
 confirmatory-eligible test-split evidence for the same contrasts (see
 `assert_no_confirmatory_contamination`).
 """
+
 from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import importlib.util
 import math
 import subprocess
@@ -33,7 +35,12 @@ from pathlib import Path
 from typing import Sequence
 
 from experiments.analysis import exact_mcnemar_p
-from experiments.artifacts import ArtifactError, load_json, sha256_file, write_versioned_json
+from experiments.artifacts import (
+    ArtifactError,
+    load_json,
+    sha256_file,
+    write_versioned_json,
+)
 from experiments.scope import SCOPES, compare_scopes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,7 +66,10 @@ def _binom_sf_ge(k: int, n: int, p: float) -> float:
         return 0.0
     if k <= 0:
         return 1.0
-    return min(1.0, sum(math.comb(n, i) * (p**i) * ((1 - p) ** (n - i)) for i in range(k, n + 1)))
+    return min(
+        1.0,
+        sum(math.comb(n, i) * (p**i) * ((1 - p) ** (n - i)) for i in range(k, n + 1)),
+    )
 
 
 def upper_95_binomial_bound(successes: int, trials: int) -> float:
@@ -70,14 +80,18 @@ def upper_95_binomial_bound(successes: int, trials: int) -> float:
         return 0.5
     from experiments.analysis import clopper_pearson_interval
 
-    return clopper_pearson_interval(successes, trials, confidence=0.90).upper  # 90% two-sided = 95% one-sided upper
+    return clopper_pearson_interval(
+        successes, trials, confidence=0.90
+    ).upper  # 90% two-sided = 95% one-sided upper
 
 
 @dataclass(frozen=True)
 class PowerEnumerationResult:
     contrast_id: str
     nuisance_discordant_p: float
-    required_count: int | None  # None if no count through MAX_CANDIDATE_COUNT reaches target power
+    required_count: (
+        int | None
+    )  # None if no count through MAX_CANDIDATE_COUNT reaches target power
     achieved_power: float | None
     alpha: float
 
@@ -111,7 +125,9 @@ def enumerate_fpr_power(
     exact two-sided test as experiments.analysis.exact_mcnemar_p.
     """
     if not (0.0 < baseline_fpr < 1.0):
-        raise ValueError("baseline_fpr must be a real pilot-estimated proportion strictly between 0 and 1")
+        raise ValueError(
+            "baseline_fpr must be a real pilot-estimated proportion strictly between 0 and 1"
+        )
     target_fpr = baseline_fpr * (1 - material_relative_reduction)
     p_effect = (baseline_fpr * (1 - target_fpr)) / (
         baseline_fpr * (1 - target_fpr) + (1 - baseline_fpr) * target_fpr
@@ -122,19 +138,27 @@ def enumerate_fpr_power(
         power = 0.0
         for b10 in range(0, n_discordant + 1):
             b01 = n_discordant - b10
-            prob = math.comb(n_discordant, b10) * (p_effect**b10) * ((1 - p_effect) ** b01)
+            prob = (
+                math.comb(n_discordant, b10) * (p_effect**b10) * ((1 - p_effect) ** b01)
+            )
             larger = max(b10, b01)
             p_value = min(1.0, 2 * _binom_sf_ge(larger, n_discordant, 0.5))
             if p_value < alpha:
                 power += prob
         if power >= target_power:
             return PowerEnumerationResult(
-                contrast_id=contrast_id, nuisance_discordant_p=nuisance_discordant_p,
-                required_count=n, achieved_power=power, alpha=alpha,
+                contrast_id=contrast_id,
+                nuisance_discordant_p=nuisance_discordant_p,
+                required_count=n,
+                achieved_power=power,
+                alpha=alpha,
             )
     return PowerEnumerationResult(
-        contrast_id=contrast_id, nuisance_discordant_p=nuisance_discordant_p,
-        required_count=None, achieved_power=None, alpha=alpha,
+        contrast_id=contrast_id,
+        nuisance_discordant_p=nuisance_discordant_p,
+        required_count=None,
+        achieved_power=None,
+        alpha=alpha,
     )
 
 
@@ -155,7 +179,11 @@ def enumerate_recall_power(
         # lower confidence bound clears (reference_recall - margin_pp).
         power = 0.0
         for successes in range(0, n + 1):
-            prob = math.comb(n, successes) * (reference_recall**successes) * ((1 - reference_recall) ** (n - successes))
+            prob = (
+                math.comb(n, successes)
+                * (reference_recall**successes)
+                * ((1 - reference_recall) ** (n - successes))
+            )
             from experiments.analysis import clopper_pearson_interval
 
             ci = clopper_pearson_interval(successes, n, confidence=1 - 2 * alpha)
@@ -163,12 +191,18 @@ def enumerate_recall_power(
                 power += prob
         if power >= target_power:
             return PowerEnumerationResult(
-                contrast_id=contrast_id, nuisance_discordant_p=reference_recall,
-                required_count=n, achieved_power=power, alpha=alpha,
+                contrast_id=contrast_id,
+                nuisance_discordant_p=reference_recall,
+                required_count=n,
+                achieved_power=power,
+                alpha=alpha,
             )
     return PowerEnumerationResult(
-        contrast_id=contrast_id, nuisance_discordant_p=reference_recall,
-        required_count=None, achieved_power=None, alpha=alpha,
+        contrast_id=contrast_id,
+        nuisance_discordant_p=reference_recall,
+        required_count=None,
+        achieved_power=None,
+        alpha=alpha,
     )
 
 
@@ -223,10 +257,18 @@ def build_sample_size_lock(
     results: list[PowerEnumerationResult] = []
     for contrast_id, (successes, trials) in pilot_discordant_pairs.items():
         nuisance = upper_95_binomial_bound(successes, trials)
-        results.append(enumerate_fpr_power(
-            contrast_id, baseline_fpr=pilot_baseline_fpr[contrast_id], nuisance_discordant_p=nuisance,
-        ))
-    results.append(enumerate_recall_power("recall_non_inferiority", reference_recall=reference_recall))
+        results.append(
+            enumerate_fpr_power(
+                contrast_id,
+                baseline_fpr=pilot_baseline_fpr[contrast_id],
+                nuisance_discordant_p=nuisance,
+            )
+        )
+    results.append(
+        enumerate_recall_power(
+            "recall_non_inferiority", reference_recall=reference_recall
+        )
+    )
 
     feasible = [r for r in results if r.required_count is not None]
     if len(feasible) < len(results):
@@ -308,7 +350,9 @@ def _benign_positive_map(scope_result: dict, scope: str) -> dict[str, bool]:
     }
 
 
-def _reject_degenerate_baseline_fpr(contrast_id: str, baseline_fpr: float, source: str) -> None:
+def _reject_degenerate_baseline_fpr(
+    contrast_id: str, baseline_fpr: float, source: str
+) -> None:
     """Refuse a coarser-arm baseline FPR that is constant (0.0 or 1.0) across
     the given pilot evidence.
 
@@ -357,13 +401,17 @@ def estimate_pilot_inputs(run_dirs: list[Path], base_url: str) -> dict:
     which only estimates numbers from whatever run directories it is given.
     """
     if not run_dirs:
-        raise ValueError("estimate_pilot_inputs requires at least one pilot run directory")
+        raise ValueError(
+            "estimate_pilot_inputs requires at least one pilot run directory"
+        )
 
     fpr_successes = {contrast_id: 0 for contrast_id, _, _ in PRIMARY_CONTRASTS}
     fpr_trials = {contrast_id: 0 for contrast_id, _, _ in PRIMARY_CONTRASTS}
     discordant_successes = {contrast_id: 0 for contrast_id, _, _ in PRIMARY_CONTRASTS}
     discordant_trials = {contrast_id: 0 for contrast_id, _, _ in PRIMARY_CONTRASTS}
-    contributing_trial_ids: dict[str, list[str]] = {contrast_id: [] for contrast_id, _, _ in PRIMARY_CONTRASTS}
+    contributing_trial_ids: dict[str, list[str]] = {
+        contrast_id: [] for contrast_id, _, _ in PRIMARY_CONTRASTS
+    }
     global_true_positives = 0
     global_scenario_n = 0
     source_runs: list[str] = []
@@ -376,10 +424,14 @@ def estimate_pilot_inputs(run_dirs: list[Path], base_url: str) -> dict:
         global_true_positives += scope_result["scopes"]["ARM-GLOBAL"]["true_positives"]
         global_scenario_n += scope_result["scopes"]["ARM-GLOBAL"]["scenario_runs"]
 
-        positive_by_scope = {scope: _benign_positive_map(scope_result, scope) for scope in SCOPES}
+        positive_by_scope = {
+            scope: _benign_positive_map(scope_result, scope) for scope in SCOPES
+        }
 
         for contrast_id, arm_a, arm_b in PRIMARY_CONTRASTS:
-            fpr_successes[contrast_id] += scope_result["scopes"][arm_b]["false_positives"]
+            fpr_successes[contrast_id] += scope_result["scopes"][arm_b][
+                "false_positives"
+            ]
             fpr_trials[contrast_id] += scope_result["scopes"][arm_b]["benign_runs"]
 
             a_map, b_map = positive_by_scope[arm_a], positive_by_scope[arm_b]
@@ -391,7 +443,9 @@ def estimate_pilot_inputs(run_dirs: list[Path], base_url: str) -> dict:
                 arm_a_positive=[a_map[t] for t in common],
                 arm_b_positive=[b_map[t] for t in common],
             )
-            discordant_successes[contrast_id] += mcnemar.discordant_a_only + mcnemar.discordant_b_only
+            discordant_successes[contrast_id] += (
+                mcnemar.discordant_a_only + mcnemar.discordant_b_only
+            )
             discordant_trials[contrast_id] += mcnemar.n_pairs
             contributing_trial_ids[contrast_id].extend(common)
 
@@ -404,7 +458,9 @@ def estimate_pilot_inputs(run_dirs: list[Path], base_url: str) -> dict:
                 f"were found under {arm_b} across {source_runs}; cannot estimate a baseline FPR"
             )
         baseline_fpr = fpr_successes[contrast_id] / trials
-        _reject_degenerate_baseline_fpr(contrast_id, baseline_fpr, source=str(source_runs))
+        _reject_degenerate_baseline_fpr(
+            contrast_id, baseline_fpr, source=str(source_runs)
+        )
         contrasts[contrast_id] = {
             "discordant_successes": discordant_successes[contrast_id],
             "discordant_trials": discordant_trials[contrast_id],
@@ -472,7 +528,9 @@ def _study_manifest_evidence_classes() -> list[str]:
     instead of depending on this repository's real committed evidence.
     """
     local_dir = LOCAL_ARTIFACTS_DIR
-    manifests = sorted(local_dir.glob("**/study-manifest*.json")) if local_dir.is_dir() else []
+    manifests = (
+        sorted(local_dir.glob("**/study-manifest*.json")) if local_dir.is_dir() else []
+    )
     classes: list[str] = []
     for path in manifests:
         try:
@@ -521,14 +579,18 @@ def write_sample_size_lock(
         reviewer_approval_status = "approved"
     else:
         reviewer_approval_status = "pending"
-        for role, problems in (reviewer_approvals.get("approval_problems") or {}).items():
+        for role, problems in (
+            reviewer_approvals.get("approval_problems") or {}
+        ).items():
             blocking_reasons.extend(f"{role}: {problem}" for problem in problems)
         independence = reviewer_approvals.get("independence") or {}
         if independence.get("independent") is False:
             blocking_reasons.append(f"independence: {independence.get('reason')}")
         protocol_status = reviewer_approvals.get("protocol_status")
         if protocol_status != "frozen":
-            blocking_reasons.append(f"protocol_status is {protocol_status!r}, not 'frozen'")
+            blocking_reasons.append(
+                f"protocol_status is {protocol_status!r}, not 'frozen'"
+            )
 
     doc = {
         "schema_version": "porygon.sample-size-lock.v1",
@@ -572,7 +634,10 @@ def _discover_pilot_run_dirs() -> list[Path]:
             doc = load_json(manifest)
         except (ArtifactError, OSError):
             continue
-        if doc.get("kind") == "real_container_pilot" and doc.get("research_eligible") is False:
+        if (
+            doc.get("kind") == "real_container_pilot"
+            and doc.get("research_eligible") is False
+        ):
             found.append(run_dir)
     return found
 
@@ -593,19 +658,23 @@ def _cmd_build(args: argparse.Namespace) -> int:
         print(f"[refused] {exc}", file=sys.stderr)
         return 1
 
-    if getattr(args,'analysis_policy',None) is not None:
+    if getattr(args, "analysis_policy", None) is not None:
         from experiments.frozen_analysis import validate_policy
         from experiments.artifacts import sha256_json
-        policy=validate_policy(json.loads(args.analysis_policy.read_text()))
-        inputs['analysis_policy_sha256']=sha256_json(policy)
-        if getattr(args,'analysis_review',None) is not None:
-            inputs['analysis_review']=json.loads(args.analysis_review.read_text())
+
+        policy = validate_policy(json.loads(args.analysis_policy.read_text()))
+        inputs["analysis_policy_sha256"] = sha256_json(policy)
+        if getattr(args, "analysis_review", None) is not None:
+            inputs["analysis_review"] = json.loads(args.analysis_review.read_text())
     lock = build_sample_size_lock(
         pilot_discordant_pairs={
             contrast_id: (c["discordant_successes"], c["discordant_trials"])
             for contrast_id, c in inputs["contrasts"].items()
         },
-        pilot_baseline_fpr={contrast_id: c["baseline_fpr"] for contrast_id, c in inputs["contrasts"].items()},
+        pilot_baseline_fpr={
+            contrast_id: c["baseline_fpr"]
+            for contrast_id, c in inputs["contrasts"].items()
+        },
         reference_recall=inputs["reference_recall"],
     )
 
@@ -614,7 +683,10 @@ def _cmd_build(args: argparse.Namespace) -> int:
 
     try:
         path = write_sample_size_lock(
-            inputs, lock, reviewer_approvals=reviewer_approvals, out_dir=args.out,
+            inputs,
+            lock,
+            reviewer_approvals=reviewer_approvals,
+            out_dir=args.out,
         )
     except ValueError as exc:
         print(f"[refused] {exc}", file=sys.stderr)
@@ -623,7 +695,9 @@ def _cmd_build(args: argparse.Namespace) -> int:
     print(f"wrote {path}")
     if lock.feasibility_failure:
         print(f"[warning] {lock.note}", file=sys.stderr)
-    status = "approved" if reviewer_approvals.get("confirmatory_permitted") else "pending"
+    status = (
+        "approved" if reviewer_approvals.get("confirmatory_permitted") else "pending"
+    )
     print(f"reviewer_approval_status: {status}")
     return 0
 
@@ -633,16 +707,31 @@ def main(argv: list[str] | None = None) -> int:
         description="ART-DES-001: estimate pilot inputs and write the sample-size lock."
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    build = sub.add_parser("build", help="estimate pilot inputs and write the ART-DES-001 lock")
+    build = sub.add_parser(
+        "build", help="estimate pilot inputs and write the ART-DES-001 lock"
+    )
     build.add_argument(
-        "--run-dir", type=Path, action="append", default=None,
+        "--run-dir",
+        type=Path,
+        action="append",
+        default=None,
         help="pilot run directory (repeatable); default: auto-discover under artifacts/experiments/local",
     )
-    build.add_argument("--analysis-review",type=Path,help="actual independent human review of exact policy/source/power result")
-    build.add_argument("--analysis-policy",type=Path,help="reviewed exact frozen analysis/quality choices to bind before collection")
+    build.add_argument(
+        "--analysis-review",
+        type=Path,
+        help="actual independent human review of exact policy/source/power result",
+    )
+    build.add_argument(
+        "--analysis-policy",
+        type=Path,
+        help="reviewed exact frozen analysis/quality choices to bind before collection",
+    )
     build.add_argument("--base-url", default="http://127.0.0.1:8000")
     build.add_argument(
-        "--out", type=Path, default=None,
+        "--out",
+        type=Path,
+        default=None,
         help="directory to write the lock under (default: artifacts/experiments/protocol-v1/design)",
     )
     args = parser.parse_args(argv)

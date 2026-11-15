@@ -19,13 +19,28 @@ MANIFEST_PATH="$ARTIFACT_DIR/verification-manifest.json"
 WORK_DIR="$(mktemp -d)"
 RESULTS_PATH="$WORK_DIR/results.tsv"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+VERIFICATION_RUN_ID="${PORYGON_VERIFY_RUN_ID:-$(date -u +%Y%m%dt%H%M%Sz)-$$}"
+STATUS_FINALIZED=false
 mkdir -p "$ARTIFACT_DIR"
 : > "$RESULTS_PATH"
 
+persist_status() {
+  local status_value="$1" completed="$2"
+  python3 scripts/verification_receipts.py status \
+    --run-id "$VERIFICATION_RUN_ID" \
+    --results "$RESULTS_PATH" \
+    --status "$status_value" \
+    --completed "$completed" >/dev/null
+}
+
 cleanup() {
+  if [[ "$STATUS_FINALIZED" != true ]]; then
+    persist_status interrupted false >/dev/null 2>&1 || true
+  fi
   rm -rf "$WORK_DIR"
 }
 trap cleanup EXIT
+persist_status running false
 
 log() {
   printf '[verify:%s] %s\n' "$MODE" "$*"
@@ -37,6 +52,10 @@ record_result() {
   local duration="$3"
   local command_label="$4"
   printf '%s\t%s\t%s\t%s\n' "$name" "$status_value" "$duration" "$command_label" >> "$RESULTS_PATH"
+  persist_status running false || {
+    log "could not persist verification stage status"
+    return 74
+  }
 }
 
 run_gate() {
@@ -45,14 +64,15 @@ run_gate() {
   shift 2
   local started_seconds="$SECONDS"
   log "starting ${name}"
-  "$@"
-  local result=$?
-  if [[ "$result" -eq 0 ]]; then
-    record_result "$name" passed "$((SECONDS - started_seconds))" "$command_label"
+  local result=0
+  if "$@" </dev/null; then
+    record_result "$name" passed "$((SECONDS - started_seconds))" "$command_label" || return $?
     log "passed ${name}"
     return 0
+  else
+    result=$?
   fi
-  record_result "$name" failed "$((SECONDS - started_seconds))" "$command_label"
+  record_result "$name" failed "$((SECONDS - started_seconds))" "$command_label" || return $?
   log "failed ${name} (exit ${result})"
   return "$result"
 }
@@ -282,13 +302,14 @@ unit_checks() {
     fi
     docker compose run --rm --no-deps "${build_options[@]}" --entrypoint pytest "$service_name" -q || return $?
   done
-  # The experiment harness is stdlib-only and runs on the host rather than in a service image.
-  python3 -m pytest experiments/tests scripts/tests -q || return $?
+  # Host cross-service contracts import the real backend and collector packages.
+  PYTHONPATH="$ROOT_DIR/backend/src:$ROOT_DIR/collector/src${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m pytest experiments/tests scripts/tests -q || return $?
 }
 
 live_safe_checks() {
-  ./scripts/verify_event_ingestion.sh
-  ./scripts/verify_detection_engine.sh
+  ./scripts/verify_event_ingestion.sh </dev/null || return $?
+  ./scripts/verify_detection_engine.sh </dev/null || return $?
 }
 
 experiment_live_checks() {
@@ -421,7 +442,10 @@ main_status=$?
 set -e
 if [[ "$main_status" -eq 0 ]]; then
   write_manifest passed
+  persist_status passed true
 else
   write_manifest failed
+  persist_status failed true
 fi
+STATUS_FINALIZED=true
 exit "$main_status"

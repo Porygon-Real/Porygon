@@ -68,7 +68,11 @@ def main() -> int:
     build.add_argument("--notes")
     build.add_argument(
         "--feature-schema",
-        choices=["porygon.behaviour.v1", "porygon.behaviour.command-lineage"],
+        choices=[
+            "porygon.behaviour.v1",
+            "porygon.behaviour.command-lineage",
+            "porygon.behaviour.support-aware",
+        ],
         default="porygon.behaviour.v1",
     )
     build.add_argument("--window-seconds", type=int, default=60)

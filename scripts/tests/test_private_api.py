@@ -38,6 +38,41 @@ def test_internal_requests_preserve_method_body_and_service_authentication(monke
         assert json.load(response) == {"ok": True}
 
 
+def test_bound_internal_request_targets_exact_validated_backend_id(monkeypatch):
+    binding = SimpleNamespace(
+        services={"backend": {"container_id": "backend-container-fixture"}},
+        docker_argv=lambda *args: ["docker", "--context", "study-context", *args],
+    )
+
+    def execute(command, **options):
+        assert command == [
+            "docker",
+            "--context",
+            "study-context",
+            "exec",
+            "-i",
+            "backend-container-fixture",
+            "python",
+            "-c",
+            private_api.BRIDGE,
+        ]
+        assert json.loads(options["input"])["path"] == "/internal/v1/example"
+        return SimpleNamespace(
+            stdout=json.dumps(
+                {
+                    "status": 200,
+                    "content_type": "application/json",
+                    "body": base64.b64encode(b'{"bound":true}').decode(),
+                }
+            )
+        )
+
+    monkeypatch.setattr(private_api.subprocess, "run", execute)
+    request = urllib.request.Request("http://127.0.0.1:8000/internal/v1/example")
+    with private_api.open_api(request, runtime_binding=binding) as response:
+        assert json.load(response) == {"bound": True}
+
+
 @pytest.mark.parametrize(
     "url",
     [

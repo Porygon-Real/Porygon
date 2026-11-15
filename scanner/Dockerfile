@@ -8,7 +8,8 @@ ARG TRIVY_SHA256_ARM64=2ca2c023109c2db6b2b77366b6717291452d4531167377d95c79547f0
 ARG SOURCE_COMMIT=unrecorded
 ARG SOURCE_TREE_SHA256=unrecorded
 ARG DEPENDENCY_LOCK_SHA256=unrecorded
-LABEL org.opencontainers.image.revision=$SOURCE_COMMIT \
+LABEL com.porygon.service=scanner \
+      org.opencontainers.image.revision=$SOURCE_COMMIT \
       com.porygon.source-tree-sha256=$SOURCE_TREE_SHA256 \
       com.porygon.dependency-lock-sha256=$DEPENDENCY_LOCK_SHA256
 

@@ -19,6 +19,7 @@ from typing import Any
 
 from experiments import real
 from experiments.artifacts import atomic_write_json
+from experiments.run import timestamp_run_id
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -75,7 +76,7 @@ def run_tag_drift_experiment(
     under the identical human_tag so ARM-TAG's pooled reference genuinely
     spans two different real digests, exactly as the protocol specifies.
     """
-    run_id = run_id or "tagdrift-" + datetime.now(timezone.utc).strftime("%Y%m%dt%H%M%SZ")
+    run_id = run_id or timestamp_run_id("tagdrift")
     versions = load_versions(family)
     v1_key = next(k for k in versions if k.endswith("V1"))
     v2_key = next(k for k in versions if k.endswith("V2"))

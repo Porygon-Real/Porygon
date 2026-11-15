@@ -9,6 +9,8 @@ collection stays refused until the protocol reports frozen status.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 from concurrent.futures import ThreadPoolExecutor
 import math
@@ -25,14 +27,17 @@ from typing import Any
 
 from experiments.artifacts import sha256_bytes
 from experiments.context import context_hash, runtime_context
+from experiments.runtime_binding import RuntimeBinding
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE_SCOPE_DOC = ROOT / "docs/research/profile-scope-experiment.md"
 LABEL_RUN = "porygon.experiment.run"
 LABEL_TRIAL = "porygon.experiment.trial"
 CANARY = "porygon-canary"
-TELEMETRY_CONTAINER = "porygon-telemetry-1"
 FALCO_EVENT_PATH = "/var/log/porygon/falco-events.jsonl"
+_ACTIVE_RUNTIME: ContextVar[RuntimeBinding | None] = ContextVar(
+    "porygon_experiment_runtime", default=None
+)
 
 _IMAGE_ROW = re.compile(
     r"^\|\s*`(?P<workload>WL-[A-Z]+-V\d)`\s*\|\s*`(?P<tag>[^`]+)`\s*\|\s*`(?P<digest>[^`]+)`\s*\|"
@@ -65,7 +70,12 @@ FAMILY_SPECS: dict[str, dict[str, Any]] = {
         # which is safer than passing a password the artifacts would then have to redact.
         "container_port": 5432,
         "env": {"POSTGRES_HOST_AUTH_METHOD": "trust", "POSTGRES_DB": "porygon_study"},
-        "modes": ["idle", "read_only_queries", "read_write_transactions", "alternate_tuning_context"],
+        "modes": [
+            "idle",
+            "read_only_queries",
+            "read_write_transactions",
+            "alternate_tuning_context",
+        ],
         "driver": "postgres",
     },
 }
@@ -101,8 +111,14 @@ CONTEXT_VARIANTS: dict[str, dict[str, list[str]]] = {
         "WL-RDS": ["--entrypoint", "redis-server"],
     },
     "init_mount": {
-        "WL-NGX": ["--volume", f"{ROOT}/experiments/fixtures/initdb:/docker-entrypoint.d/study:ro"],
-        "WL-PG": ["--volume", f"{ROOT}/experiments/fixtures/initdb:/docker-entrypoint-initdb.d:ro"],
+        "WL-NGX": [
+            "--volume",
+            f"{ROOT}/experiments/fixtures/initdb:/docker-entrypoint.d/study:ro",
+        ],
+        "WL-PG": [
+            "--volume",
+            f"{ROOT}/experiments/fixtures/initdb:/docker-entrypoint-initdb.d:ro",
+        ],
     },
     "nonroot_user": {"WL-RDS": ["--user", "999:1000"]},
     "dropped_capabilities": {
@@ -240,20 +256,20 @@ HARD_NEGATIVES: dict[str, dict[str, dict[str, Any]]] = {
             "description": "pg_dump backup written to a disposable in-container scratch path",
         },
         "config reload": {
-            "command": "psql -U postgres -d porygon_study -tAc \"SELECT pg_reload_conf();\"",
+            "command": 'psql -U postgres -d porygon_study -tAc "SELECT pg_reload_conf();"',
             "expected_outcome": "hard_negative_config_reload",
             "description": "PostgreSQL configuration reload via pg_reload_conf()",
         },
         "admin query/debug": {
             "command": (
-                "psql -U postgres -d porygon_study -tAc \"\\l\"; "
-                "psql -U postgres -d porygon_study -tAc \"SELECT count(*) FROM pg_stat_activity;\""
+                'psql -U postgres -d porygon_study -tAc "\\l"; '
+                'psql -U postgres -d porygon_study -tAc "SELECT count(*) FROM pg_stat_activity;"'
             ),
             "expected_outcome": "hard_negative_admin_query",
             "description": "read-only admin query/debug surface (\\l, a pg_stat_activity count)",
         },
         "maintenance shell/log rotation": {
-            "command": "id; uname -a; psql -U postgres -d porygon_study -tAc \"SELECT pg_current_logfile();\"",
+            "command": 'id; uname -a; psql -U postgres -d porygon_study -tAc "SELECT pg_current_logfile();"',
             "expected_outcome": "hard_negative_maintenance_shell",
             "description": (
                 "read-only maintenance shell inspection plus the active log-file target "
@@ -289,10 +305,26 @@ def family_of(workload_id: str) -> str:
 # --------------------------------------------------------------------------
 
 
-def docker(*args: str, timeout: int = 120, check: bool = True) -> str:
-    completed = subprocess.run(
-        ["docker", *args], capture_output=True, text=True, timeout=timeout
+@contextmanager
+def use_runtime_binding(binding: RuntimeBinding):
+    token = _ACTIVE_RUNTIME.set(binding)
+    try:
+        yield
+    finally:
+        _ACTIVE_RUNTIME.reset(token)
+
+
+def _docker_run(*args: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
+    binding = _ACTIVE_RUNTIME.get()
+    if binding is None:
+        raise PilotError("an explicit validated Docker runtime binding is required")
+    return subprocess.run(
+        binding.docker_argv(*args), capture_output=True, text=True, timeout=timeout
     )
+
+
+def docker(*args: str, timeout: int = 120, check: bool = True) -> str:
+    completed = _docker_run(*args, timeout=timeout)
     if check and completed.returncode != 0:
         raise PilotError(f"docker {' '.join(args)} failed: {completed.stderr.strip()}")
     return completed.stdout.strip()
@@ -328,14 +360,12 @@ def pull_pinned_image(reference: str) -> dict[str, Any]:
 
 def _platform_manifest_digest(reference: str) -> dict[str, str]:
     """Resolve the platform manifest digest, or record why it is unmeasured."""
-    completed = subprocess.run(
-        ["docker", "buildx", "imagetools", "inspect", "--raw", reference],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    completed = _docker_run("buildx", "imagetools", "inspect", "--raw", reference, timeout=120)
     if completed.returncode != 0:
-        return {"status": "unmeasured", "reason": "docker buildx imagetools is unavailable"}
+        return {
+            "status": "unmeasured",
+            "reason": "docker buildx imagetools is unavailable",
+        }
     try:
         index = json.loads(completed.stdout)
     except json.JSONDecodeError:
@@ -343,9 +373,15 @@ def _platform_manifest_digest(reference: str) -> dict[str, str]:
     architecture = docker("version", "--format", "{{.Server.Arch}}") or "amd64"
     for manifest in index.get("manifests", []):
         platform = manifest.get("platform") or {}
-        if platform.get("architecture") == architecture and platform.get("os") == "linux":
+        if (
+            platform.get("architecture") == architecture
+            and platform.get("os") == "linux"
+        ):
             return {"status": "measured", "digest": manifest.get("digest", "")}
-    return {"status": "unmeasured", "reason": f"no linux/{architecture} manifest in the index"}
+    return {
+        "status": "unmeasured",
+        "reason": f"no linux/{architecture} manifest in the index",
+    }
 
 
 # --------------------------------------------------------------------------
@@ -368,7 +404,13 @@ def _labels_of(container: str) -> dict[str, str]:
 def remove_container(name: str, run_id: str, trial_id: str) -> dict[str, Any]:
     """Remove one container only when its name and both labels match this trial exactly."""
     existing = docker(
-        "ps", "--all", "--filter", f"name=^{re.escape(name)}$", "--format", "{{.Names}}", check=False
+        "ps",
+        "--all",
+        "--filter",
+        f"name=^{re.escape(name)}$",
+        "--format",
+        "{{.Names}}",
+        check=False,
     )
     matches = [line for line in existing.splitlines() if line]
     if not matches:
@@ -383,13 +425,23 @@ def remove_container(name: str, run_id: str, trial_id: str) -> dict[str, Any]:
 
 
 def remove_network(name: str, run_id: str) -> dict[str, Any]:
-    raw = docker("network", "ls", "--filter", f"name=^{re.escape(name)}$", "--format", "{{.Name}}", check=False)
+    raw = docker(
+        "network",
+        "ls",
+        "--filter",
+        f"name=^{re.escape(name)}$",
+        "--format",
+        "{{.Name}}",
+        check=False,
+    )
     matches = [line for line in raw.splitlines() if line]
     if not matches:
         return {"removed": False, "reason": "no network with that exact name"}
     if matches != [name]:
         raise PilotError(f"refusing ambiguous network cleanup target: {matches}")
-    labels_raw = docker("network", "inspect", "--format", "{{json .Labels}}", name, check=False)
+    labels_raw = docker(
+        "network", "inspect", "--format", "{{json .Labels}}", name, check=False
+    )
     labels = json.loads(labels_raw) if labels_raw and labels_raw != "null" else {}
     if (labels or {}).get(LABEL_RUN) != run_id:
         raise PilotError(f"refusing to remove unlabelled or foreign network: {name}")
@@ -407,7 +459,9 @@ def _published_port(container: str, container_port: int) -> int:
     for line in raw.splitlines():
         if line.strip():
             return int(line.rsplit(":", 1)[1])
-    raise PilotError(f"container {container} published no host port for {container_port}")
+    raise PilotError(
+        f"container {container} published no host port for {container_port}"
+    )
 
 
 def _tcp_ready(port: int, deadline: float) -> bool:
@@ -423,7 +477,9 @@ def _tcp_ready(port: int, deadline: float) -> bool:
 def _http_get(port: int, timeout: float = 5.0) -> tuple[int, float]:
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=timeout) as response:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/", timeout=timeout
+        ) as response:
             response.read()
             status = response.status
     except urllib.error.HTTPError as error:
@@ -431,7 +487,9 @@ def _http_get(port: int, timeout: float = 5.0) -> tuple[int, float]:
     return status, (time.monotonic() - started) * 1000.0
 
 
-def _redis_command(port: int, parts: list[str], timeout: float = 5.0) -> tuple[bytes, float]:
+def _redis_command(
+    port: int, parts: list[str], timeout: float = 5.0
+) -> tuple[bytes, float]:
     payload = ("*%d\r\n" % len(parts)) + "".join(
         f"${len(part)}\r\n{part}\r\n" for part in parts
     )
@@ -442,11 +500,15 @@ def _redis_command(port: int, parts: list[str], timeout: float = 5.0) -> tuple[b
     return reply, (time.monotonic() - started) * 1000.0
 
 
-def wait_ready(container: str, family: str, port: int, timeout_seconds: int = 60) -> dict[str, Any]:
+def wait_ready(
+    container: str, family: str, port: int, timeout_seconds: int = 60
+) -> dict[str, Any]:
     deadline = time.monotonic() + timeout_seconds
     started = time.monotonic()
     if not _tcp_ready(port, deadline):
-        raise PilotError(f"{container} never accepted a TCP connection on 127.0.0.1:{port}")
+        raise PilotError(
+            f"{container} never accepted a TCP connection on 127.0.0.1:{port}"
+        )
     while time.monotonic() < deadline:
         try:
             if family == "WL-NGX":
@@ -463,48 +525,83 @@ def wait_ready(container: str, family: str, port: int, timeout_seconds: int = 60
             pass
         time.sleep(0.5)
     else:
-        raise PilotError(f"{container} did not become protocol-ready within {timeout_seconds}s")
+        raise PilotError(
+            f"{container} did not become protocol-ready within {timeout_seconds}s"
+        )
     return {"ready_after_ms": (time.monotonic() - started) * 1000.0, "probe": family}
 
 
 def _pg_ready(container: str) -> bool:
-    completed = subprocess.run(
-        ["docker", "exec", container, "pg_isready", "-q", "-h", "127.0.0.1"],
-        capture_output=True,
-        timeout=30,
+    completed = _docker_run(
+        "exec", container, "pg_isready", "-q", "-h", "127.0.0.1", timeout=30
     )
     return completed.returncode == 0
 
 
+def _drive_redis_pipeline(port, operations, seed):
+    rng = random.Random(seed)
+    successes = failures = 0
+    samples = []
+    batch_size = 16
 
-def _drive_redis_pipeline(port,operations,seed):
-    rng=random.Random(seed);successes=failures=0;samples=[];batch_size=16
     def read_reply(handle):
-        line=handle.readline(65537)
-        if not line or len(line)>65536:raise PilotError('Invalid bounded Redis pipeline reply')
-        if line.startswith(b'$'):
-            length=int(line[1:].strip())
-            if length>65536:raise PilotError('Redis reply exceeds fixture bound')
-            if length>=0:handle.read(length+2)
-        return not line.startswith(b'-')
-    for offset in range(0,operations,batch_size):
-        commands=[]
-        for index in range(min(batch_size,operations-offset)):
-            key='porygon:'+str(rng.randrange(1000))
-            commands.append(['SET',key,str(index)] if index%2==0 else ['GET',key])
-        wire=b''.join(('*'+str(len(command))+'\r\n'+''.join('$'+str(len(word.encode()))+'\r\n'+word+'\r\n' for word in command)).encode() for command in commands)
-        start=time.monotonic();replies_read=0
+        line = handle.readline(65537)
+        if not line or len(line) > 65536:
+            raise PilotError("Invalid bounded Redis pipeline reply")
+        if line.startswith(b"$"):
+            length = int(line[1:].strip())
+            if length > 65536:
+                raise PilotError("Redis reply exceeds fixture bound")
+            if length >= 0:
+                handle.read(length + 2)
+        return not line.startswith(b"-")
+
+    for offset in range(0, operations, batch_size):
+        commands = []
+        for index in range(min(batch_size, operations - offset)):
+            key = "porygon:" + str(rng.randrange(1000))
+            commands.append(
+                ["SET", key, str(index)] if index % 2 == 0 else ["GET", key]
+            )
+        wire = b"".join(
+            (
+                "*"
+                + str(len(command))
+                + "\r\n"
+                + "".join(
+                    "$" + str(len(word.encode())) + "\r\n" + word + "\r\n"
+                    for word in command
+                )
+            ).encode()
+            for command in commands
+        )
+        start = time.monotonic()
+        replies_read = 0
         try:
-            with socket.create_connection(('127.0.0.1',port),timeout=10) as sock:
+            with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
                 sock.sendall(wire)
-                with sock.makefile('rb') as handle:
+                with sock.makefile("rb") as handle:
                     for _ in commands:
-                        ok=read_reply(handle);replies_read+=1;successes+=ok;failures+=not ok
-        except (OSError,ValueError,PilotError):failures+=len(commands)-replies_read
-        samples.append((time.monotonic()-start)*1000)
-    return {'mode':'burst_pipeline','operations_planned':operations,'successes':successes,'failures':failures,
-        'seed':seed,'latency_ms_samples':samples,'concurrency':1,'pipeline_batch_size':batch_size,
-        'harness_induced_exec_count':0,'latency_definition':'wall-clock per pipeline batch including connection setup; not per-command latency'}
+                        ok = read_reply(handle)
+                        replies_read += 1
+                        successes += ok
+                        failures += not ok
+        except (OSError, ValueError, PilotError):
+            failures += len(commands) - replies_read
+        samples.append((time.monotonic() - start) * 1000)
+    return {
+        "mode": "burst_pipeline",
+        "operations_planned": operations,
+        "successes": successes,
+        "failures": failures,
+        "seed": seed,
+        "latency_ms_samples": samples,
+        "concurrency": 1,
+        "pipeline_batch_size": batch_size,
+        "harness_induced_exec_count": 0,
+        "latency_definition": "wall-clock per pipeline batch including connection setup; not per-command latency",
+    }
+
 
 def drive_load(
     container: str, family: str, port: int, mode: str, operations: int, seed: int
@@ -516,14 +613,22 @@ def drive_load(
     harness_execs = 0
     if mode == "idle":
         operations = 0
-    if family=='WL-NGX' and mode=='burst_http':
+    if family == "WL-NGX" and mode == "burst_http":
         with ThreadPoolExecutor(max_workers=8) as pool:
-            outcomes=list(pool.map(lambda _: _http_get(port),range(operations)))
-        return {'mode':mode,'operations_planned':operations,'successes':sum(status<400 for status,_ in outcomes),
-            'failures':sum(status>=400 for status,_ in outcomes),'seed':seed,'latency_ms_samples':[elapsed for _,elapsed in outcomes],
-            'harness_induced_exec_count':0,'concurrency':8,'latency_definition':'per HTTP request including connection setup'}
-    if family=='WL-RDS' and mode=='burst_pipeline':
-        return _drive_redis_pipeline(port,operations,seed)
+            outcomes = list(pool.map(lambda _: _http_get(port), range(operations)))
+        return {
+            "mode": mode,
+            "operations_planned": operations,
+            "successes": sum(status < 400 for status, _ in outcomes),
+            "failures": sum(status >= 400 for status, _ in outcomes),
+            "seed": seed,
+            "latency_ms_samples": [elapsed for _, elapsed in outcomes],
+            "harness_induced_exec_count": 0,
+            "concurrency": 8,
+            "latency_definition": "per HTTP request including connection setup",
+        }
+    if family == "WL-RDS" and mode == "burst_pipeline":
+        return _drive_redis_pipeline(port, operations, seed)
     for index in range(operations):
         try:
             if family == "WL-NGX":
@@ -540,14 +645,22 @@ def drive_load(
                 failures += reply.startswith(b"-")
             else:
                 statement = (
-                    "SELECT 1;" if mode == "read_only_queries" or index % 2 == 0
+                    "SELECT 1;"
+                    if mode == "read_only_queries" or index % 2 == 0
                     else "CREATE TABLE IF NOT EXISTS t(i int); INSERT INTO t VALUES (1);"
                 )
                 started = time.monotonic()
-                completed = subprocess.run(
-                    ["docker", "exec", container, "psql", "-U", "postgres",
-                     "-d", "porygon_study", "-tAc", statement],
-                    capture_output=True, timeout=30,
+                completed = _docker_run(
+                    "exec",
+                    container,
+                    "psql",
+                    "-U",
+                    "postgres",
+                    "-d",
+                    "porygon_study",
+                    "-tAc",
+                    statement,
+                    timeout=30,
                 )
                 elapsed = (time.monotonic() - started) * 1000.0
                 harness_execs += 1
@@ -574,7 +687,9 @@ def drive_load(
             "PostgreSQL is driven with `docker exec psql` because the Python standard "
             "library has no PostgreSQL client. Those executions are harness-induced "
             "process events, are counted here, and dominate the reported latency."
-        ) if harness_execs else (
+        )
+        if harness_execs
+        else (
             "load was driven from the host over loopback with no container exec; each "
             "operation opens its own connection, so setup cost is included"
         ),
@@ -616,19 +731,24 @@ COMMAND_TEMPLATE_SHA256 = sha256_bytes(COMMAND_TEMPLATE.encode("utf-8"))
 
 
 def run_scenario(
-    container: str, container_id: str, image_digest: str, run_id: str, trial_id: str, scenario_id: str
+    container: str,
+    container_id: str,
+    image_digest: str,
+    run_id: str,
+    trial_id: str,
+    scenario_id: str,
 ) -> dict[str, Any]:
     plan = _scenario_plan(scenario_id)
     sequences = list(range(1, plan["count"] + 1))
     started_utc, started_ns = now_utc(), time.monotonic_ns()
     executed: list[int] = []
-    command_template = plan.get("attack_like", {}).get("command_template", COMMAND_TEMPLATE)
+    command_template = plan.get("attack_like", {}).get(
+        "command_template", COMMAND_TEMPLATE
+    )
     for sequence in sequences:
         marker = _canary_token(run_id, trial_id, sequence)
-        completed = subprocess.run(
-            ["docker", "exec", container, "/bin/sh", "-c", command_template.format(canary=marker)],
-            capture_output=True,
-            timeout=30,
+        completed = _docker_run(
+            "exec", container, "/bin/sh", "-c", command_template.format(canary=marker), timeout=30
         )
         if completed.returncode == 0:
             executed.append(sequence)
@@ -708,8 +828,14 @@ def run_benign(
 
 
 def run_hard_negative(
-    container: str, container_id: str, image_digest: str, run_id: str, trial_id: str,
-    family: str, hard_negative_id: str, port: int,
+    container: str,
+    container_id: str,
+    image_digest: str,
+    run_id: str,
+    trial_id: str,
+    family: str,
+    hard_negative_id: str,
+    port: int,
 ) -> dict[str, Any]:
     """Execute one of the protocol's mandatory hard-negative operations
     (HARD_NEGATIVES[family][hard_negative_id]) and record it as benign ground
@@ -717,7 +843,9 @@ def run_hard_negative(
     see the module-level safety note in run_trial for why."""
     family_negatives = HARD_NEGATIVES.get(family, {})
     if hard_negative_id not in family_negatives:
-        raise PilotError(f"{hard_negative_id!r} is not a declared hard negative for {family}")
+        raise PilotError(
+            f"{hard_negative_id!r} is not a declared hard negative for {family}"
+        )
     spec = family_negatives[hard_negative_id]
     started_utc, started_ns = now_utc(), time.monotonic_ns()
     if spec.get("driver_only"):
@@ -727,15 +855,18 @@ def run_hard_negative(
         # action taken inside the container.
         execution: dict[str, Any] = {
             "kind": "driver_burst",
-            "burst": drive_load(container, family, port, "hard_negative_burst", spec.get("burst_operations", 40), seed=0),
+            "burst": drive_load(
+                container,
+                family,
+                port,
+                "hard_negative_burst",
+                spec.get("burst_operations", 40),
+                seed=0,
+            ),
         }
     else:
         command = spec["command"]
-        completed = subprocess.run(
-            ["docker", "exec", container, "/bin/sh", "-c", command],
-            capture_output=True,
-            timeout=60,
-        )
+        completed = _docker_run("exec", container, "/bin/sh", "-c", command, timeout=60)
         execution = {
             "kind": "container_exec",
             "command": command,
@@ -778,26 +909,44 @@ def run_hard_negative(
 
 
 def _falco_observed(run_id: str, trial_id: str) -> dict[str, Any]:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,63}", run_id) or not re.fullmatch(
+        r"[a-z0-9][a-z0-9_.-]{0,63}", trial_id
+    ):
+        return {"status": "unmeasured", "reason": "run or trial identifier is invalid"}
     prefix = f"{CANARY}--{run_id}--{trial_id}--"
-    completed = subprocess.run(
-        # `[0-9][0-9]*` requires at least one digit: `[0-9]*` also matches the bare prefix,
-        # which would then parse as an empty sequence number.
-        ["docker", "exec", TELEMETRY_CONTAINER, "sh", "-c",
-         f"grep -o '{prefix}[0-9][0-9]*' {FALCO_EVENT_PATH} | sort -u || true"],
-        capture_output=True, text=True, timeout=300,
+    binding = _ACTIVE_RUNTIME.get()
+    if binding is None:
+        return {"status": "unmeasured", "reason": "validated runtime binding is unavailable"}
+    telemetry = binding.services["telemetry"]["container_id"]
+    # Check readability separately: a missing/unreadable file must not be turned
+    # into a measured empty event set by grep's exit status being masked.
+    readability = _docker_run("exec", telemetry, "test", "-r", FALCO_EVENT_PATH, timeout=30)
+    if readability.returncode != 0:
+        return {
+            "status": "unmeasured",
+            "reason": "the bound telemetry source file could not be read",
+        }
+    pattern = re.escape(prefix) + r"[0-9]+"
+    completed = _docker_run(
+        "exec", telemetry, "grep", "-o", "--", pattern, FALCO_EVENT_PATH, timeout=300
     )
-    if completed.returncode != 0:
-        return {"status": "unmeasured", "reason": "the Falco event file could not be read"}
-    sequences = sorted(
+    if completed.returncode not in (0, 1) or completed.stderr:
+        return {"status": "unmeasured", "reason": "the bound telemetry source could not be reconciled"}
+    sequences = sorted(set(
         int(match.group(1))
-        for match in (re.fullmatch(re.escape(prefix) + r"(\d+)", line.strip())
-                      for line in completed.stdout.splitlines() if line.strip())
+        for match in (
+            re.fullmatch(re.escape(prefix) + r"(\d+)", line.strip())
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        )
         if match
-    )
+    ))
     return {"status": "measured", "sequences": sequences}
 
 
-def _database_observed(base_url: str, container_id: str, run_id: str, trial_id: str) -> dict[str, Any]:
+def _database_observed(
+    base_url: str, container_id: str, run_id: str, trial_id: str
+) -> dict[str, Any]:
     prefix = f"{CANARY}--{run_id}--{trial_id}--"
     pattern = re.compile(re.escape(prefix) + r"(\d+)")
     sequences: set[int] = set()
@@ -828,7 +977,11 @@ def _database_observed(base_url: str, container_id: str, run_id: str, trial_id: 
         before = min(event["time_nano"] for event in page)
         if len(page) < 500:
             break
-    return {"status": "measured", "sequences": sorted(sequences), "duplicates": duplicates}
+    return {
+        "status": "measured",
+        "sequences": sorted(sequences),
+        "duplicates": duplicates,
+    }
 
 
 def reconcile_trial(
@@ -875,7 +1028,11 @@ def reconcile_trial(
             "duplicates": result.get("duplicates", 0),
             "loss_fraction": (len(missing) / len(expected)) if expected else None,
         }
-    return {"generated": len(expected), "generated_sequences": sorted(expected), "boundaries": boundaries}
+    return {
+        "generated": len(expected),
+        "generated_sequences": sorted(expected),
+        "boundaries": boundaries,
+    }
 
 
 def _no_canary_reconciliation(reason: str) -> dict[str, Any]:
@@ -925,8 +1082,12 @@ def _docker_safe_token(value: str) -> str:
     return token or "x"
 
 
-def trial_id_for(workload_id: str, mode: str, scenario_id: str, variant: str, replica: int) -> str:
-    parts = [_docker_safe_token(part) for part in (workload_id, mode, scenario_id, variant)]
+def trial_id_for(
+    workload_id: str, mode: str, scenario_id: str, variant: str, replica: int
+) -> str:
+    parts = [
+        _docker_safe_token(part) for part in (workload_id, mode, scenario_id, variant)
+    ]
     return "-".join(parts) + f"-r{replica:02d}"
 
 
@@ -942,43 +1103,77 @@ def container_name_for(run_id: str, trial_id: str) -> str:
 
 
 def start_container(
-    name: str, network: str, run_id: str, trial_id: str, image: dict[str, Any],
-    family: str, variant: str, mode: str | None = None,
+    name: str,
+    network: str,
+    run_id: str,
+    trial_id: str,
+    image: dict[str, Any],
+    family: str,
+    variant: str,
+    mode: str | None = None,
 ) -> str:
     spec = FAMILY_SPECS[family]
     args = [
-        "run", "--detach", "--name", name,
-        "--label", f"{LABEL_RUN}={run_id}",
-        "--label", f"{LABEL_TRIAL}={trial_id}",
-        "--network", network,
-        "--publish", f"127.0.0.1::{spec['container_port']}",
-        "--memory", "512m", "--pids-limit", "512",
+        "run",
+        "--detach",
+        "--name",
+        name,
+        "--label",
+        f"{LABEL_RUN}={run_id}",
+        "--label",
+        f"{LABEL_TRIAL}={trial_id}",
+        "--network",
+        network,
+        "--publish",
+        f"127.0.0.1::{spec['container_port']}",
+        "--memory",
+        "512m",
+        "--pids-limit",
+        "512",
     ]
     for key, value in spec["env"].items():
         args += ["--env", f"{key}={value}"]
     if not variant_available(variant, family):
         raise PilotError(f"context variant {variant} is not available for {family}")
     args += CONTEXT_VARIANTS[variant][family]
-    if mode == 'alternate_read_only_config' and family == 'WL-NGX':
-        args += ['--mount',f'type=bind,src={ROOT}/experiments/fixtures/nginx/readonly.conf,dst=/etc/nginx/nginx.conf,readonly']
+    if mode == "alternate_read_only_config" and family == "WL-NGX":
+        args += [
+            "--mount",
+            f"type=bind,src={ROOT}/experiments/fixtures/nginx/readonly.conf,dst=/etc/nginx/nginx.conf,readonly",
+        ]
     args.append(image["reference"])
-    if mode == 'persistence_context' and family == 'WL-RDS':
-        args += ['redis-server','--appendonly','yes','--save','60','1']
-    elif mode == 'alternate_tuning_context' and family == 'WL-PG':
-        args += ['postgres','-c','shared_buffers=64MB','-c','max_connections=50']
-    else:args += VARIANT_COMMAND.get(variant, {}).get(family, [])
+    if mode == "persistence_context" and family == "WL-RDS":
+        args += ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    elif mode == "alternate_tuning_context" and family == "WL-PG":
+        args += ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=50"]
+    else:
+        args += VARIANT_COMMAND.get(variant, {}).get(family, [])
     return docker(*args, timeout=180)
 
 
 def run_trial(
-    *, run_id: str, trial_id: str, workload_id: str, mode: str, scenario_id: str,
-    variant: str, replica: int, image: dict[str, Any], network: str, base_url: str,
-    seed: int, warmup_seconds: float, operations: int, settle_seconds: float,
+    *,
+    run_id: str,
+    trial_id: str,
+    workload_id: str,
+    mode: str,
+    scenario_id: str,
+    variant: str,
+    replica: int,
+    image: dict[str, Any],
+    network: str,
+    base_url: str,
+    seed: int,
+    warmup_seconds: float,
+    operations: int,
+    settle_seconds: float,
     collection_context: dict | None = None,
 ) -> dict[str, Any]:
     family = family_of(workload_id)
     name = container_name_for(run_id, trial_id)
-    hard_negative_id = scenario_id if scenario_id in HARD_NEGATIVES.get(family, {}) else None
+    hard_negative_id = (
+        scenario_id if scenario_id in HARD_NEGATIVES.get(family, {}) else None
+    )
     record: dict[str, Any] = {
         "schema_version": "porygon.experiment.trial.v2",
         "run_id": run_id,
@@ -1004,20 +1199,36 @@ def run_trial(
             "pilot evidence: the research protocol is review-pending, so this trial may inform "
             "engineering and variance estimates but may never be reported as confirmatory"
         ),
-        "timeline": {"setup_started_at_utc": now_utc(), "setup_started_monotonic_ns": time.monotonic_ns()},
+        "timeline": {
+            "setup_started_at_utc": now_utc(),
+            "setup_started_monotonic_ns": time.monotonic_ns(),
+        },
     }
+    binding = _ACTIVE_RUNTIME.get()
+    if binding is not None:
+        record["compose_project"] = binding.compose_project
+        record["docker_context"] = binding.docker_context
+        record["docker_daemon_id"] = binding.daemon_id
+        record["runtime_binding_sha256"] = binding.sha256
     if collection_context is not None:
         from experiments.confirmatory import validate_collection_authorization
-        validate_collection_authorization(collection_context,run_id,trial_id)
-        record.update(split=collection_context['entry']['split'],research_eligible=True,
-            eligibility_reason='preauthorized frozen-stratified collection; final conformance remains required',
-            collection_plan_sha256=collection_context['plan_sha256'],ground_truth_class=collection_context['entry']['ground_truth_class'])
+
+        validate_collection_authorization(collection_context, run_id, trial_id)
+        record.update(
+            split=collection_context["entry"]["split"],
+            research_eligible=True,
+            eligibility_reason="preauthorized frozen-stratified collection; final conformance remains required",
+            collection_plan_sha256=collection_context["plan_sha256"],
+            ground_truth_class=collection_context["entry"]["ground_truth_class"],
+        )
     started = False
     try:
-        container_ref = start_container(name, network, run_id, trial_id, image, family, variant, mode)
+        container_ref = start_container(
+            name, network, run_id, trial_id, image, family, variant, mode
+        )
         started = True
         record["container_id"] = container_ref
-        record["docker_host_id"] = docker("info","--format","{{.ID}}")
+        record["docker_host_id"] = docker("info", "--format", "{{.ID}}")
         inspection = json.loads(docker("inspect", name))[0]
         context_document = runtime_context(inspection)
         record["runtime_context"] = context_document
@@ -1044,18 +1255,35 @@ def run_trial(
             )
         elif hard_negative_id is not None:
             record["ground_truth"] = run_hard_negative(
-                name, record["container_id"], image["reference"], run_id, trial_id,
-                family, hard_negative_id, port,
+                name,
+                record["container_id"],
+                image["reference"],
+                run_id,
+                trial_id,
+                family,
+                hard_negative_id,
+                port,
             )
         else:
             record["ground_truth"] = run_scenario(
-                name, record["container_id"], image["reference"], run_id, trial_id, scenario_id
+                name,
+                record["container_id"],
+                image["reference"],
+                run_id,
+                trial_id,
+                scenario_id,
             )
-        truth=record['ground_truth']
-        if truth.get('canary_sequences_planned')!=truth.get('canary_sequences_executed'):
-            raise PilotError('Controlled action aborted or partially executed; failed run remains in accounting')
-        if record['load']['failures']:
-            raise PilotError('Workload generator failed operations; run cannot become a clean negative')
+        truth = record["ground_truth"]
+        if truth.get("canary_sequences_planned") != truth.get(
+            "canary_sequences_executed"
+        ):
+            raise PilotError(
+                "Controlled action aborted or partially executed; failed run remains in accounting"
+            )
+        if record["load"]["failures"]:
+            raise PilotError(
+                "Workload generator failed operations; run cannot become a clean negative"
+            )
         record["timeline"]["settle_started_at_utc"] = now_utc()
         time.sleep(settle_seconds)
         if scenario_id == BENIGN_SENTINEL:
@@ -1073,7 +1301,10 @@ def run_trial(
             )
         else:
             record["reconciliation"] = reconcile_trial(
-                base_url, record["container_id"], run_id, trial_id,
+                base_url,
+                record["container_id"],
+                run_id,
+                trial_id,
                 record["ground_truth"]["canary_sequences_executed"],
             )
         record["status"] = "completed"
@@ -1090,7 +1321,10 @@ def run_trial(
                 record["status"] = "failed"
                 record.setdefault("failure_reason", f"cleanup refused: {error}")
         else:
-            record["cleanup"] = {"removed": False, "reason": "container was never created"}
+            record["cleanup"] = {
+                "removed": False,
+                "reason": "container was never created",
+            }
         record["timeline"]["cleanup_finished_at_utc"] = now_utc()
     return record
 
@@ -1115,12 +1349,19 @@ def percentile(samples: list[float], fraction: float) -> float | None:
 
 
 def default_mode(family: str) -> str:
-    return {"WL-NGX": "steady_http", "WL-RDS": "steady_set_get", "WL-PG": "read_only_queries"}[family]
+    return {
+        "WL-NGX": "steady_http",
+        "WL-RDS": "steady_set_get",
+        "WL-PG": "read_only_queries",
+    }[family]
 
 
 def build_matrix(
-    workloads: list[str], modes: list[str] | None, scenarios: list[str],
-    variants: list[str], replicas: int,
+    workloads: list[str],
+    modes: list[str] | None,
+    scenarios: list[str],
+    variants: list[str],
+    replicas: int,
 ) -> list[dict[str, Any]]:
     matrix = []
     for workload_id in workloads:
@@ -1137,7 +1378,8 @@ def build_matrix(
                         "from trials that were already collected"
                     )
                 is_benign_or_hard_negative = (
-                    scenario_id == BENIGN_SENTINEL or scenario_id in HARD_NEGATIVES.get(family, {})
+                    scenario_id == BENIGN_SENTINEL
+                    or scenario_id in HARD_NEGATIVES.get(family, {})
                 )
                 if (
                     not is_benign_or_hard_negative
@@ -1161,7 +1403,9 @@ def build_matrix(
                                 "scenario_id": scenario_id,
                                 "variant": variant,
                                 "replica": replica,
-                                "trial_id": trial_id_for(workload_id, mode, scenario_id, variant, replica),
+                                "trial_id": trial_id_for(
+                                    workload_id, mode, scenario_id, variant, replica
+                                ),
                             }
                         )
     return matrix

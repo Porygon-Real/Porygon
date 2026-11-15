@@ -1,5 +1,7 @@
 # Plan 003: Build causal evidence detection and validate every model claim
 
+> Current reconciliation — 2026-10-30: Causal evidence and optional model engineering are implemented and locally verified. Independent empirical model validation remains open. [Combined plan 006](006-measured-validation-and-release.md) supersedes the historical execution order and deferral notes below; retain the original specifications as context.
+
 > Executor: read the whole plan, execute the steps in order, and stop at the named boundaries. The plan is a specification, not authorization to publish changes. Update this plan's status in `plans/README.md` after its done criteria pass.
 
 ## Status
@@ -10,7 +12,7 @@
 - Depends on: 001; 002 for unattended evaluation and explicit profile contracts
 - Category: correctness / architecture / direction
 - Planned at: commit `b04aaea` plus the working tree, 2026-10-26
-- Status: IN PROGRESS — remaining engineering source batch; all execution checks deferred until combined source freeze
+- Status: IN PROGRESS — local engineering accepted; remaining empirical gates follow combined plan 006
 
 ## Execution reconciliation — 2026-10-27
 
