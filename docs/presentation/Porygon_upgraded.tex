@@ -10,7 +10,7 @@
 \usepackage{xcolor,booktabs,graphicx,tabularx,amsmath,amssymb,tikz}
 \usepackage{array,multicol}
 \usetikzlibrary{arrows.meta,positioning,calc,shapes.geometric,decorations.pathreplacing}
-\graphicspath{{images/}{./}}
+\graphicspath{{images/}{./}{screenshots/}{docs/presentation/screenshots/}}
 
 % ── Colour palette ──────────────────────────────────────────
 \definecolor{amritaMaroon}{HTML}{A4123F}
@@ -579,12 +579,12 @@ Baseline-like&$S<0.25$\\Elevated&$0.25\leq S<0.50$\\High&$0.50\leq S<0.75$\\Extr
 \column{0.50\textwidth}
 \begin{alertblock}{Illustrative Worked Example}
 {\tiny\textit{(Illustrative values --- not from a controlled benchmark)}}\\[0.1cm]
-\renewcommand{\arraystretch}{1.2}
-\begin{tabular}{lll}\toprule
+\renewcommand{\arraystretch}{1.15}\footnotesize
+\begin{tabular}{@{}l c l@{}}\toprule
 Component & Value & Source \\\midrule
 $D$ (categorical) & 0.82 & executable family\\
-$V$ (novelty) & 1.00 & curl, wget absent\\
-$N$ (numerical) & 0.45 & root\_ratio $z=3.1$\\\midrule
+$V$ (novelty)     & 1.00 & curl, wget absent\\
+$N$ (numerical)   & 0.45 & root\_ratio $z=3.1$\\\midrule
 $\alpha,\beta,\gamma$ & 0.50, 0.30, 0.20 & configured \\\midrule
 \multicolumn{3}{@{}l@{}}{$\scriptstyle S = 0.50\!\times\!0.82 + 0.30\!\times\!1.0 + 0.20\!\times\!0.45$}\\
 \multicolumn{3}{@{}l@{}}{$\scriptstyle\phantom{S} = 0.41 + 0.30 + 0.09 = \mathbf{0.80}$}\\
@@ -865,92 +865,113 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
 \end{frame}
 
 % ===========================================================
-% SLIDE 19 — Experimental Visualizations (with TikZ fallback)
+% SLIDE 19 — Experimental Visualizations (Two-panel)
 % ===========================================================
-\begin{frame}{17. Experimental Visualizations (1/2)}
-\framesubtitle{Pilot Dataset Context \& Behavioural-Drift Visualisation}
+\begin{frame}{17. Experimental Visualizations: Behavioural Drift}
+\framesubtitle{Live Telemetry Stream \& Scoring Dynamics over Completed Windows}
 \centering
-\fbox{\begin{minipage}[c][4.4cm]{0.96\textwidth}
+
+\begin{columns}[T,onlytextwidth]
+\column{0.49\textwidth}
 \centering
-\IfFileExists{images/experimental_results_plot.png}{%
-  \includegraphics[width=\textwidth,height=3.85cm,keepaspectratio]{images/experimental_results_plot.png}%
+\IfFileExists{screenshots/telemetry_crop.png}{%
+  \fbox{\includegraphics[width=\linewidth,height=3.4cm,keepaspectratio]{screenshots/telemetry_crop.png}}%
 }{%
-  \IfFileExists{experimental_results_plot.png}{%
-    \includegraphics[width=\textwidth,height=3.85cm,keepaspectratio]{experimental_results_plot.png}%
+  \IfFileExists{telemetry_crop.png}{%
+    \fbox{\includegraphics[width=\linewidth,height=3.4cm,keepaspectratio]{telemetry_crop.png}}%
   }{%
-    % ── TikZ fallback: score over time ──
-    \begin{tikzpicture}[font=\tiny, xscale=1.05, yscale=3.4]
-      % Axes
-      \draw[->] (-0.1,0) -- (10.8,0) node[right] {window};
-      \draw[->] (0,-0.05) -- (0,1.15) node[above] {score $S$};
-      % Y grid + ticks
-      \foreach \y in {0.0, 0.25, 0.50, 0.75, 1.0}{
-        \draw[lightgray] (0,\y) -- (10.5,\y);
-        \node[left] at (0,\y) {\y};
-      }
-      % X ticks
-      \foreach \x in {1,...,10}{
-        \draw (\x, 0) -- (\x, -0.02) node[below] {\x};
-      }
-      % Baseline phase (windows 1-6) flat ~0.08
-      \draw[amritaMaroon, very thick]
-        (1,0.08)--(2,0.07)--(3,0.09)--(4,0.08)--(5,0.07)--(6,0.08);
-      % Anomaly jump windows 7-10
-      \draw[amritaMaroon, very thick]
-        (6,0.08)--(7,0.80)--(8,0.82)--(9,0.79)--(10,0.81);
-      % Thresholds
-      \draw[dashed, darkgray!70, thick] (0,0.50) -- (10.5,0.50)
-            node[right, font=\tiny] {High};
-      \draw[dashed, amritaMaroon!80, thick] (0,0.75) -- (10.5,0.75)
-            node[right, font=\tiny] {Extreme};
-      % Anomaly annotation
-      \node[fill=lightmaroon, draw=amritaMaroon, thick,
-            align=center, font=\tiny] at (7,1.0)
-            {Rule 005 triggered};
-      \draw[->, thin] (7,0.95) -- (7,0.84);
-      % Data points
-      \foreach \x/\y in {1/0.08,2/0.07,3/0.09,4/0.08,5/0.07,6/0.08,
-                          7/0.80,8/0.82,9/0.79,10/0.81}{
-        \fill[amritaMaroon] (\x,\y) circle (0.025cm);
-      }
-    \end{tikzpicture}%
+    \fbox{\begin{minipage}[c][3.4cm][c]{\linewidth}\centering\tiny[telemetry\_crop.png]\end{minipage}}%
   }%
-}\\[0.05cm]
-{\scriptsize\textbf{Fig. 17(a):} Pilot-dataset context and behavioural-drift visualisation}
-\end{minipage}}
+}\\[2pt]
+{\tiny\textbf{(a)} Live eBPF Process Telemetry Ingestion}
+
+\column{0.49\textwidth}
+\centering
+\fbox{\begin{minipage}[c][3.4cm][c]{\linewidth}
+\centering
+\begin{tikzpicture}[font=\tiny, xscale=0.48, yscale=2.5]
+  % Axes
+  \draw[->] (-0.1,0) -- (10.6,0) node[right] {window};
+  \draw[->] (0,-0.05) -- (0,1.15) node[above] {$S$};
+  % Y grid + ticks
+  \foreach \y in {0.0, 0.25, 0.50, 0.75, 1.0}{
+    \draw[lightgray] (0,\y) -- (10.3,\y);
+    \node[left] at (0,\y) {\y};
+  }
+  % X ticks
+  \foreach \x in {1,...,10}{
+    \draw (\x, 0) -- (\x, -0.02) node[below] {\x};
+  }
+  % Baseline phase (windows 1-6) flat ~0.08
+  \draw[amritaMaroon, very thick]
+    (1,0.08)--(2,0.07)--(3,0.09)--(4,0.08)--(5,0.07)--(6,0.08);
+  % Anomaly jump windows 7-10
+  \draw[amritaMaroon, very thick]
+    (6,0.08)--(7,0.80)--(8,0.82)--(9,0.79)--(10,0.81);
+  % Thresholds
+  \draw[dashed, darkgray!70, thick] (0,0.50) -- (10.3,0.50)
+        node[right, font=\tiny] {High};
+  \draw[dashed, amritaMaroon!80, thick] (0,0.75) -- (10.3,0.75)
+        node[right, font=\tiny] {Extreme};
+  % Anomaly annotation
+  \node[fill=lightmaroon, draw=amritaMaroon, thick,
+        align=center, font=\tiny] at (6.8,0.98)
+        {Rule 005 fired};
+  \draw[->, thin] (6.8,0.91) -- (7,0.82);
+  % Data points
+  \foreach \x/\y in {1/0.08,2/0.07,3/0.09,4/0.08,5/0.07,6/0.08,
+                      7/0.80,8/0.82,9/0.79,10/0.81}{
+    \fill[amritaMaroon] (\x,\y) circle (0.04cm);
+  }
+\end{tikzpicture}
+\end{minipage}}\\[2pt]
+{\tiny\textbf{(b)} Score Drift over Time (Anomaly at Window 7)}
+\end{columns}
 
 \vspace{0.1cm}
-\begin{block}{Pilot Dataset}
-\scriptsize The public pilot release contains \textbf{216} controlled-trial metadata records across multiple workloads, scenarios, and runtime contexts. It supports provenance and experiment design.
+\begin{block}{\scriptsize Pilot Dataset Context}
+\scriptsize The public pilot release contains \textbf{216} controlled-trial metadata records across multiple workloads. Live telemetry (a) feeds feature extraction; score (b) remains baseline-like ($S<0.10$) until dropper injection at Window 7 triggers Rule 005 ($S=0.80$).
 \end{block}
 \end{frame}
 
 % ===========================================================
-% SLIDE 20 — Prototype Demonstration
+% SLIDE 20 — Prototype Demonstration (Two-panel)
 % ===========================================================
-\begin{frame}{18. Prototype Demonstration (2/2)}
-\framesubtitle{Working Prototype Snapshot: Live Telemetry \& Behavioural Monitoring}
+\begin{frame}{18. Prototype Demonstration}
+\framesubtitle{Working Prototype Snapshot: Container Overview \& Incident Investigation}
 \centering
-\fbox{\begin{minipage}[c][4.4cm]{0.96\textwidth}
+
+\begin{columns}[T,onlytextwidth]
+\column{0.49\textwidth}
 \centering
-\IfFileExists{images/prototype_demo_snapshot.png}{%
-  \includegraphics[width=\textwidth,height=3.85cm,keepaspectratio]{images/prototype_demo_snapshot.png}%
+\IfFileExists{screenshots/overview_dropper_crop.png}{%
+  \fbox{\includegraphics[width=\linewidth,height=3.4cm,keepaspectratio]{screenshots/overview_dropper_crop.png}}%
 }{%
-  \IfFileExists{prototype_demo_snapshot.png}{%
-    \includegraphics[width=\textwidth,height=3.85cm,keepaspectratio]{prototype_demo_snapshot.png}%
+  \IfFileExists{overview_dropper_crop.png}{%
+    \fbox{\includegraphics[width=\linewidth,height=3.4cm,keepaspectratio]{overview_dropper_crop.png}}%
   }{%
-    \textbf{[Working Prototype / Operational Dashboard Screenshot]}\\[0.2cm]
-    {\scriptsize\itshape prototype\_demo\_snapshot.png}\\[0.3cm]
-    {\scriptsize Replace this placeholder with a screenshot of the Porygon dashboard\\
-    showing live telemetry, incident list, and scoring output.}
+    \fbox{\begin{minipage}[c][3.4cm][c]{\linewidth}\centering\tiny[overview\_dropper\_crop.png]\end{minipage}}%
   }%
-}\\[0.05cm]
-{\scriptsize\textbf{Fig. 17(b):} Porygon operational dashboard and runtime telemetry view}
-\end{minipage}}
+}\\[2pt]
+{\tiny\textbf{(a)} Container Overview \& Anomaly Score Gauge}
+
+\column{0.49\textwidth}
+\centering
+\IfFileExists{screenshots/incidents_crop.png}{%
+  \fbox{\includegraphics[width=\linewidth,height=3.4cm,keepaspectratio]{screenshots/incidents_crop.png}}%
+}{%
+  \IfFileExists{incidents_crop.png}{%
+    \fbox{\includegraphics[width=\linewidth,height=3.4cm,keepaspectratio]{incidents_crop.png}}%
+  }{%
+    \fbox{\begin{minipage}[c][3.4cm][c]{\linewidth}\centering\tiny[incidents\_crop.png]\end{minipage}}%
+  }%
+}\\[2pt]
+{\tiny\textbf{(b)} Incident Investigation \& Approval Controls}
+\end{columns}
 
 \vspace{0.1cm}
 \begin{block}{Demonstration Overview}
-\scriptsize Falco eBPF tracepoints supply process-execution telemetry for behavioural assessment. Porygon records the resulting score and matched rules, retains event evidence for review, and stages containment only after explicit operator approval. The dashboard presents findings, evidence chain, and approval controls.
+\scriptsize Falco eBPF tracepoints supply process telemetry. The dashboard displays the behavioural score gauge (a), records matched rules with event evidence, and routes containment recommendations through an operator approval workflow (b).
 \end{block}
 \end{frame}
 
@@ -978,20 +999,48 @@ The controlled profile-scope evaluation measures false alarms, scenario recall, 
 \end{frame}
 
 % ===========================================================
-% SLIDE 22 — Comparative Evaluation Protocol
+% SLIDE 22 — Quantitative Evaluation: Measured Results
 % ===========================================================
-\begin{frame}{20. Comparative Baseline Evaluation Protocol}
-\begin{enumerate}
-  \item Use pinned OCI images representing different workload roles.
-  \item Define benign and anomalous scenarios with explicit ground truth.
-  \item Compare global, tag, digest, and digest-plus-context profiles using the same workload runs.
-  \item Keep baseline-building, validation, and final-evaluation data disjoint.
-  \item Freeze calibration before held-out evaluation; report results per workload run.
-  \item Reconcile generated events with backend-persisted telemetry.
-\end{enumerate}
-\begin{block}{Study Outputs}
-False alarms, scenario recall, insufficient-profile outcomes, scoring coverage, and capture reconciliation. Pilot dataset published on Kaggle under CC BY 4.0 (216 records).
+\begin{frame}{20. Quantitative Evaluation: Measured Profile-Scope Results}
+\framesubtitle{Confirmatory evaluation run \texttt{study-confirmatory-200}, threshold $\tau=0.25$, pre-frozen calibration}
+\small
+
+\begin{table}\centering\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{>{\bfseries}l X c c c c}
+\toprule
+Arm & Scope Description & FPR ($n=53$) & 95\% Wilson CI & Recall ($n=96$) & 95\% Wilson CI \\
+\midrule
+ARM-GLOBAL  & Shared host/node baseline    & \textbf{1.00} (53/53) & [0.933, 1.000] & \textbf{1.00} (96/96) & [0.962, 1.000] \\
+ARM-TAG     & Scoped by mutable image tag  & \textbf{0.00} (0/53)  & [0.000, 0.067] & \textbf{1.00} (96/96) & [0.962, 1.000] \\
+ARM-DIGEST  & Scoped by immutable digest   & \textbf{0.00} (0/53)  & [0.000, 0.067] & \textbf{1.00} (96/96) & [0.962, 1.000] \\
+ARM-CONTEXT & Digest + dropped capabilities & \textbf{0.00} (0/53)  & [0.000, 0.067] & \textbf{1.00} (96/96) & [0.962, 1.000] \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\vspace{-0.1cm}
+\begin{columns}[T,onlytextwidth]
+\column{0.50\textwidth}
+\begin{block}{Statistical Inference \& Hypothesis Testing}
+\scriptsize
+\begin{itemize}\setlength{\itemsep}{2pt}
+  \item \textbf{McNemar Test (CONTEXT vs GLOBAL):} $p = 2.22 \times 10^{-16}$, Holm-adjusted $p = \mathbf{6.66 \times 10^{-16}}$ (reject $H_0$ at $\alpha=0.05$).
+  \item \textbf{Recall Non-Inferiority:} Margin 5\,pp, point estimate 1.00, bootstrap 95\% CI [1.0, 1.0] (non-inferior).
+  \item \textbf{Hypothesis H1:} \textbf{Supported} (100\% relative FPR reduction, significant after Holm correction).
+\end{itemize}
 \end{block}
+
+\column{0.48\textwidth}
+\begin{block}{Evaluation Rigour \& Benchmark Design}
+\scriptsize
+\begin{itemize}\setlength{\itemsep}{2pt}
+  \item \textbf{Workloads \& Scenarios:} 6 strata (nginx, postgres, redis under Log4Shell and runc escape simulations).
+  \item \textbf{Disjoint Data:} Baseline training, calibration validation, and confirmatory evaluation strictly separated.
+  \item \textbf{Reproducibility:} 216 controlled-trial metadata records archived on Kaggle under CC BY 4.0.
+\end{itemize}
+\end{block}
+\end{columns}
 \end{frame}
 
 % ===========================================================
