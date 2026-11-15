@@ -14,6 +14,7 @@ from porygon_api.config import get_settings
 from porygon_api.baseline import (
     build_profile_document,
     COMMAND_LINEAGE_SCHEMA,
+    SUPPORT_AWARE_SCHEMA,
     MIN_COMMAND_COVERAGE,
     FEATURE_SCHEMA_VERSION,
 )
@@ -22,8 +23,8 @@ from porygon_api.models import (
     AnomalyScore,
     ProcessExecEvent,
     RuntimeEvent,
+    KernelRuntimeEvent,
     DetectionAllowlist,
-    CustomDetectionRule,
     DetectionRun,
     DetectionIncidentLink,
     Incident,
@@ -38,7 +39,6 @@ from porygon_api.scoring import (
 )
 from porygon_api.detection import (
     allowlist_set_hash,
-    custom_ruleset_hash,
     build_detection_run_key,
     evaluate_detection,
     RULESET_VERSION,
@@ -47,6 +47,7 @@ from porygon_api.detection import (
 from porygon_api.incident_grouping import attach_incident
 from porygon_api.ml_classifier import default_classifier
 from porygon_api.vulnerability import sha256_document
+from porygon_api.vulnerability import is_local_image_identity
 
 logger = logging.getLogger("porygon.assessment")
 
@@ -100,8 +101,8 @@ class AssessmentScope:
             "revision": self.revision,
             "config_hash": self.config_hash,
             "evidence_contract": self.evidence_contract,
-            "evidence_rules_hash":self.evidence_rules_hash,
-            "advisory_model_hash":self.advisory_model_hash,
+            "evidence_rules_hash": self.evidence_rules_hash,
+            "advisory_model_hash": self.advisory_model_hash,
         }
 
     def filters(self, model):
@@ -216,21 +217,43 @@ def compute_anomaly_score(
             detail="Scoring windows must not overlap the profile training interval",
         )
 
+    local_image_id = (
+        payload.image_digest.removeprefix("local:")
+        if is_local_image_identity(payload.image_digest)
+        else None
+    )
+    process_image_filter = (
+        ProcessExecEvent.image_id == local_image_id
+        if local_image_id is not None
+        else ProcessExecEvent.image_digest == payload.image_digest
+    )
+    runtime_image_filter = (
+        RuntimeEvent.image_id == local_image_id
+        if local_image_id is not None
+        else RuntimeEvent.image_digest == payload.image_digest
+    )
     process_filters = (
-        ProcessExecEvent.image_digest == payload.image_digest,
+        process_image_filter,
         ProcessExecEvent.correlation_status == "resolved",
         ProcessExecEvent.occurred_at >= window_start,
         ProcessExecEvent.occurred_at < window_end,
     )
     runtime_filters = (
-        RuntimeEvent.image_digest == payload.image_digest,
+        runtime_image_filter,
         RuntimeEvent.occurred_at >= window_start,
         RuntimeEvent.occurred_at < window_end,
     )
     if scope is not None and scope.evidence_contract:
         from porygon_api.runtime_evidence import epoch_ns
-        process_filters=process_filters[:2]+(ProcessExecEvent.time_nano>=epoch_ns(window_start),ProcessExecEvent.time_nano<epoch_ns(window_end))
-        runtime_filters=runtime_filters[:1]+(RuntimeEvent.time_nano>=epoch_ns(window_start),RuntimeEvent.time_nano<epoch_ns(window_end))
+
+        process_filters = process_filters[:2] + (
+            ProcessExecEvent.time_nano >= epoch_ns(window_start),
+            ProcessExecEvent.time_nano < epoch_ns(window_end),
+        )
+        runtime_filters = runtime_filters[:1] + (
+            RuntimeEvent.time_nano >= epoch_ns(window_start),
+            RuntimeEvent.time_nano < epoch_ns(window_end),
+        )
     if scope is not None:
         process_filters += scope.filters(ProcessExecEvent)
         runtime_filters += scope.filters(RuntimeEvent)
@@ -282,6 +305,7 @@ def compute_anomaly_score(
         minimum_process_events=0,
         minimum_nonempty_windows=0,
         feature_schema_version=profile.feature_schema_version,
+        include_temporal_windows=profile.feature_schema_version == SUPPORT_AWARE_SCHEMA,
     )
     observation_key = build_observation_key(
         profile_id=profile.profile_id,
@@ -294,21 +318,117 @@ def compute_anomaly_score(
         algorithm_version=scoring_config["algorithm_version"],
     )
 
+    kernel_event_rows = []
+    runtime_context = None
     if scope is not None:
         observation_manifest["assessment_scope"] = scope.manifest()
         observation_manifest["assessment_event_ids"] = {
             "process": [x.event_id for x in process_events],
             "runtime": [x.event_id for x in runtime_events],
         }
+        from porygon_api.runtime_evidence import epoch_ns
+
+        kernel_event_rows = list(
+            db.scalars(
+                select(KernelRuntimeEvent)
+                .where(
+                    *scope.filters(KernelRuntimeEvent),
+                    (
+                        KernelRuntimeEvent.image_id == local_image_id
+                        if local_image_id is not None
+                        else KernelRuntimeEvent.image_digest == payload.image_digest
+                    ),
+                    KernelRuntimeEvent.correlation_status == "resolved",
+                    KernelRuntimeEvent.time_nano >= epoch_ns(window_start),
+                    KernelRuntimeEvent.time_nano < epoch_ns(window_end),
+                )
+                .order_by(KernelRuntimeEvent.time_nano, KernelRuntimeEvent.event_id)
+                .limit(settings.anomaly_max_events + 1)
+            ).all()
+        )
+        if len(kernel_event_rows) > settings.anomaly_max_events:
+            raise HTTPException(413, "Selected kernel evidence exceeds its bounded window")
+        if process_count + runtime_count + len(kernel_event_rows) > settings.anomaly_max_events:
+            raise HTTPException(413, "Selected assessment evidence exceeds its bounded window")
+        observation_manifest["assessment_event_ids"]["kernel"] = [
+            row.event_id for row in kernel_event_rows
+        ]
+        kernel_identities = [
+            {
+                "event_id": row.event_id,
+                "docker_host_id": row.docker_host_id,
+                "container_id": row.container_id,
+                "sensor_instance_id": row.sensor_instance_id,
+                "sensor_epoch": row.sensor_epoch,
+                "pid_namespace_start_ns": row.pid_namespace_start_ns,
+                "process_pid": row.process_pid,
+                "process_start_ns": row.process_start_ns,
+            }
+            for row in kernel_event_rows
+        ]
+        observation_manifest["assessment_event_identities"] = {
+            "kernel": kernel_identities,
+        }
         if scope.evidence_contract:
-            from porygon_api.runtime_evidence import query_events, CONTRACT
-            if scope.evidence_contract != CONTRACT:
-                raise HTTPException(409,'Unsupported runtime evidence contract')
-            selected = query_events(db,scope,window_start,window_end,
-                process_ids=[item.event_id for item in process_events])
-            observation_manifest['assessment_event_ids']['kernel'] = [item['event_id'] for item in selected if item['channel']=='kernel']
+            from porygon_api.runtime_evidence import (
+                PROCESS_CONTEXT_CONTRACT,
+                query_context_events,
+                query_events,
+                rules_hash_for,
+            )
+
+            try:
+                expected_evidence_hash = rules_hash_for(scope.evidence_contract)
+            except ValueError as exc:
+                raise HTTPException(409, "Unsupported runtime evidence contract") from exc
+            if scope.evidence_rules_hash != expected_evidence_hash:
+                raise HTTPException(409, "Unsupported runtime evidence rule hash")
+            selected = query_events(
+                db,
+                scope,
+                window_start,
+                window_end,
+                process_ids=observation_manifest["assessment_event_ids"]["process"],
+                kernel_ids=observation_manifest["assessment_event_ids"]["kernel"],
+            )
+            selected_kernel_ids = [
+                item["event_id"] for item in selected if item["channel"] == "kernel"
+            ]
+            if selected_kernel_ids != observation_manifest["assessment_event_ids"]["kernel"]:
+                raise HTTPException(409, "Selected kernel evidence is no longer available")
+            if scope.evidence_contract == PROCESS_CONTEXT_CONTRACT:
+                runtime_context = query_context_events(
+                    db, scope, window_start, window_end, selected
+                )
+                context_ids = [
+                    item["event_id"] for item in runtime_context["events"]
+                ]
+                observation_manifest["assessment_event_ids"]["context"] = context_ids
+                observation_manifest["assessment_event_identities"]["context"] = [
+                    {
+                        "event_id": item["event_id"],
+                        "docker_host_id": item.get("docker_host_id"),
+                        "container_id": item.get("container_id"),
+                        "sensor_instance_id": item.get("sensor_instance_id"),
+                        "sensor_epoch": item.get("sensor_epoch"),
+                        "pid_namespace_start_ns": item.get("pid_namespace_start_ns"),
+                        "process_pid": item.get("process_pid"),
+                        "process_start_ns": item.get("process_start_ns"),
+                    }
+                    for item in runtime_context["events"]
+                ]
+                observation_manifest["assessment_event_coverage"] = {
+                    "process_context": runtime_context.get("status", "unavailable")
+                }
         observation_key = sha256_document(
-            {"legacy_key": observation_key, "scope": scope.manifest()}
+            {
+                "legacy_key": observation_key,
+                "scope": scope.manifest(),
+                "assessment_event_identities": observation_manifest.get(
+                    "assessment_event_identities", {}
+                ),
+                "context_status": (runtime_context or {}).get("status"),
+            }
         )
     try:
         if db.get_bind().dialect.name == "postgresql":
@@ -321,12 +441,18 @@ def compute_anomaly_score(
         if existing is not None:
             return existing
 
-        command_coverage = observation_manifest.get("observation_coverage", {}).get(
-            "command_event_fraction", 0
+        coverage_document = observation_manifest.get("observation_coverage", {})
+        command_coverage = (
+            coverage_document.get("command_usable_fraction", 0)
+            if profile.feature_schema_version == SUPPORT_AWARE_SCHEMA
+            else coverage_document.get("command_event_fraction", 0)
         )
+        minimum_coverage_schema = profile.feature_schema_version in {
+            COMMAND_LINEAGE_SCHEMA,
+            SUPPORT_AWARE_SCHEMA,
+        }
         missing_command_evidence = (
-            profile.feature_schema_version == COMMAND_LINEAGE_SCHEMA
-            and command_coverage < MIN_COMMAND_COVERAGE
+            minimum_coverage_schema and command_coverage < MIN_COMMAND_COVERAGE
         )
         if (
             process_count < settings.anomaly_min_process_events
@@ -336,16 +462,25 @@ def compute_anomaly_score(
             band = "insufficient_data"
             total_score = None
             components = {
+                "status": "insufficient_data",
                 "available": False,
                 "reason": "Insufficient process-execution telemetry",
+                "reason_codes": ["process_event_support_below_minimum"],
                 "required_process_events": settings.anomaly_min_process_events,
                 "observed_process_events": process_count,
                 "observed_runtime_events": runtime_count,
+                "observed_kernel_events": len(kernel_event_rows),
             }
             if missing_command_evidence:
                 components.update(
                     {
                         "reason": "Insufficient command-line evidence coverage",
+                        "reason_codes": sorted(
+                            {
+                                *components.get("reason_codes", []),
+                                "usable_command_coverage_below_minimum",
+                            }
+                        ),
                         "required_command_coverage": MIN_COMMAND_COVERAGE,
                         "observed_command_coverage": command_coverage,
                     }
@@ -367,27 +502,37 @@ def compute_anomaly_score(
                     observation_features=observation_features,
                     algorithm_version=scoring_config["algorithm_version"],
                 )
-                if scoring_config["algorithm_version"] == ALGORITHM_VERSION:
+                score_status = components.get("status", "scored")
+                if (
+                    score_status == "scored"
+                    and total_score is not None
+                    and scoring_config["algorithm_version"] == ALGORITHM_VERSION
+                ):
                     ml_res = default_classifier.predict_document(
                         observation_features=observation_features,
                         baseline_features=profile.features,
                         drift_score=total_score,
                     )
                     explanation["ml_threat_classification"] = ml_res.to_dict()
-                else:
-                    explanation["ml_input_contract"] = {
-                        "supported": False,
-                        "required_feature_schema": FEATURE_SCHEMA_VERSION,
-                        "required_algorithm": ALGORITHM_VERSION,
-                        "observed_algorithm": scoring_config["algorithm_version"],
-                        "observed_feature_schema": profile.feature_schema_version,
-                    }
             except ValueError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=str(exc),
                 ) from exc
-            score_status = "scored"
+            score_status = components.get("status", "scored")
+
+        if (
+            profile.feature_schema_version != FEATURE_SCHEMA_VERSION
+            or scoring_config["algorithm_version"] != ALGORITHM_VERSION
+        ):
+            explanation["ml_input_contract"] = {
+                "supported": False,
+                "status": "unsupported_feature_contract",
+                "required_feature_schema": FEATURE_SCHEMA_VERSION,
+                "required_algorithm": ALGORITHM_VERSION,
+                "observed_algorithm": scoring_config["algorithm_version"],
+                "observed_feature_schema": profile.feature_schema_version,
+            }
 
         now = datetime.now(timezone.utc)
         record = AnomalyScore(
@@ -416,23 +561,52 @@ def compute_anomaly_score(
         )
         db.add(record)
         if scope and scope.evidence_contract:
-            from porygon_api.runtime_evidence import build_bundle,RULES_HASH
+            from porygon_api.runtime_evidence import build_bundle, rules_hash_for
             from porygon_api.evidence_features import extract_features
             from porygon_api.model_registry import predict
-            from porygon_api.models import RuntimeEvidenceBundle,AdvisoryModel
-            if scope.evidence_rules_hash != RULES_HASH:
-                raise HTTPException(409,'Scheduled evidence rules changed')
+            from porygon_api.models import RuntimeEvidenceBundle, AdvisoryModel
+
+            expected_hash = rules_hash_for(scope.evidence_contract)
+            if scope.evidence_rules_hash != expected_hash:
+                raise HTTPException(409, "Scheduled evidence rules changed")
             db.flush()
             # Freeze the entire argument-free replay bundle with the score.
-            document=build_bundle(selected,scope,window_start,window_end,
-                profile.features.get('observed_sets',{}).get('executables',[]))
-            features=extract_features(document)
-            model=db.get(AdvisoryModel,scope.advisory_model_hash) if scope.advisory_model_hash else None
+            document = build_bundle(
+                selected,
+                scope,
+                window_start,
+                window_end,
+                profile.features.get("observed_sets", {}).get("executables", []),
+                context=runtime_context,
+            )
+            if runtime_context is not None and [
+                item["event_id"] for item in document.get("context_events", [])
+            ] != observation_manifest["assessment_event_ids"].get("context", []):
+                raise HTTPException(409, "Frozen process context selection changed")
+            features = extract_features(document)
+            model = (
+                db.get(AdvisoryModel, scope.advisory_model_hash)
+                if scope.advisory_model_hash
+                else None
+            )
             if scope.advisory_model_hash and model is None:
-                raise HTTPException(409,'Scheduled advisory model artifact unavailable')
-            db.add(RuntimeEvidenceBundle(bundle_hash=document['bundle_hash'],score_id=record.score_id,
-                contract=scope.evidence_contract,rules_hash=RULES_HASH,document=document,
-                feature_document=features,model_prediction=predict(features,model.artifact if model else None),created_at=now))
+                raise HTTPException(
+                    409, "Scheduled advisory model artifact unavailable"
+                )
+            db.add(
+                RuntimeEvidenceBundle(
+                    bundle_hash=document["bundle_hash"],
+                    score_id=record.score_id,
+                    contract=scope.evidence_contract,
+                    rules_hash=expected_hash,
+                    document=document,
+                    feature_document=features,
+                    model_prediction=predict(
+                        features, model.artifact if model else None
+                    ),
+                    created_at=now,
+                )
+            )
         if commit:
             db.commit()
             db.refresh(record)
@@ -506,45 +680,71 @@ def run_detection(
         ).all()
     )
     selected_allowlist_hash = allowlist_set_hash(active_allowlists)
-    enabled_custom_rules = list(
-        db.scalars(
-            select(CustomDetectionRule)
-            .where(CustomDetectionRule.enabled.is_(True))
-            .order_by(CustomDetectionRule.slug)
-        ).all()
-    )
-    custom_rule_documents = [
-        {
-            "slug": rule.slug,
-            "name": rule.name,
-            "category": rule.category,
-            "description": rule.description,
-            "target": rule.target,
-            "condition": rule.condition,
-            "severity_weight": rule.severity_weight,
-            "confidence_weight": rule.confidence_weight,
-            "incident_eligible": rule.incident_eligible,
-            "enabled": rule.enabled,
-        }
-        for rule in enabled_custom_rules
-    ]
-    selected_custom_ruleset_hash = custom_ruleset_hash(custom_rule_documents)
+    from porygon_api.rule_workbench import resolve_active_snapshot
+
+    custom_rule_snapshot = resolve_active_snapshot(db)
+    custom_rule_documents = custom_rule_snapshot["rules"]
+    selected_custom_ruleset_hash = custom_rule_snapshot["ruleset_hash"]
+    custom_rule_interpreter_hash = custom_rule_snapshot["interpreter_hash"]
     run_key = build_detection_run_key(
-        score.score_id, selected_allowlist_hash, selected_custom_ruleset_hash
+        score.score_id,
+        selected_allowlist_hash,
+        selected_custom_ruleset_hash,
+        custom_rule_interpreter_hash,
     )
+    run_key = sha256_document({
+        "legacy_run_key": run_key,
+        "custom_rule_snapshot_hash": custom_rule_snapshot["snapshot_hash"],
+    })
     evidence_bundle = None
     if scope and scope.evidence_contract:
-        from porygon_api.runtime_evidence import query_events,epoch_ns
+        from porygon_api.runtime_evidence import (
+            PROCESS_CONTEXT_CONTRACT,
+            query_events,
+            epoch_ns,
+        )
         from porygon_api.models import RuntimeEvidenceBundle
-        selected = score.observation_manifest['assessment_event_ids']
-        frozen_bundle=db.scalar(select(RuntimeEvidenceBundle).where(RuntimeEvidenceBundle.score_id==score.score_id))
-        if frozen_bundle is None or frozen_bundle.rules_hash != scope.evidence_rules_hash:
-            raise HTTPException(409,'Frozen runtime evidence bundle unavailable')
-        evidence_bundle=frozen_bundle.document
-        raw_document={key:value for key,value in evidence_bundle.items() if key!='bundle_hash'}
-        if sha256_document(raw_document)!=frozen_bundle.bundle_hash:
-            raise HTTPException(409,'Runtime evidence bundle integrity mismatch')
-        run_key = sha256_document({'legacy_run_key':run_key,'runtime_evidence_bundle_hash':evidence_bundle['bundle_hash']})
+
+        selected = score.observation_manifest["assessment_event_ids"]
+        frozen_bundle = db.scalar(
+            select(RuntimeEvidenceBundle).where(
+                RuntimeEvidenceBundle.score_id == score.score_id
+            )
+        )
+        if (
+            frozen_bundle is None
+            or frozen_bundle.rules_hash != scope.evidence_rules_hash
+        ):
+            raise HTTPException(409, "Frozen runtime evidence bundle unavailable")
+        evidence_bundle = frozen_bundle.document
+        raw_document = {
+            key: value for key, value in evidence_bundle.items() if key != "bundle_hash"
+        }
+        if sha256_document(raw_document) != frozen_bundle.bundle_hash:
+            raise HTTPException(409, "Runtime evidence bundle integrity mismatch")
+        if scope.evidence_contract == PROCESS_CONTEXT_CONTRACT:
+            frozen_context_ids = [
+                item.get("event_id") for item in evidence_bundle.get("context_events", [])
+            ]
+            if frozen_context_ids != selected.get("context", []):
+                raise HTTPException(409, "Frozen process context selection mismatch")
+        run_key = sha256_document(
+            {
+                "legacy_run_key": run_key,
+                "runtime_evidence_bundle_hash": evidence_bundle["bundle_hash"],
+            }
+        )
+        if scope.evidence_contract == PROCESS_CONTEXT_CONTRACT:
+            from porygon_api.runtime_evidence import query_context_events
+
+            query_context_events(
+                db,
+                scope,
+                score.window_start,
+                score.window_end,
+                [],
+                context_ids=selected.get("context", []),
+            )
 
     if db.get_bind().dialect.name == "postgresql":
         db.execute(select(func.pg_advisory_xact_lock(func.hashtext(run_key))))
@@ -553,8 +753,14 @@ def run_detection(
         return _detection_execution(db, existing)
 
     if evidence_bundle is not None:
-        query_events(db,scope,score.window_start,score.window_end,
-            process_ids=selected['process'],kernel_ids=selected.get('kernel',[]))
+        query_events(
+            db,
+            scope,
+            score.window_start,
+            score.window_end,
+            process_ids=selected["process"],
+            kernel_ids=selected.get("kernel", []),
+        )
     profile = db.get(BehaviorProfile, score.profile_id)
     if profile is None:
         raise HTTPException(
@@ -578,10 +784,23 @@ def run_detection(
                     if scope
                     else ()
                 ),
-                ProcessExecEvent.image_digest == score.image_digest,
+                (
+                    ProcessExecEvent.image_id == score.image_digest.removeprefix("local:")
+                    if is_local_image_identity(score.image_digest)
+                    else ProcessExecEvent.image_digest == score.image_digest
+                ),
                 ProcessExecEvent.correlation_status == "resolved",
-                *((ProcessExecEvent.time_nano>=epoch_ns(score.window_start),ProcessExecEvent.time_nano<epoch_ns(score.window_end))
-                  if scope and scope.evidence_contract else (ProcessExecEvent.occurred_at>=score.window_start,ProcessExecEvent.occurred_at<score.window_end)),
+                *(
+                    (
+                        ProcessExecEvent.time_nano >= epoch_ns(score.window_start),
+                        ProcessExecEvent.time_nano < epoch_ns(score.window_end),
+                    )
+                    if scope and scope.evidence_contract
+                    else (
+                        ProcessExecEvent.occurred_at >= score.window_start,
+                        ProcessExecEvent.occurred_at < score.window_end,
+                    )
+                ),
             )
             .order_by(ProcessExecEvent.occurred_at, ProcessExecEvent.event_id)
         ).all()
@@ -602,19 +821,56 @@ def run_detection(
                     if scope
                     else ()
                 ),
-                RuntimeEvent.image_digest == score.image_digest,
-                *((RuntimeEvent.time_nano>=epoch_ns(score.window_start),RuntimeEvent.time_nano<epoch_ns(score.window_end))
-                  if scope and scope.evidence_contract else (RuntimeEvent.occurred_at>=score.window_start,RuntimeEvent.occurred_at<score.window_end)),
+                (
+                    RuntimeEvent.image_id == score.image_digest.removeprefix("local:")
+                    if is_local_image_identity(score.image_digest)
+                    else RuntimeEvent.image_digest == score.image_digest
+                ),
+                *(
+                    (
+                        RuntimeEvent.time_nano >= epoch_ns(score.window_start),
+                        RuntimeEvent.time_nano < epoch_ns(score.window_end),
+                    )
+                    if scope and scope.evidence_contract
+                    else (
+                        RuntimeEvent.occurred_at >= score.window_start,
+                        RuntimeEvent.occurred_at < score.window_end,
+                    )
+                ),
             )
             .order_by(RuntimeEvent.occurred_at, RuntimeEvent.event_id)
         ).all()
     )
+    kernel_events = []
+    if scope:
+        selected = score.observation_manifest["assessment_event_ids"]
+        kernel_events = list(db.scalars(
+            select(KernelRuntimeEvent).where(
+                *scope.filters(KernelRuntimeEvent),
+                KernelRuntimeEvent.event_id.in_(selected.get("kernel", [])),
+                (
+                    KernelRuntimeEvent.image_id == score.image_digest.removeprefix("local:")
+                    if is_local_image_identity(score.image_digest)
+                    else KernelRuntimeEvent.image_digest == score.image_digest
+                ),
+                KernelRuntimeEvent.correlation_status == "resolved",
+                *(
+                    (
+                        KernelRuntimeEvent.time_nano >= epoch_ns(score.window_start),
+                        KernelRuntimeEvent.time_nano < epoch_ns(score.window_end),
+                    ) if scope.evidence_contract else (
+                        KernelRuntimeEvent.occurred_at >= score.window_start,
+                        KernelRuntimeEvent.occurred_at < score.window_end,
+                    )
+                ),
+            ).order_by(KernelRuntimeEvent.time_nano, KernelRuntimeEvent.event_id)
+        ).all())
 
     if scope:
         selected = score.observation_manifest["assessment_event_ids"]
-        if len(process_events) != len(selected["process"]) or len(
-            runtime_events
-        ) != len(selected["runtime"]):
+        if (len(process_events) != len(selected["process"])
+            or len(runtime_events) != len(selected["runtime"])
+            or len(kernel_events) != len(selected.get("kernel", []))):
             raise HTTPException(409, "Selected scoped evidence is no longer available")
     process_events = utc_events(process_events)
     runtime_events = utc_events(runtime_events)
@@ -625,20 +881,58 @@ def run_detection(
         runtime_events=runtime_events,
         allowlists=active_allowlists,
         custom_rules=custom_rule_documents,
+        kernel_events=kernel_events,
     )
     if evidence_bundle is not None:
         from porygon_api.runtime_evidence import detection_matches
+
         additional = detection_matches(evidence_bundle)
         advisory = frozen_bundle.model_prediction
         if additional:
-            result = dict(result,matches=[*result['matches'],*additional],incident_eligible=True,
-                status='incident_created',severity_score=max(result['severity_score'] if result['severity_score'] is not None else 0.0,max(x['severity_weight'] for x in additional)),
-                confidence_score=max(result['confidence_score'],0.9),confidence_level='high')
-            severity=result['severity_score']
-            result['severity_level']='critical' if severity>=0.85 else 'high'
-            result['summary']='Observed attributable runtime evidence; process-distance availability is recorded separately.'
-        result = dict(result,runtime_evidence={'contract':CONTRACT,'bundle_hash':evidence_bundle['bundle_hash'],
-            'rules_hash':frozen_bundle.rules_hash,'model':advisory,'coverage':evidence_bundle['coverage']})
+            result = dict(
+                result,
+                matches=[*result["matches"], *additional],
+                incident_eligible=True,
+                status="incident_created",
+                severity_score=max(
+                    result["severity_score"]
+                    if result["severity_score"] is not None
+                    else 0.0,
+                    max(x["severity_weight"] for x in additional),
+                ),
+                confidence_score=max(result["confidence_score"], 0.9),
+                confidence_level="high",
+            )
+            severity = result["severity_score"]
+            result["severity_level"] = "critical" if severity >= 0.85 else "high"
+            result["summary"] = (
+                "Observed attributable runtime evidence; process-distance availability is recorded separately."
+            )
+        result = dict(
+            result,
+            runtime_evidence={
+                "contract": evidence_bundle["contract"],
+                "bundle_hash": evidence_bundle["bundle_hash"],
+                "rules_hash": frozen_bundle.rules_hash,
+                "model": advisory,
+                "coverage": evidence_bundle["coverage"],
+            },
+        )
+    if kernel_events:
+        result = dict(result, kernel_evidence=[
+            {
+                "event_id": row.event_id,
+                "docker_host_id": row.docker_host_id,
+                "container_id": row.container_id,
+                "sensor_instance_id": row.sensor_instance_id,
+                "sensor_epoch": row.sensor_epoch,
+                "pid_namespace_start_ns": row.pid_namespace_start_ns,
+                "process_pid": row.process_pid,
+                "process_start_ns": row.process_start_ns,
+                "time_nano": row.time_nano,
+            }
+            for row in kernel_events
+        ])
     run = DetectionRun(
         run_id=str(uuid4()),
         run_key=run_key,
@@ -647,6 +941,8 @@ def run_detection(
         ruleset_hash=ruleset_hash(),
         allowlist_set_hash=selected_allowlist_hash,
         custom_ruleset_hash=selected_custom_ruleset_hash,
+        custom_rule_snapshot=custom_rule_snapshot,
+        custom_rule_interpreter_hash=custom_rule_interpreter_hash,
         applied_allowlist_ids=[item.allowlist_id for item in active_allowlists],
         image_digest=score.image_digest,
         window_start=score.window_start,

@@ -13,6 +13,8 @@
 // exposing them to the component via a getter fixes it without touching any
 // of the many `chartRegistry.X` call sites throughout this file.
 const chartRegistry = {};
+let ruleWorkbenchReturnFocus = null;
+let ruleWorkbenchTokenReturnFocus = null;
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('porygonApp', () => ({
@@ -106,8 +108,7 @@ document.addEventListener('alpine:init', () => {
     // Unified view of built-in + custom detection rules for the Incidents
     // tab's single rules list. Custom rules are mapped onto the same shape
     // as built-in rules (rule_id, name, description, severity_weight,
-    // confidence_weight) plus is_custom/enabled flags and a back-reference
-    // to the original custom rule object so the Disable action still works.
+    // confidence_weight) plus lifecycle state and a back-reference for workbench review.
     get allRules() {
       const mappedCustom = this.customRules.map(r => ({
         rule_id: r.rule_id || `POR-CUS-${r.slug}`,
@@ -116,6 +117,12 @@ document.addEventListener('alpine:init', () => {
         severity_weight: r.severity_weight,
         confidence_weight: r.confidence_weight,
         enabled: r.enabled,
+        lifecycle_state: r.lifecycle_state,
+        candidate_state: r.candidate_state,
+        revision_hash: r.revision_hash,
+        active_revision_hash: r.active_revision_hash,
+        category: r.category,
+        target: r.target,
         // Canonical text form of the rule's condition, rendered by the backend from
         // the stored tree, so builder- and text-authored rules read the same here.
         expression: r.expression,
@@ -138,7 +145,25 @@ document.addEventListener('alpine:init', () => {
       severity_weight: 0.6,
       confidence_weight: 0.8,
       incident_eligible: true,
-      conditions: [{ field: 'executable', op: 'equals', value: '', scope: 'event' }],
+      expression: '',
+    },
+    ruleWorkbench: {
+      selectedRule: null,
+      mode: 'manual',
+      eventIds: '',
+      fixtures: '',
+      reference: '',
+      rollbackRevisionHash: '',
+      revisions: [],
+      result: null,
+      message: '',
+      busy: false,
+    },
+    ruleAssistant: {
+      objective: '', recipes: [], loadingRecipes: false, busy: false,
+      recipeId: '', parameters: {}, recommendations: [], triage: null,
+      proposal: null, proposalExpression: '', ready: false, message: '', requestId: 0,
+      suggestedParameters: null,
     },
 
     // Pipeline trace (raw event -> rule match -> incident)
@@ -427,13 +452,36 @@ document.addEventListener('alpine:init', () => {
     isExecutingAttack: false,
     authorizingIncidentId: null,
     toasts: [],
+    feedUnavailable: {
+      health: false,
+      inventory: false,
+      telemetry: false,
+      incidents: false,
+      vulnerabilities: false,
+    },
+    get unavailableFeeds() {
+      const labels = {
+        health: 'service health',
+        inventory: 'container inventory',
+        telemetry: 'process telemetry',
+        incidents: 'incident feed',
+        vulnerabilities: 'vulnerability scans',
+      };
+      return Object.keys(labels).filter(feed => this.feedUnavailable[feed]).map(feed => labels[feed]);
+    },
     showDocsModal: false,
     docsTab: 'mental_model',
 
-    // Human credentials remain in memory for this tab only.
-    _humanToken: '',
+    // Human credentials persist in sessionStorage for this tab only.
+    _humanToken: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('porygon_operator_token')) || '',
     get operatorToken() { return this._humanToken; },
-    set operatorToken(value) { this._humanToken = value || ''; },
+    set operatorToken(value) {
+      this._humanToken = value || '';
+      try {
+        if (value) sessionStorage.setItem('porygon_operator_token', value);
+        else sessionStorage.removeItem('porygon_operator_token');
+      } catch (e) { }
+    },
 
     // Styled operator-token entry modal — replaces window.prompt() everywhere a
     // human operator needs to authorize a write. Returns the entered token (or
@@ -443,11 +491,22 @@ document.addEventListener('alpine:init', () => {
 
     requestOperatorToken(message, title = 'Operator authorization required') {
       return new Promise((resolve) => {
+        if (this.showAddRuleModal) ruleWorkbenchTokenReturnFocus = document.activeElement;
         this.tokenModal.title = title;
         this.tokenModal.message = message;
         this.tokenModal.value = '';
         this.tokenModal.show = true;
         this.tokenModal.resolve = resolve;
+        if (this.showAddRuleModal) this.$nextTick(() => document.getElementById('human-access-token')?.focus({ preventScroll: true }));
+      });
+    },
+
+    restoreRuleWorkbenchTokenFocus() {
+      this.$nextTick(() => {
+        if (this.showAddRuleModal && ruleWorkbenchTokenReturnFocus?.isConnected) {
+          ruleWorkbenchTokenReturnFocus.focus({ preventScroll: true });
+        }
+        ruleWorkbenchTokenReturnFocus = null;
       });
     },
 
@@ -458,6 +517,7 @@ document.addEventListener('alpine:init', () => {
       this.tokenModal.value = '';
       this.tokenModal.resolve = null;
       if (resolve) resolve(value || null);
+      this.restoreRuleWorkbenchTokenFocus();
     },
 
     cancelTokenModal() {
@@ -466,6 +526,7 @@ document.addEventListener('alpine:init', () => {
       this.tokenModal.value = '';
       this.tokenModal.resolve = null;
       if (resolve) resolve(null);
+      this.restoreRuleWorkbenchTokenFocus();
     },
 
     // Styled confirmation modal — replaces raw window.confirm() for destructive
@@ -714,6 +775,17 @@ document.addEventListener('alpine:init', () => {
       // after DOM for charts, init reveal again for bento
       if (typeof window.initReveal === 'function') window.initReveal();
 
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('assistant') === '1') {
+          setTimeout(async () => {
+            await this.startGuidedRuleAuthoring();
+            await this.fillAndTriageObjective('Detect successful writes under /etc/ by a process');
+            await this.proposeRuleDraft();
+          }, 800);
+        }
+      }
+
       // Watch activeTab to resize charts and trigger pipeline auto-selection
       if (typeof this.$watch === 'function') {
         this.$watch('activeTab', (newTab) => {
@@ -771,11 +843,11 @@ document.addEventListener('alpine:init', () => {
       }
       // for demo route via dashboard server, keep same host
       let response = await fetch(path, Object.assign({}, opts, { headers }));
-      if (response.status === 401 && !token && !this._authPromptShown) {
+      if ((response.status === 401 || (response.status === 422 && !token)) && !token && !this._authPromptShown) {
         this._authPromptShown = true;
         this._authPrompt = this.requestOperatorToken('Enter your enrolled human access token to load this deployment.', 'Access token required');
       }
-      if (response.status === 401 && !token && this._authPrompt) {
+      if ((response.status === 401 || (response.status === 422 && !token)) && !token && this._authPrompt) {
         const entered = await this._authPrompt;
         if (entered) this.operatorToken = entered;
         if (this.operatorToken) {
@@ -808,8 +880,9 @@ document.addEventListener('alpine:init', () => {
     },
 
     showToast(message, type = 'info') {
+      if (this.toasts.some(toast => toast.message === message && toast.type === type)) return;
       const id = Date.now() + Math.random();
-      this.toasts.push({ id, message, type });
+      this.toasts = [...this.toasts.slice(-1), { id, message, type }];
       setTimeout(() => {
         this.toasts = this.toasts.filter(t => t.id !== id);
       }, 4500);
@@ -872,7 +945,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchCustomRules() {
       try {
-        const res = await this._apiFetch('/api/v1/custom-detection-rules');
+        const res = await this._apiFetch('/api/v1/rule-workbench/rules');
         if (res.ok) {
           this.customRules = await res.json();
           // Index custom rules into rulesMeta too, so a custom-rule match
@@ -888,31 +961,324 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    openAddRuleModal() {
+    openAddRuleModal(rule = null) {
+      ruleWorkbenchReturnFocus = typeof document !== 'undefined' ? document.activeElement : null;
+      this.ruleWorkbench = {
+        selectedRule: rule,
+        mode: 'manual',
+        eventIds: '',
+        fixtures: '',
+        reference: '',
+        rollbackRevisionHash: '',
+        revisions: [],
+        result: null,
+        message: '',
+        busy: false,
+      };
       this.newRuleDraft = {
-        slug: '',
-        name: '',
-        description: '',
-        category: 'custom',
-        target: 'process',
-        severity_weight: 0.6,
-        confidence_weight: 0.8,
-        incident_eligible: true,
-        mode: 'builder',
-        expression: '',
+        slug: rule?.slug || '',
+        name: rule?.name || '',
+        description: rule?.description || '',
+        category: rule?.category || 'custom',
+        target: rule?.target || 'process',
+        severity_weight: rule?.severity_weight ?? 0.6,
+        confidence_weight: rule?.confidence_weight ?? 0.8,
+        incident_eligible: rule?.incident_eligible ?? true,
+        mode: 'expression',
+        expression: rule?.expression || '',
         conditions: [{ field: 'executable', op: 'equals', value: '', scope: 'event' }],
       };
       this.ruleFormError = '';
+      this.ruleAssistant = { objective: '', recipes: [], loadingRecipes: false, busy: false, recipeId: '', parameters: {}, recommendations: [], triage: null, suggestedParameters: null, proposal: null, proposalExpression: '', ready: false, message: '', requestId: 0 };
       this.showAddRuleModal = true;
+      this.$nextTick(() => {
+        const target = this.ruleWorkbench.mode === 'guided'
+          ? document.getElementById('rule-assistant-objective')
+          : (rule?.custom_rule_id ? document.getElementById('rule-workbench-expression') : document.getElementById('rule-workbench-slug'));
+        target?.focus({ preventScroll: true });
+      });
+      if (rule) this.fetchRuleRevisions(rule.custom_rule_id);
+    },
+
+    closeRuleWorkbench() {
+      this.showAddRuleModal = false;
+      this.$nextTick(() => {
+        if (ruleWorkbenchReturnFocus?.isConnected && typeof ruleWorkbenchReturnFocus.focus === 'function') {
+          ruleWorkbenchReturnFocus.focus({ preventScroll: true });
+        }
+        ruleWorkbenchReturnFocus = null;
+      });
+    },
+
+    trapRuleWorkbenchFocus(event) {
+      const dialog = event.currentTarget;
+      const focusable = [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]
+        .filter(element => element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden');
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    },
+
+    async openRuleAssistant() {
+      if (!this.ruleWorkbench.selectedRule) this.ruleWorkbench.mode = 'guided';
+      if (!await this._ensureRuleOperator()) return;
+      if (this.ruleAssistant.recipes.length || this.ruleAssistant.loadingRecipes) return;
+      this.ruleAssistant.loadingRecipes = true;
+      this.ruleAssistant.message = '';
+      try {
+        const response = await this._apiFetch('/api/v1/rule-workbench/assistant');
+        if (!response.ok) throw new Error(await this._extractApiError(response));
+        const body = await response.json();
+        this.ruleAssistant.recipes = Array.isArray(body.recipes) ? body.recipes : [];
+        if (!this.ruleAssistant.recipes.length) this.ruleAssistant.message = 'No local playbooks are available. Use the manual editor.';
+      } catch (err) {
+        this.ruleAssistant.message = `Could not load playbooks: ${err.message}`;
+      } finally {
+        this.ruleAssistant.loadingRecipes = false;
+      }
+    },
+
+    startGuidedRuleAuthoring() {
+      this.openAddRuleModal();
+      this.ruleWorkbench.mode = 'guided';
+      return this.openRuleAssistant();
+    },
+
+    fillAndTriageObjective(text) {
+      this.ruleAssistant.objective = text;
+      this.invalidateRuleObjective();
+      return this.triageRuleObjective();
+    },
+
+    selectedRecipe() {
+      return this.ruleAssistant.recipes.find(recipe => recipe.id === this.ruleAssistant.recipeId) || null;
+    },
+
+    recipeTitle(id) {
+      return this.ruleAssistant.recipes.find(recipe => recipe.id === id)?.title || id;
+    },
+
+    recipeDescription(id) {
+      return this.ruleAssistant.recipes.find(recipe => recipe.id === id)?.description || '';
+    },
+
+    invalidateRuleObjective() {
+      this.ruleAssistant.requestId += 1;
+      this.ruleAssistant.busy = false;
+      this.ruleAssistant.recipeId = '';
+      this.ruleAssistant.parameters = {};
+      this.ruleAssistant.recommendations = [];
+      this.ruleAssistant.triage = null;
+      this.ruleAssistant.proposal = null;
+      this.ruleAssistant.proposalExpression = '';
+      this.ruleAssistant.ready = false;
+      this.ruleAssistant.message = '';
+    },
+
+    invalidateRuleParameters() {
+      this.ruleAssistant.requestId += 1;
+      this.ruleAssistant.busy = false;
+      this.ruleAssistant.proposal = null;
+      this.ruleAssistant.proposalExpression = '';
+      this.ruleAssistant.ready = false;
+      this.ruleAssistant.message = '';
+    },
+
+    invalidateRuleExpression() {
+      this.ruleAssistant.requestId += 1;
+      this.ruleAssistant.busy = false;
+      this.ruleAssistant.ready = false;
+      this.ruleAssistant.message = 'Expression changed. Run the checks again before applying.';
+    },
+
+    selectRuleRecipe(id) {
+      if (this.ruleAssistant.recipeId === id) return;
+      this.ruleAssistant.requestId += 1;
+      this.ruleAssistant.busy = false;
+      this.ruleAssistant.recipeId = id;
+      const recipe = this.selectedRecipe();
+      this.ruleAssistant.parameters = Object.fromEntries((recipe?.parameters || []).map(param => [param.id, Array.isArray(param.default) ? param.default.join(', ') : String(param.default ?? '')]));
+      this.ruleAssistant.proposal = null;
+      this.ruleAssistant.proposalExpression = '';
+      this.ruleAssistant.ready = false;
+      this.ruleAssistant.suggestedParameters = null;
+    },
+
+    async triageRuleObjective() {
+      if (this.ruleAssistant.busy || !this.ruleAssistant.objective.trim()) return;
+      if (!await this._ensureRuleOperator()) return;
+      this.ruleAssistant.busy = true;
+      const requestId = ++this.ruleAssistant.requestId;
+      const objective = this.ruleAssistant.objective.trim();
+      this.ruleAssistant.message = '';
+      this.ruleAssistant.triage = null;
+      this.ruleAssistant.recommendations = [];
+      this.ruleAssistant.proposal = null;
+      try {
+        const response = await this._apiFetch('/operator/v1/rule-workbench/assistant/triage', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ objective }),
+        });
+        if (!response.ok) throw new Error(await this._extractApiError(response));
+        const result = await response.json();
+        if (requestId !== this.ruleAssistant.requestId || objective !== this.ruleAssistant.objective.trim()) return;
+        this.ruleAssistant.triage = result;
+        this.ruleAssistant.recommendations = (result.recommendations || []).map(item => typeof item === 'string' ? { id: item, rationale: '' } : ({ ...item, id: item.id || item.recipe_id }));
+        const selectedId = result.selected_recipe_id;
+        if (selectedId && this.ruleAssistant.recipes.some(recipe => recipe.id === selectedId)) {
+          const alreadySelected = this.ruleAssistant.recipeId === selectedId;
+          this.selectRuleRecipe(selectedId);
+          if (!alreadySelected) {
+            const suggestions = result.suggested_parameters || {};
+            for (const param of this.selectedRecipe()?.parameters || []) {
+              if (Object.prototype.hasOwnProperty.call(suggestions, param.id)) {
+                const value = suggestions[param.id];
+                this.ruleAssistant.parameters[param.id] = Array.isArray(value) ? value.join(', ') : String(value);
+              }
+            }
+            this.ruleAssistant.suggestedParameters = Object.keys(suggestions).length ? suggestions : null;
+          }
+        }
+        else if (!this.ruleAssistant.recommendations.length) this.ruleAssistant.message = 'No close playbook match. Refine the objective or continue in the manual editor.';
+      } catch (err) {
+        if (requestId !== this.ruleAssistant.requestId) return;
+        this.ruleAssistant.message = `Objective routing failed: ${err.message}`;
+      } finally {
+        if (requestId === this.ruleAssistant.requestId) this.ruleAssistant.busy = false;
+      }
+    },
+
+    async proposeRuleDraft() {
+      if (this.ruleAssistant.busy || !this.ruleAssistant.recipeId) return;
+      if (!await this._ensureRuleOperator()) return;
+      const recipe = this.selectedRecipe();
+      const parameters = {};
+      try {
+        for (const param of recipe?.parameters || []) {
+          const raw = String(this.ruleAssistant.parameters[param.id] ?? '').trim();
+          if (param.type === 'integer_list' || param.type === 'string_list') {
+            const items = raw.split(',').map(value => value.trim()).filter(Boolean);
+            parameters[param.id] = param.type === 'integer_list' ? items.map(value => {
+              if (!/^\d+$/.test(value)) throw new Error(`${param.label} must contain comma-separated integers.`);
+              return Number(value);
+            }) : items;
+          } else parameters[param.id] = raw;
+        }
+      } catch (err) {
+        this.ruleAssistant.message = err.message;
+        return;
+      }
+      this.ruleAssistant.busy = true;
+      const requestId = ++this.ruleAssistant.requestId;
+      const recipeId = this.ruleAssistant.recipeId;
+      const objective = this.ruleAssistant.objective.trim();
+      const proposalExpression = this.ruleAssistant.proposalExpression.trim();
+      this.ruleAssistant.message = '';
+      this.ruleAssistant.proposal = null;
+      this.ruleAssistant.ready = false;
+      try {
+        const response = await this._apiFetch('/operator/v1/rule-workbench/assistant/propose', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipe_id: recipeId, parameters, ...(proposalExpression ? { expression: proposalExpression } : {}) }),
+        });
+        if (!response.ok) throw new Error(await this._extractApiError(response));
+        const proposal = await response.json();
+        if (requestId !== this.ruleAssistant.requestId || recipeId !== this.ruleAssistant.recipeId || objective !== this.ruleAssistant.objective.trim()) return;
+        this.ruleAssistant.proposal = proposal;
+        this.ruleAssistant.proposalExpression = proposal.rule?.expression || '';
+        this.ruleAssistant.ready = Array.isArray(proposal.checks) && proposal.checks.length > 0 && proposal.checks.every(check => check.passed);
+        if (!proposal.checks?.length) this.ruleAssistant.message = 'Proposal returned without checks. It cannot be applied until checks are available.';
+      } catch (err) {
+        if (requestId !== this.ruleAssistant.requestId) return;
+        this.ruleAssistant.message = `Proposal could not be generated: ${err.message}`;
+      } finally {
+        if (requestId === this.ruleAssistant.requestId) this.ruleAssistant.busy = false;
+      }
+    },
+
+    applyRuleProposal() {
+      const proposal = this.ruleAssistant.proposal;
+      if (!proposal || !this.ruleAssistant.ready) return;
+      const rule = proposal.rule || {};
+      this.newRuleDraft = {
+        slug: rule.slug || '', name: rule.name || '', description: rule.description || '',
+        category: rule.category || 'custom', target: rule.target || 'process',
+        severity_weight: rule.severity_weight ?? 0.25, confidence_weight: rule.confidence_weight ?? 0.25,
+        incident_eligible: rule.incident_eligible ?? false, mode: 'expression',
+        expression: rule.expression || '', conditions: [{ field: 'executable', op: 'equals', value: '', scope: 'event' }],
+      };
+      this.ruleWorkbench.fixtures = JSON.stringify(proposal.fixtures || [], null, 2);
+      this.ruleWorkbench.eventIds = '';
+      this.ruleWorkbench.mode = 'manual';
+      this.ruleWorkbench.message = 'Proposal copied into the editor. Review it, then save explicitly as a draft.';
+    },
+
+    openRuleWorkbench(rule) {
+      this.openAddRuleModal(rule);
+    },
+
+    async _ensureRuleOperator() {
+      if (this.operatorToken) return true;
+      const token = await this.requestOperatorToken('Rule authoring and lifecycle actions require operator authorization.', 'Authorize rule workbench');
+      if (!token) return false;
+      this.operatorToken = token;
+      return true;
+    },
+
+    _ruleWorkbenchPayload() {
+      const draft = this.newRuleDraft;
+      return {
+        slug: String(draft.slug || '').trim(),
+        name: String(draft.name || '').trim(),
+        description: String(draft.description || '').trim(),
+        category: String(draft.category || '').trim(),
+        target: draft.target,
+        expression: String(draft.expression || '').trim(),
+        severity_weight: Number(draft.severity_weight),
+        confidence_weight: Number(draft.confidence_weight),
+        incident_eligible: !!draft.incident_eligible,
+      };
+    },
+
+    async _ruleWorkbenchRequest(path, method = 'POST', body = null) {
+      const response = await this._apiFetch(path, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      if (!response.ok) throw new Error(await this._extractApiError(response));
+      return response.status === 204 ? null : response.json();
+    },
+
+    async fetchRuleRevisions(ruleId) {
+      try {
+        const revisions = await this._ruleWorkbenchRequest(`/api/v1/rule-workbench/rules/${ruleId}/revisions`, 'GET');
+        this.ruleWorkbench.revisions = revisions;
+      } catch (err) {
+        this.ruleWorkbench.message = `Could not load revision history: ${err.message}`;
+      }
     },
 
     // Field vocabulary shown as a reference alongside the expression editor. It
     // mirrors _PROCESS_FIELDS/_RUNTIME_FIELDS in backend detection.py; the backend
     // validator remains the authority and rejects anything outside it.
     get expressionFields() {
-      return this.newRuleDraft.target === 'process'
-        ? ['executable', 'process_name', 'parent_executable', 'parent_name', 'command_line', 'user_uid', 'container_id']
-        : ['action', 'privileged', 'image_digest', 'container_id'];
+      if (this.newRuleDraft.target === 'process') {
+        return ['executable', 'executable_path', 'process_name', 'parent_executable', 'parent_name', 'command_line', 'user_uid', 'container_id', 'exe_from_memfd', 'exe_writable'];
+      }
+      if (this.newRuleDraft.target === 'runtime') return ['action', 'privileged', 'image_digest', 'container_id'];
+      return ['runtime_action', 'event_type', 'return_value', 'exe_from_memfd', 'exe_writable', 'file_path', 'remote_address', 'remote_port', 'process_name', 'executable', 'executable_path', 'user_uid', 'process_pid', 'process_start_ns', 'pid_namespace_start_ns', 'sensor_epoch', 'docker_host_id', 'container_id'];
     },
 
     addRuleCondition() {
@@ -923,66 +1289,103 @@ document.addEventListener('alpine:init', () => {
       this.newRuleDraft.conditions.splice(index, 1);
     },
 
-    async submitCustomRule() {
-      if (!this.operatorToken) {
-        const t = await this.requestOperatorToken('Adding a custom detection rule requires operator authorization.', 'Authorize new rule');
-        if (!t) return;
-        this.operatorToken = t;
-      }
-      const draft = this.newRuleDraft;
-      const payload = {
-        slug: draft.slug,
-        name: draft.name,
-        description: draft.description,
-        category: draft.category,
-        target: draft.target,
-        severity_weight: Number(draft.severity_weight),
-        confidence_weight: Number(draft.confidence_weight),
-        incident_eligible: !!draft.incident_eligible,
-        created_by: 'dashboard-operator',
-      };
-
-      // The backend accepts exactly one of 'expression' or 'condition'. Text is
-      // compiled server-side into the same condition tree the builder emits, so both
-      // paths land on one validated representation.
-      if (draft.mode === 'expression') {
-        if (!String(draft.expression || '').trim()) {
-          this.showToast('Write an expression first', 'warn');
-          return;
-        }
-        payload.expression = draft.expression.trim();
-      } else {
-        const leaves = draft.conditions
-          .filter(c => String(c.value).trim() !== '')
-          .map(c => ({
-            field: c.field,
-            op: c.op,
-            scope: draft.target === 'process' ? c.scope : 'event',
-            value: c.op === 'in' || c.op === 'not_in'
-              ? String(c.value).split(',').map(v => v.trim()).filter(Boolean)
-              : (c.field === 'privileged' ? c.value === 'true' : c.value),
-          }));
-        if (!leaves.length) {
-          this.showToast('Add at least one condition', 'warn');
-          return;
-        }
-        payload.condition = { all: leaves };
-      }
+    async validateRuleDraft() {
+      if (this.ruleWorkbench.busy) return;
+      this.ruleWorkbench.busy = true;
       try {
-        const res = await this._apiFetch('/operator/v1/custom-detection-rules', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-          throw new Error(await this._extractApiError(res));
-        }
-        this.showToast(`Custom rule '${draft.name}' added`, 'success');
-        this.showAddRuleModal = false;
-        await this.fetchCustomRules();
+        if (!await this._ensureRuleOperator()) return;
+        const result = await this._ruleWorkbenchRequest('/operator/v1/rule-workbench/validate', 'POST', this._ruleWorkbenchPayload());
+        this.ruleWorkbench.message = `Valid · ${result.document_hash}`;
       } catch (err) {
-        this.ruleFormError = err.message;
-        this.showToast(`Failed to add rule: ${err.message}`, 'error');
+        this.ruleWorkbench.message = err.message;
+      } finally {
+        this.ruleWorkbench.busy = false;
+      }
+    },
+
+    async saveRuleDraft() {
+      if (this.ruleWorkbench.busy) return;
+      const rule = this.ruleWorkbench.selectedRule;
+      const payload = this._ruleWorkbenchPayload();
+      if (!payload.expression) {
+        this.ruleWorkbench.message = 'Write a condition expression before saving.';
+        return;
+      }
+      this.ruleWorkbench.busy = true;
+      try {
+        if (!await this._ensureRuleOperator()) return;
+        const path = rule
+          ? `/operator/v1/rule-workbench/rules/${rule.custom_rule_id}/revisions`
+          : '/operator/v1/rule-workbench/rules';
+        const body = rule ? { ...payload, reference: this.ruleWorkbench.reference.trim(),
+          expected_revision_hash: rule.revision_hash } : payload;
+        if (rule && !body.reference) throw new Error('Enter an operator reference before saving a revision.');
+        const saved = await this._ruleWorkbenchRequest(path, 'POST', body);
+        this.ruleWorkbench.selectedRule = saved;
+        this.ruleWorkbench.message = `Draft saved · ${saved.revision_hash}`;
+        this.showToast('Draft saved; it is not active', 'success');
+        await Promise.all([this.fetchCustomRules(), this.fetchRuleRevisions(saved.custom_rule_id)]);
+      } catch (err) {
+        this.ruleWorkbench.message = err.message;
+      } finally {
+        this.ruleWorkbench.busy = false;
+      }
+    },
+
+    async runRuleWorkbench(action) {
+      if (this.ruleWorkbench.busy) return;
+      const rule = this.ruleWorkbench.selectedRule;
+      if (!rule) {
+        this.ruleWorkbench.message = 'Save the draft before preview, shadow review, activation, or rollback.';
+        return;
+      }
+      this.ruleWorkbench.busy = true;
+      this.ruleWorkbench.message = '';
+      try {
+        if (!await this._ensureRuleOperator()) return;
+        let path = `/operator/v1/rule-workbench/rules/${rule.custom_rule_id}/${action}`;
+        let body;
+        if (action === 'preview' || action === 'shadow') {
+          const eventIds = this.ruleWorkbench.eventIds.split(/[\s,]+/).map(id => id.trim()).filter(Boolean);
+          const fixtures = String(this.ruleWorkbench.fixtures || '').trim()
+            ? JSON.parse(this.ruleWorkbench.fixtures) : [];
+          if (eventIds.length && fixtures.length) throw new Error('Use event IDs or labeled fixtures, not both.');
+          body = { event_ids: eventIds, fixtures, expected_revision_hash: rule.revision_hash };
+          if (!rule.revision_hash) throw new Error('Refresh the rule to load its current immutable revision before preview.');
+        } else {
+          const reference = String(this.ruleWorkbench.reference || '').trim();
+          if (!reference) throw new Error('Enter an operator reference for this lifecycle action.');
+          body = { reference, expected_revision_hash: rule.revision_hash || undefined };
+          if (action === 'disable' && rule.revision_hash) body.expected_revision_hash = rule.revision_hash;
+          if (action === 'activate' || action === 'rollback') {
+            if (!rule.revision_hash) throw new Error('Refresh the rule to load its current immutable revision before this action.');
+          }
+          if (action === 'rollback') {
+            if (!this.ruleWorkbench.rollbackRevisionHash) throw new Error('Select an immutable revision to stage.');
+            body.revision_hash = this.ruleWorkbench.rollbackRevisionHash;
+          }
+        }
+        const result = await this._ruleWorkbenchRequest(path, 'POST', body);
+        if (action === 'preview' || action === 'shadow') {
+          this.ruleWorkbench.result = result;
+          if (action === 'shadow') {
+            this.ruleWorkbench.selectedRule.candidate_state = 'shadow';
+            await this.fetchCustomRules();
+          }
+        }
+        else {
+          this.ruleWorkbench.selectedRule = result;
+          this.ruleWorkbench.result = null;
+          await Promise.all([this.fetchCustomRules(), this.fetchRuleRevisions(rule.custom_rule_id)]);
+        }
+        this.ruleWorkbench.message = action === 'activate'
+          ? 'Revision activated after receipt and operator-reference checks.'
+          : action === 'rollback' ? 'Rollback staged as a shadow revision; preview and shadow it before activation.'
+            : `${action === 'shadow' ? 'Shadow' : 'Preview'} receipt ${result.receipt_hash}`;
+      } catch (err) {
+        this.ruleWorkbench.message = err.message;
+      } finally {
+        this.ruleWorkbench.busy = false;
       }
     },
 
@@ -1038,11 +1441,12 @@ document.addEventListener('alpine:init', () => {
         const res = await this._apiFetch('/api/v1/services');
         if (res.ok) {
           this.services = await res.json();
+          this.feedUnavailable.health = false;
         } else throw new Error('non-200');
       } catch (err) {
         // An unavailable health endpoint must not look like a healthy fleet.
         this.services = [];
-        this.showToast('Service health is unavailable', 'warn');
+        this.feedUnavailable.health = true;
       }
     },
 
@@ -1052,12 +1456,13 @@ document.addEventListener('alpine:init', () => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         this.containers = Array.isArray(data) ? data : (data.items || []);
+        this.feedUnavailable.inventory = false;
       } catch (err) {
         // An unavailable containers endpoint must not look like an empty,
         // fully-monitored fleet — clear stale data and signal the gap.
         console.warn('Could not fetch containers:', err);
         this.containers = [];
-        this.showToast('Container inventory is unavailable', 'warn');
+        this.feedUnavailable.inventory = true;
       }
     },
 
@@ -1128,24 +1533,27 @@ document.addEventListener('alpine:init', () => {
               const dataById = await resById.json();
               if (Array.isArray(dataById) && dataById.length > 0) {
                 this.events = dataById;
+                this.feedUnavailable.telemetry = false;
                 return;
               }
             }
           }
           this.events = data;
+          this.feedUnavailable.telemetry = false;
           return;
         }
 
         const r2 = await this._apiFetch(fallbackEndpoint);
         if (r2.ok) {
           this.events = await r2.json();
+          this.feedUnavailable.telemetry = false;
           return;
         }
         throw new Error(`process-events HTTP ${res.status}, events fallback HTTP ${r2.status}`);
       } catch (err) {
         console.warn('Could not fetch process-events:', err);
         this.events = [];
-        this.showToast('Process telemetry is unavailable', 'warn');
+        this.feedUnavailable.telemetry = true;
       } finally {
         this.isLoadingEvents = false;
       }
@@ -1233,6 +1641,7 @@ document.addEventListener('alpine:init', () => {
           return isNaN(d.getTime()) ? 0 : d.getTime();
         };
         this.incidents = fetched.sort((a, b) => getTime(b) - getTime(a));
+        this.feedUnavailable.incidents = false;
         if (this.incidents.length > 0 && !this.selectedIncident) {
           this.selectedIncident = this.incidents[0];
         }
@@ -1242,7 +1651,7 @@ document.addEventListener('alpine:init', () => {
         // was last fetched on screen with no indicator.
         console.warn('Could not fetch incidents:', err);
         this.incidents = [];
-        this.showToast('Incident feed is unavailable', 'warn');
+        this.feedUnavailable.incidents = true;
       }
     },
 
@@ -1251,6 +1660,7 @@ document.addEventListener('alpine:init', () => {
         const res = await this._apiFetch('/api/v1/image-scans?limit=20');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const scans = await res.json();
+        this.feedUnavailable.vulnerabilities = false;
         if (Array.isArray(scans) && scans.length > 0) {
           const completedScans = scans.filter(s => s.status === 'completed');
           // Real bug found live: this used to cap detail fetches at the first
@@ -1292,7 +1702,7 @@ document.addEventListener('alpine:init', () => {
         console.warn('Could not fetch scans:', err);
         this.vulnerabilityFindings = [];
         this.calculateEvidenceCounts();
-        this.showToast('Vulnerability scan data is unavailable', 'warn');
+        this.feedUnavailable.vulnerabilities = true;
       }
     },
 

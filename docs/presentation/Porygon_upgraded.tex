@@ -38,7 +38,7 @@
 
 % ── Convenience TikZ styles (global) ────────────────────────
 \tikzset{
-  pbox/.style={draw=amritaMaroon, fill=lightmaroon, thick,
+  pbox/.style={draw=amritaMaroon!80, fill=white, thick,
                minimum width=#1, minimum height=0.75cm, align=center,
                font=\bfseries\scriptsize},
   pbox/.default=2.4cm,
@@ -104,40 +104,32 @@
 % ===========================================================
 \section{Problem and Motivation}
 \begin{frame}{1. Problem Definition \& Research Motivation}
-\footnotesize
+\small
 
-\begin{columns}[T,onlytextwidth]
-\column{0.52\textwidth}
-\begin{block}{Problem Statement}
-\begin{itemize}
-  \item \textbf{Core Problem:} Shared baselines mix unlike workloads, misclassifying image-specific process activity.
-  \item \textbf{Domain Context:} Container images exhibit distinct runtime behaviour requiring workload-specific monitoring.
-\end{itemize}
-\end{block}
-\vspace{0.15cm}
-\begin{block}{Research Objectives}
-\begin{itemize}
-  \item \textbf{Obj. 1:} Build image-specific baselines using immutable OCI digests.
-  \item \textbf{Obj. 2:} Hybrid detection via JSD distance, novelty, numerical deviation, and deterministic rules.
-  \item \textbf{Obj. 3:} Measure profile-scope effect on identical workload runs.
+\begin{block}{The Core Problem: Shared-Baseline Invalidation}
+\begin{itemize}\setlength{\itemsep}{3pt}
+  \item \textbf{Container Workload Isolation:} Containers are packaged as immutable, purpose-built environments with narrow, predictable process graphs.
+  \item \textbf{The Shared-Baseline Pitfall:} Conventional anomaly detectors pool activity across containers on a host or group by mutable image tags (e.g., \texttt{:latest}).
+  \item \textbf{Consequence:} Benign activity legitimate in one image (e.g., diagnostic shells in a developer image) triggers false alarms when executed in a minimal production service, causing severe alert fatigue.
 \end{itemize}
 \end{block}
 
-\column{0.46\textwidth}
-\begin{block}{Conventional vs.\ Image-Scoped Monitoring}
-\renewcommand{\arraystretch}{1.25}
-\begin{tabularx}{\linewidth}{>{\bfseries}p{1.9cm} X}
+\vspace{0.08cm}
+
+\begin{block}{Architectural Comparison: Conventional vs.\ Image-Scoped Monitoring}
+\centering\renewcommand{\arraystretch}{1.1}\footnotesize
+\begin{tabularx}{\textwidth}{>{\bfseries}p{2.6cm} X X}
 \toprule
-Aspect & Comparison \\\midrule
-Baseline scope & Global / tag-based vs.\ digest-pinned \\
-Workload mixing & All containers vs.\ same-image only \\
-Identity drift & Tag can change vs.\ digest is immutable \\
-False-alarm risk & Higher (mixed) vs.\ Lower (scoped) \\
-Evidence & Score only vs.\ Score + rule provenance \\
+Property & Conventional Monitoring (Host / Tag) & PORYGON (OCI Image Digest) \\
+\midrule
+Baseline Identity   & Global per-node or mutable tag   & Immutable OCI digest (\texttt{sha256:\ldots}) \\
+Workload Scope      & Shared pool (mixes unlike images)& Strict per-digest isolation \\
+False-Alarm Profile & High false-alarm rate (100\% FPR)& 0.00 FPR on identical benign workloads \\
+Detection Output    & Anomaly score only               & Bounded score + named rule evidence \\
+Containment Gate    & Automatic / disruptive restart    & Operator approval gate with provenance \\
 \bottomrule
 \end{tabularx}
 \end{block}
-\end{columns}
 \end{frame}
 
 % ===========================================================
@@ -204,7 +196,7 @@ in a single reviewable incident workflow.
     {Outbound socket connections}/7,
     {Sensitive file writes}/8%
   }{
-    \node[draw=amritaMaroon, fill=lightmaroon, thick,
+    \node[draw=amritaMaroon!80, fill=white, thick,
           minimum width=5.6cm, minimum height=0.52cm, align=center,
           below=0.0cm of lh, yshift={-\idx*0.54cm}]
           (li\idx) {\txt};
@@ -238,71 +230,54 @@ in a single reviewable incident workflow.
 % ===========================================================
 \begin{frame}{4. System Architecture}
 \centering
-\begin{tikzpicture}[font=\scriptsize, node distance=0.18cm and 0.22cm,
-    cnode/.style={draw=amritaMaroon, fill=lightmaroon, thick,
-                  minimum width=2.1cm, minimum height=0.6cm,
-                  align=center, font=\bfseries\scriptsize},
-    pnode/.style={draw=amritaMaroon, fill=white, thick,
-                  minimum width=2.1cm, minimum height=0.6cm,
-                  align=center, font=\scriptsize},
-    snode/.style={draw=darkgray!60, fill=lightgray, thick,
-                  minimum width=2.1cm, minimum height=0.6cm,
-                  align=center, font=\scriptsize},
-    onode/.style={draw=amritaMaroon, fill=amritaMaroon, text=white, thick,
-                  minimum width=2.1cm, minimum height=0.6cm,
-                  align=center, font=\bfseries\scriptsize},
+\begin{tikzpicture}[font=\scriptsize,
+    tierBox/.style={thick, inner sep=6pt},
+    sensorNode/.style={draw=blue!80!black, fill=white, thick, minimum width=2.4cm, minimum height=0.62cm, align=center, font=\bfseries\scriptsize},
+    engineNode/.style={draw=amritaMaroon, fill=white, thick, minimum width=2.5cm, minimum height=0.62cm, align=center, font=\bfseries\scriptsize},
+    storeNode/.style={draw=darkgray!80, fill=gray!10, thick, minimum width=2.3cm, minimum height=0.62cm, align=center, font=\bfseries\scriptsize},
+    govNode/.style={draw=green!60!black, fill=white, thick, minimum width=2.3cm, minimum height=0.62cm, align=center, font=\bfseries\scriptsize},
+    arr/.style={-{Latex[length=2.2mm]}, thick, draw=black!80},
+    darr/.style={-{Latex[length=2mm]}, dashed, thick, draw=amritaMaroon}
   ]
 
-  % Row 1 — collection
-  \node[cnode] (docker)  at (0,0)       {Docker\\Engine};
-  \node[cnode] (falco)   at (0,-0.9)    {Falco/eBPF};
-  \node[cnode] (coll)    at (2.4,0)     {Docker\\Collector};
-  \node[pnode] (telem)   at (4.8,0)     {Telemetry\\Adapter};
-  \node[pnode] (api)     at (7.2,0)     {Backend\\API};
-  \node[snode] (pg)      at (9.6,0)     {PostgreSQL};
+  % Tier 1: Ingestion
+  \draw[draw=blue!50!black, fill=blue!4!white, tierBox] (-5.7,-2.4) rectangle (-2.5, 1.85);
+  \node[font=\bfseries\scriptsize, text=blue!80!black] at (-4.1, 1.55) {Ingestion Tier};
+  \node[sensorNode] (docker) at (-4.1, 0.95) {Docker Engine};
+  \node[sensorNode] (falco)  at (-4.1, 0.15) {Falco (eBPF)};
+  \node[sensorNode] (telem)  at (-4.1, -0.65) {Telemetry Adapter};
+  \node[sensorNode, draw=gray!60, font=\scriptsize] (spool) at (-4.1, -1.55) {SQLite Spool (Durable)};
+  \draw[arr] (docker) -- (falco);
+  \draw[arr] (falco) -- (telem);
+  \draw[arr] (telem) -- (spool);
 
-  % Row 2 — processing
-  \node[pnode] (bb)      at (4.8,-1.95) {Baseline\\Builder};
-  \node[pnode] (scorer)  at (7.2,-1.95) {Behavioural\\Scorer};
-  \node[pnode] (rules)   at (9.6,-1.95) {Rule\\Engine};
-  \node[snode] (inc)     at (11.9,-1.95){Incident\\Store};
+  % Tier 2: Core Analysis
+  \draw[draw=amritaMaroon!50, fill=amritaMaroon!3!white, tierBox] (-2.1,-2.4) rectangle (1.7, 1.85);
+  \node[font=\bfseries\scriptsize, text=amritaMaroon] at (-0.2, 1.55) {Core Analysis Engine};
+  \node[engineNode] (api)     at (-0.2, 0.95) {FastAPI Backend};
+  \node[engineNode] (bb)      at (-0.2, 0.15) {Baseline Builder};
+  \node[engineNode] (scorer)  at (-0.2, -0.65) {Behavioural Scorer};
+  \node[engineNode] (rules)   at (-0.2, -1.55) {Rule Engine (R001--007)};
+  \draw[arr] (api) -- (bb);
+  \draw[arr] (bb) -- (scorer);
+  \draw[arr] (scorer) -- (rules);
 
-  % Row 3 — operator + scanner
-  \node[onode] (dash)    at (9.6,-3.5)  {Dashboard};
-  \node[onode] (resp)    at (11.9,-3.5) {Responder};
-  \node[cnode] (trivy)   at (2.4,-3.5)  {Trivy\\Scanner};
+  % Tier 3: Storage & Governance
+  \draw[draw=green!50!black, fill=green!3!white, tierBox] (2.1,-2.4) rectangle (5.9, 1.85);
+  \node[font=\bfseries\scriptsize, text=green!60!black] at (4.0, 1.55) {Storage \& Governance};
+  \node[storeNode] (pg)       at (4.0, 0.95) {PostgreSQL 16};
+  \node[govNode]   (trivy)    at (4.0, 0.15) {Trivy Scanner (SBOM)};
+  \node[govNode]   (dash)     at (4.0, -0.65) {Dashboard UI};
+  \node[govNode, draw=green!70!black, fill=green!10, text=green!60!black] (resp) at (4.0, -1.55) {Human Approval Gate};
+  \draw[arr] (dash) -- (resp);
 
-  % Arrows — collection path
-  \draw[arr] (docker.east)  -- (coll.west);
-  \draw[arr] (falco.east)   -| (telem.south);
-  \draw[arr] (coll.east)    -- (telem.west);
-  \draw[arr] (telem.east)   -- (api.west);
-  \draw[arr] (api.east)     -- (pg.west);
-
-  % Arrows — processing path
-  \draw[arr] (api.south)    -- (bb.north);
-  \draw[arr] (bb.east)      -- (scorer.west);
-  \draw[arr] (scorer.east)  -- (rules.west);
-  \draw[arr] (rules.east)   -- (inc.west);
-
-  % Arrows — operator path
-  \draw[arr] (inc.south)    -- (dash.north);
-  \draw[arr] (dash.east)    -- (resp.west)
-             node[midway, above, font=\tiny] {approval gate};
-
-  % Arrows — scanner
-  \draw[darr] (trivy.east)  -| (api.south);
+  % Inter-tier arrows
+  \draw[arr] (telem.east) -- node[above, font=\tiny]{events} (api.west);
+  \draw[arr] (api.east) -- (pg.west);
+  \draw[arr] (rules.east) -| (dash.south);
+  \draw[darr] (trivy.west) -- (bb.east);
 
 \end{tikzpicture}
-
-\vspace{0.1cm}
-{\scriptsize\color{darkgray}
-\textbf{Legend:}
-\tikz{\node[draw=amritaMaroon,fill=lightmaroon,minimum width=0.5cm,minimum height=0.3cm]{};}\, Collection \quad
-\tikz{\node[draw=amritaMaroon,fill=white,minimum width=0.5cm,minimum height=0.3cm]{};}\, Processing \quad
-\tikz{\node[draw=darkgray!60,fill=lightgray,minimum width=0.5cm,minimum height=0.3cm]{};}\, Storage \quad
-\tikz{\node[draw=amritaMaroon,fill=amritaMaroon,text=white,minimum width=0.5cm,minimum height=0.3cm]{};}\, Operator-facing
-}
 \end{frame}
 
 % ===========================================================
@@ -313,7 +288,7 @@ in a single reviewable incident workflow.
 \begin{tikzpicture}[
     font=\scriptsize,
     process/.style={
-        draw=amritaMaroon, fill=lightmaroon, thick,
+        draw=amritaMaroon, fill=white, thick,
         minimum width=2.65cm, minimum height=0.9cm,
         align=center, font=\bfseries\scriptsize},
     auxiliary/.style={
@@ -382,7 +357,7 @@ Runtime events are collected, normalised, and associated with an immutable image
 \begin{block}{Two Digests — Two Profiles}
 \centering
 \begin{tikzpicture}[font=\scriptsize, node distance=0.2cm]
-  \node[draw=amritaMaroon, fill=lightmaroon, thick,
+  \node[draw=amritaMaroon, fill=white, thick,
         minimum width=3.5cm, minimum height=0.55cm, align=center,
         font=\bfseries\scriptsize] (d1)
         {nginx@sha256:\texttt{aaa\ldots}};
@@ -726,7 +701,7 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
     {Nginx (reverse-proxy gateway)}/4,
     {SQLite (telemetry spool buffer)}/5%
   }{
-    \node[draw=amritaMaroon!60, fill=lightmaroon, thick,
+    \node[draw=blue!80!black, fill=white, thick,
           minimum width=5.4cm, minimum height=0.52cm, align=center,
           below=0.0cm of ih, yshift={-\idx*0.54cm}] (il\idx) {\txt};
   }
@@ -753,7 +728,7 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
 \begin{frame}{15. Database \& Data Flow}
 \centering
 \begin{tikzpicture}[font=\scriptsize, node distance=0.5cm and 0.6cm,
-  ent/.style={draw=amritaMaroon, fill=lightmaroon, thick,
+  ent/.style={draw=amritaMaroon!80, fill=white, thick,
               minimum width=2.6cm, minimum height=0.55cm,
               align=center, font=\bfseries\scriptsize},
   rel/.style={draw=darkgray!60, fill=lightgray, thick,
@@ -825,7 +800,7 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
     \draw[thick, amritaMaroon] (\x, 0) -- (\x, \tickdir*0.25);
 
     \ifnum\i=1
-      \node[align=center, fill=lightmaroon, draw=amritaMaroon, thick,
+      \node[align=center, fill=white, draw=amritaMaroon, thick,
             minimum width=1.7cm, font=\tiny] at (\x, 1.3) {\ta\\[2pt]\tb};
       \draw[amritaMaroon, thin] (\x, 0.25) -- (\x, 0.9);
     \fi
@@ -835,22 +810,22 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
       \draw[darkgray!60, thin] (\x, -0.25) -- (\x, -0.95);
     \fi
     \ifnum\i=3
-      \node[align=center, fill=lightmaroon, draw=amritaMaroon, thick,
+      \node[align=center, fill=white, draw=amritaMaroon, thick,
             minimum width=1.9cm, font=\tiny] at (\x, 1.3) {\ta\\[2pt]\tb};
       \draw[amritaMaroon, thin] (\x, 0.25) -- (\x, 0.9);
     \fi
     \ifnum\i=4
-      \node[align=center, fill=lightmaroon, draw=amritaMaroon, thick,
+      \node[align=center, fill=white, draw=amritaMaroon, thick,
             minimum width=1.9cm, font=\tiny] at (\x, -1.5) {\ta\\[2pt]\tb};
       \draw[amritaMaroon, thin] (\x, -0.25) -- (\x, -0.95);
     \fi
     \ifnum\i=5
-      \node[align=center, fill=lightmaroon, draw=amritaMaroon, thick,
+      \node[align=center, fill=white, draw=amritaMaroon, thick,
             minimum width=1.7cm, font=\tiny] at (\x, 1.3) {\ta\\[2pt]\tb};
       \draw[amritaMaroon, thin] (\x, 0.25) -- (\x, 0.9);
     \fi
     \ifnum\i=6
-      \node[align=center, fill=lightmaroon, draw=amritaMaroon, thick,
+      \node[align=center, fill=white, draw=amritaMaroon, thick,
             minimum width=1.9cm, font=\tiny] at (\x, -1.5) {\ta\\[2pt]\tb};
       \draw[amritaMaroon, thin] (\x, -0.25) -- (\x, -0.95);
     \fi
@@ -869,11 +844,11 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
 % ===========================================================
 \begin{frame}{17. Experimental Visualizations: Behavioural Drift}
 \framesubtitle{Live Telemetry Stream \& Scoring Dynamics over Completed Windows}
-\centering
 
 \begin{columns}[T,onlytextwidth]
 \column{0.47\textwidth}
 \centering
+{\setlength{\fboxsep}{0pt}%
 \IfFileExists{screenshots/telemetry_crop.png}{%
   \fbox{\includegraphics[width=\linewidth,height=3.4cm,keepaspectratio]{screenshots/telemetry_crop.png}}%
 }{%
@@ -882,11 +857,12 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
   }{%
     \fbox{\begin{minipage}[c][3.4cm][c]{\linewidth}\centering\tiny[telemetry\_crop.png]\end{minipage}}%
   }%
-}\\[2pt]
+}}\\[2pt]
 {\tiny\textbf{(a)} Live eBPF Process Telemetry Ingestion}
 
 \column{0.47\textwidth}
 \centering
+{\setlength{\fboxsep}{0pt}%
 \fbox{\begin{minipage}[c][3.4cm][c]{\linewidth}
 \centering
 \begin{tikzpicture}[font=\tiny, xscale=0.48, yscale=2.5]
@@ -914,8 +890,8 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
   \draw[dashed, amritaMaroon!80, thick] (0,0.75) -- (10.3,0.75)
         node[right, font=\tiny] {Extreme};
   % Anomaly annotation
-  \node[fill=lightmaroon, draw=amritaMaroon, thick,
-        align=center, font=\tiny] at (6.8,0.98)
+  \node[fill=white, draw=amritaMaroon, thick, text=amritaMaroon,
+        align=center, font=\bfseries\tiny] at (6.8,0.98)
         {Rule 005 fired};
   \draw[->, thin] (6.8,0.91) -- (7,0.82);
   % Data points
@@ -924,7 +900,7 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
     \fill[amritaMaroon] (\x,\y) circle (0.04cm);
   }
 \end{tikzpicture}
-\end{minipage}}\\[2pt]
+\end{minipage}}}\\[2pt]
 {\tiny\textbf{(b)} Score Drift over Time (Anomaly at Window 7)}
 \end{columns}
 
@@ -939,11 +915,11 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
 % ===========================================================
 \begin{frame}{18. Prototype Demonstration}
 \framesubtitle{Working Prototype Snapshot: Container Overview \& Incident Investigation}
-\centering
 
 \begin{columns}[T,onlytextwidth]
 \column{0.47\textwidth}
 \centering
+{\setlength{\fboxsep}{0pt}%
 \IfFileExists{screenshots/overview_dropper_crop.png}{%
   \fbox{\includegraphics[width=\linewidth,height=3.4cm,keepaspectratio]{screenshots/overview_dropper_crop.png}}%
 }{%
@@ -952,11 +928,12 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
   }{%
     \fbox{\begin{minipage}[c][3.4cm][c]{\linewidth}\centering\tiny[overview\_dropper\_crop.png]\end{minipage}}%
   }%
-}\\[2pt]
+}}\\[2pt]
 {\tiny\textbf{(a)} Container Overview \& Anomaly Score Gauge}
 
 \column{0.47\textwidth}
 \centering
+{\setlength{\fboxsep}{0pt}%
 \IfFileExists{screenshots/incidents_crop.png}{%
   \fbox{\includegraphics[width=\linewidth,height=3.4cm,keepaspectratio]{screenshots/incidents_crop.png}}%
 }{%
@@ -965,7 +942,7 @@ postgres:17.10-bookworm & 150 & 453 (182 CVEs) \\
   }{%
     \fbox{\begin{minipage}[c][3.4cm][c]{\linewidth}\centering\tiny[incidents\_crop.png]\end{minipage}}%
   }%
-}\\[2pt]
+}}\\[2pt]
 {\tiny\textbf{(b)} Incident Investigation \& Approval Controls}
 \end{columns}
 
@@ -1097,7 +1074,7 @@ Values observed on development hardware; \textbf{not} a production benchmark. No
     {\texttt{connect} / \texttt{memfd} / \texttt{write} syscalls}/2,
     {Privileged container configuration}/3%
   }{
-    \node[draw=amritaMaroon, fill=lightmaroon, thick,
+    \node[draw=blue!80!black, fill=white, thick,
           minimum width=4.9cm, minimum height=0.52cm, align=center,
           yshift={-\idx*0.56cm}] (lo\idx) {\txt};
   }
@@ -1158,7 +1135,7 @@ Values observed on development hardware; \textbf{not} a production benchmark. No
     {4}/{Human-approved containment — pause and stop gated by explicit operator approval; protected containers are never modified}/3,
     {5}/{Reproducible evaluation design — pilot dataset on Kaggle (CC BY 4.0, 216 records); run-level protocol for global vs.\ digest comparison}/4%
   }{
-    \node[draw=amritaMaroon, fill=lightmaroon, thick,
+    \node[draw=amritaMaroon!80, fill=white, thick,
           minimum width=13.0cm, minimum height=0.68cm, align=left,
           text width=12.6cm,
           inner xsep=0.3cm, yshift={-\idx*0.75cm}]

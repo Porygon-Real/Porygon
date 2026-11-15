@@ -431,7 +431,11 @@ class SystemInfo(BaseModel):
 
 
 class BehaviorProfileBuildIn(BaseModel):
-    feature_schema_version: Literal["porygon.behaviour.v1", "porygon.behaviour.command-lineage"] = (
+    feature_schema_version: Literal[
+        "porygon.behaviour.v1",
+        "porygon.behaviour.command-lineage",
+        "porygon.behaviour.support-aware",
+    ] = (
         "porygon.behaviour.v1"
     )
     image_digest: str = Field(
@@ -617,6 +621,7 @@ class AnomalyScoreComputeIn(BaseModel):
         Literal[
             "porygon.distance.v1",
             "porygon.distance.command-lineage",
+            "porygon.distance.support-aware",
             "porygon.distance.rare-execution",
         ]
         | None
@@ -693,6 +698,9 @@ class DetectionRunOut(BaseModel):
         "findings_only",
         "incident_created",
         "incident_updated",
+        "budget_exhausted",
+        "rule_evidence_incomplete",
+        "rule_error",
     ]
     matches_count: int
     incident_created: bool

@@ -16,14 +16,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_KEYWORDS = {"and", "or", "not", "in", "contains", "true", "false"}
+_KEYWORDS = {"and", "or", "not", "in", "contains", "startswith", "true", "false"}
 
 _TOKEN_RE = re.compile(
     r"""
       (?P<ws>\s+)
     | (?P<string>"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')
     | (?P<number>-?\d+(?:\.\d+)?)
-    | (?P<op>==|!=)
+    | (?P<op>==|!=|>=|<=|>|<)
     | (?P<lparen>\()
     | (?P<rparen>\))
     | (?P<lbracket>\[)
@@ -41,6 +41,11 @@ _COMPARISON_OPS = {
     "in": "in",
     "not in": "not_in",
     "contains": "contains",
+    "startswith": "startswith",
+    ">": "gt",
+    ">=": "gte",
+    "<": "lt",
+    "<=": "lte",
 }
 
 _OP_TO_TEXT = {value: key for key, value in _COMPARISON_OPS.items()}
@@ -194,7 +199,7 @@ class _Parser:
         if operator_token.kind == "not":
             self._expect("in")
             operator = "not_in"
-        elif operator_token.kind in {"in", "contains"}:
+        elif operator_token.kind in {"in", "contains", "startswith"}:
             operator = _COMPARISON_OPS[operator_token.kind]
         elif operator_token.kind == "op":
             operator = _COMPARISON_OPS[operator_token.value]

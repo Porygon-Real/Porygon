@@ -49,12 +49,12 @@
 <body x-data="porygonApp" class="bg-[#F9F9F7] text-[#111111] antialiased min-h-screen selection:bg-[#111111] selection:text-[#F9F9F7]">
 
   <!-- TOAST ALERTS -->
-  <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm">
+  <div class="fixed bottom-4 right-4 left-4 sm:left-auto z-40 flex flex-col gap-2 pointer-events-none max-w-sm" role="status" aria-live="polite">
     <template x-for="toast in toasts" :key="toast.id">
       <div class="pointer-events-auto border-2 border-[#111111] bg-white p-3 text-[12px] font-mono hard-shadow flex items-start gap-2"
-           :class="toast.type==='danger' ? 'border-[#CC0000] text-[#CC0000]' : 'text-[#111111]'">
-        <span class="font-bold uppercase text-[10px]" x-text="toast.type==='danger' ? '[ALERT]' : '[INFO]'"></span>
-        <span class="flex-1" x-text="toast.message"></span>
+           :class="toast.type==='danger' || toast.type==='error' ? 'border-[#CC0000] text-[#CC0000]' : 'text-[#111111]'">
+        <span class="font-bold uppercase text-[10px]" x-text="toast.type==='danger' || toast.type==='error' ? '[ALERT]' : '[INFO]'"></span>
+        <span class="min-w-0 flex-1 [overflow-wrap:anywhere]" x-text="toast.message"></span>
       </div>
     </template>
   </div>
@@ -76,22 +76,25 @@
           </div>
         </a>
 
-        <!-- 5 Clean Operational Tabs -->
-        <nav class="flex items-center border border-[#111111] bg-white divide-x divide-[#111111] text-xs font-sans font-bold uppercase tracking-wider">
-          <button @click="activeTab='overview'"
+        <!-- Dashboard sections -->
+        <nav id="dashboard-navigation" aria-label="Dashboard sections" class="dashboard-navigation border border-[#111111] bg-white text-xs font-sans font-bold uppercase tracking-wider">
+          <button id="dashboard-tab-overview" type="button" @click="activeTab='overview'"
+                  :aria-current="activeTab==='overview' ? 'page' : null"
                   :class="activeTab==='overview' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
                   class="px-3.5 py-2 transition-colors flex items-center gap-2">
             <span>Overview</span>
           </button>
           
-          <button @click="activeTab='telemetry'"
+          <button id="dashboard-tab-telemetry" type="button" @click="activeTab='telemetry'"
+                  :aria-current="activeTab==='telemetry' ? 'page' : null"
                   :class="activeTab==='telemetry' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
                   class="px-3.5 py-2 transition-colors flex items-center gap-1.5">
             <span>Live Telemetry</span>
             <span class="border border-current px-1 text-[10px] font-mono" x-text="formatCompactNumber(processSummary?.total_events || systemInfo.process_exec_events || events.length)">0</span>
           </button>
 
-          <button @click="activeTab='incidents'"
+          <button id="dashboard-tab-incidents" type="button" @click="activeTab='incidents'"
+                  :aria-current="activeTab==='incidents' ? 'page' : null"
                   :class="activeTab==='incidents' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
                   class="px-3.5 py-2 transition-colors flex items-center gap-1.5">
             <span>Incidents</span>
@@ -100,7 +103,8 @@
                   x-text="openIncidentsCount">0</span>
           </button>
 
-          <button @click="activeTab='vulnerabilities'"
+          <button id="dashboard-tab-vulnerabilities" type="button" @click="activeTab='vulnerabilities'"
+                  :aria-current="activeTab==='vulnerabilities' ? 'page' : null"
                   :class="activeTab==='vulnerabilities' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
                   class="px-3.5 py-2 transition-colors flex items-center gap-1.5">
             <span>Vulnerabilities</span>
@@ -108,7 +112,8 @@
                   x-text="evidenceCounts.runtime_observed + evidenceCounts.runtime_observed_and_port_published">0</span>
           </button>
 
-          <button @click="activeTab='ml'"
+          <button id="dashboard-tab-ml" type="button" @click="activeTab='ml'"
+                  :aria-current="activeTab==='ml' ? 'page' : null"
                   :class="activeTab==='ml' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
                   class="px-3.5 py-2 transition-colors flex items-center gap-1.5">
             <i class="ph ph-brain text-xs"></i>
@@ -116,7 +121,8 @@
             <span class="border border-current px-1 text-[10px] font-mono" x-text="containers.length">0</span>
           </button>
 
-          <button @click="activeTab='simulator'"
+          <button id="dashboard-tab-simulator" type="button" @click="activeTab='simulator'"
+                  :aria-current="activeTab==='simulator' ? 'page' : null"
                   :class="activeTab==='simulator' ? 'bg-[#CC0000] text-white' : 'hover:bg-neutral-100 text-[#CC0000] font-bold'"
                   class="px-3.5 py-2 transition-colors flex items-center gap-1.5">
             <i class="ph ph-lightning"></i>
@@ -125,7 +131,7 @@
         </nav>
 
         <!-- Right Quick Status & Actions -->
-        <div class="flex items-center gap-3 font-mono text-xs">
+        <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0 font-mono text-xs">
           <span id="assessment-worker-status" class="border border-[#111111] px-2 py-1.5"
                 x-text="assessmentStatus ? ((assessmentStatus.enabled_in_api ? 'Assessments enabled' : 'API worker disabled') + ' · ' + (assessmentStatus.counts.pending || 0) + ' pending · coverage unknown') : 'Assessment status unavailable'"></span>
           <!-- eBPF Status Indicator -->
@@ -138,14 +144,26 @@
                   class="btn-news-secondary py-1.5 px-3"
                   x-text="operatorToken ? 'Log out' : 'Access token'">Access token</button>
 
+          <button id="header-guided-rule-assistant" @click="startGuidedRuleAuthoring()"
+                  class="btn-news-primary py-1.5 px-3 flex items-center gap-1.5 bg-[#111111] text-white hover:bg-[#CC0000] transition-colors font-bold"
+                  title="Launch AI Rule Authoring Assistant">
+            <i class="ph ph-sparkle text-sm"></i>
+            <span>RULE ASSISTANT</span>
+          </button>
+
           <!-- Refresh Button -->
-          <button @click="refreshAllData()" class="btn-news-secondary py-1.5 px-3" title="Sync live telemetry">
+          <button id="dashboard-sync" type="button" @click="refreshAllData()" class="btn-news-secondary py-1.5 px-3" title="Sync live telemetry">
             <i class="ph ph-arrows-clockwise text-sm"></i>
             <span>SYNC</span>
           </button>
         </div>
 
       </div>
+      <p id="dashboard-feed-status" x-show="unavailableFeeds.length" style="display:none"
+         class="mt-3 mb-0 border border-[#111111] bg-white px-3 py-2 font-sans text-xs leading-relaxed"
+         role="status">
+        <strong>Unavailable:</strong> <span x-text="unavailableFeeds.join(', ')"></span>
+      </p>
     </header>
 
     <!-- ======================================================================
@@ -180,22 +198,22 @@
         <!-- 2. Active Containers -->
         <div class="border-2 border-[#111111] bg-white p-4">
           <div class="text-[10px] font-mono uppercase font-bold text-neutral-500">MONITORED WORKLOADS</div>
-          <div class="font-serif font-black text-3xl text-[#111111] mt-1" x-text="systemInfo.known_containers ?? containers.length">0</div>
+          <div class="font-serif font-black text-3xl text-[#111111] mt-1" x-text="feedUnavailable.inventory ? '—' : (systemInfo.known_containers ?? containers.length)">0</div>
           <div class="text-[11px] font-mono text-neutral-600 mt-1">SHA-256 Digest Bound</div>
         </div>
 
         <!-- 3. Security Incidents -->
         <div class="border-2 border-[#111111] p-4"
-             :class="(systemInfo.incidents ?? incidents.length) > 0 ? 'bg-[#CC0000] text-white' : 'bg-white text-[#111111]'">
-          <div class="text-[10px] font-mono uppercase font-bold" :class="(systemInfo.incidents ?? incidents.length) > 0 ? 'text-white' : 'text-neutral-500'">OPEN INCIDENTS</div>
-          <div class="font-serif font-black text-3xl mt-1" x-text="systemInfo.incidents ?? incidents.length">0</div>
-          <div class="text-[11px] font-mono mt-1" x-text="(systemInfo.incidents ?? incidents.length) > 0 ? 'ATTENTION REQUIRED' : 'ALL NOMINAL'">ALL NOMINAL</div>
+             :class="!feedUnavailable.incidents && (systemInfo.open_incidents ?? openIncidentsCount) > 0 ? 'bg-[#CC0000] text-white' : 'bg-white text-[#111111]'">
+          <div class="text-[10px] font-mono uppercase font-bold" :class="!feedUnavailable.incidents && (systemInfo.open_incidents ?? openIncidentsCount) > 0 ? 'text-white' : 'text-neutral-500'">OPEN INCIDENTS</div>
+          <div class="font-serif font-black text-3xl mt-1" x-text="feedUnavailable.incidents ? '—' : (systemInfo.open_incidents ?? openIncidentsCount)">0</div>
+          <div class="text-[11px] font-mono mt-1" x-text="feedUnavailable.incidents ? 'Feed unavailable' : (systemInfo.open_incidents ?? openIncidentsCount) > 0 ? 'ATTENTION REQUIRED' : 'No open incidents'"></div>
         </div>
 
         <!-- 4. Reachable Vulnerabilities -->
         <div class="border-2 border-[#111111] bg-white p-4">
-          <div class="text-[10px] font-mono uppercase font-bold text-neutral-500">RUNTIME REACHABLE CVES</div>
-          <div class="font-serif font-black text-3xl text-[#111111] mt-1" x-text="evidenceCounts.runtime_observed + evidenceCounts.runtime_observed_and_port_published">0</div>
+          <div class="text-[10px] font-mono uppercase font-bold text-neutral-500">RUNTIME-OBSERVED CVES</div>
+          <div class="font-serif font-black text-3xl text-[#111111] mt-1" x-text="feedUnavailable.vulnerabilities ? '—' : evidenceCounts.runtime_observed + evidenceCounts.runtime_observed_and_port_published">0</div>
           <div class="text-[11px] font-mono text-neutral-600 mt-1">eBPF Executed Match</div>
         </div>
       </div>
@@ -441,7 +459,7 @@
     <!-- ======================================================================
          TAB 3: INCIDENTS & CONTAINMENT LEASES
          ====================================================================== -->
-    <main x-show="activeTab==='incidents'" class="space-y-6">
+    <main x-show="activeTab==='incidents'" class="space-y-6 [overflow-wrap:anywhere]">
       <div class="border-2 border-[#111111] bg-white p-5">
         
         <!-- Header & Action -->
@@ -450,7 +468,7 @@
             <h2 class="font-serif font-bold text-2xl text-[#111111] m-0">Security Incidents &amp; Containment Actions</h2>
             <p class="font-body text-xs text-neutral-600 m-0">Operator-approved container containment actions and audit records.</p>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <button id="resolve-incident-batch" @click="cleanAllIncidents()"
                     x-show="openIncidentsCount > 0"
                     class="btn-news-secondary py-1.5 px-3 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-800 flex items-center gap-1.5 font-bold"
@@ -458,8 +476,14 @@
               <i class="ph ph-check-circle text-sm"></i>
               <span>RESOLVE BATCH</span>
             </button>
-            <button @click="openAddRuleModal()" class="btn-news-primary py-1.5 px-3 text-xs">
+            <button id="create-custom-rule" @click="openAddRuleModal()" class="btn-news-primary py-1.5 px-3 text-xs">
               + CREATE CUSTOM RULE
+            </button>
+            <button id="guided-rule-assistant-open" @click="startGuidedRuleAuthoring()"
+                    class="btn-news-primary py-1.5 px-3 text-xs bg-[#111111] text-white flex items-center gap-1.5 font-bold hover:bg-[#CC0000] transition-colors"
+                    title="Launch AI Rule Authoring Assistant">
+              <i class="ph ph-sparkle text-sm"></i>
+              <span>AI GUIDED AUTHORING</span>
             </button>
           </div>
         </div>
@@ -490,7 +514,7 @@
           <template x-for="inc in filteredIncidents" :key="inc.incident_id">
             <div class="border-2 border-[#111111] bg-[#F9F9F7] p-4 hard-shadow">
               <div class="flex flex-wrap items-center justify-between border-b border-[#111111] pb-2 mb-3 gap-2">
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
                   <span class="badge-breaking"
                         :class="inc.status === 'resolved' || inc.status === 'closed' ? 'bg-emerald-700 text-white' : ''"
                         x-text="inc.status === 'resolved' || inc.status === 'closed' ? 'RESOLVED' : (inc.severity_level ? inc.severity_level.toUpperCase() : 'ALERT')">CRITICAL</span>
@@ -505,7 +529,7 @@
                   <p class="font-body text-sm text-neutral-700 mt-1 leading-relaxed" x-text="inc.summary"></p>
                   
                   <div class="mt-2 font-mono text-xs text-neutral-600 flex flex-wrap gap-3">
-                    <span>CONTAINER: <b class="text-[#111111]" x-text="inc.container_ids?.[0] || inc.container_name || 'target'"></b></span>
+                    <span class="min-w-0 [overflow-wrap:anywhere]">CONTAINER: <b class="text-[#111111]" x-text="inc.container_ids?.[0] || inc.container_name || 'target'"></b></span>
                     <span>STATUS: <b class="uppercase font-bold"
                                      :class="{
                                        'text-emerald-700': inc.status === 'resolved' || inc.status === 'closed',
@@ -576,18 +600,24 @@
           </template>
 
           <div x-show="filteredIncidents.length === 0" class="border border-[#111111] bg-[#F9F9F7] p-8 text-center">
-            <h4 class="font-serif font-bold text-lg text-[#111111] m-0" x-text="incidentFilter === 'open' ? 'No Active Incidents' : 'No Incidents Matching Filter'"></h4>
-            <p class="font-body text-xs text-neutral-500 mt-1" x-text="incidentFilter === 'open' ? 'All alert events have been reviewed.' : 'No incidents cataloged.'"></p>
+            <h4 class="font-serif font-bold text-lg text-[#111111] m-0" x-text="feedUnavailable.incidents ? 'Incident feed unavailable' : incidentFilter === 'open' ? 'No Active Incidents' : 'No Incidents Matching Filter'"></h4>
+            <p class="font-body text-xs text-neutral-500 mt-1" x-text="feedUnavailable.incidents ? 'Use Sync to retry.' : incidentFilter === 'open' ? 'There are no open incidents in this feed.' : 'No incidents cataloged.'"></p>
           </div>
         </div>
 
         <!-- Rules Sub-Section -->
         <div class="border border-[#111111] p-4 bg-white">
           <div class="flex items-center justify-between border-b border-[#111111] pb-2 mb-2">
-            <h4 class="font-serif font-bold text-base text-[#111111] m-0">Detection Rules Matrix</h4>
-            <span class="font-mono text-xs text-neutral-500" x-text="allRules.length + ' Active'"></span>
+            <div class="flex items-center gap-3">
+              <h4 class="font-serif font-bold text-base text-[#111111] m-0">Detection Rules Matrix</h4>
+              <button @click="startGuidedRuleAuthoring()" class="btn-news-secondary py-0.5 px-2 text-[10px] font-mono font-bold flex items-center gap-1 hover:bg-[#111111] hover:text-white transition-colors" title="Launch AI Rule Authoring Assistant">
+                <i class="ph ph-sparkle text-xs"></i>
+                <span>+ AUTHOR WITH AI</span>
+              </button>
+            </div>
+            <span class="font-mono text-xs text-neutral-500" x-text="customRules.filter(r => r.enabled).length + ' custom active'"></span>
           </div>
-          <div class="overflow-x-auto max-h-60">
+          <div id="detection-rule-list" class="overflow-x-auto max-h-60" tabindex="0" role="region" aria-label="Detection rules">
             <table class="news-table">
               <thead>
                 <tr>
@@ -596,6 +626,7 @@
                   <th>Severity</th>
                   <th>Confidence</th>
                   <th>Type</th>
+                  <th>State / revision</th>
                   <th class="text-right">Action</th>
                 </tr>
               </thead>
@@ -609,9 +640,10 @@
                     <td>
                       <span class="border border-[#111111] px-1 text-[10px] font-mono" x-text="r.is_custom ? 'CUSTOM' : 'BUILT-IN'"></span>
                     </td>
+                    <td class="font-mono text-[10px]" x-text="r.is_custom ? r.lifecycle_state + ' / candidate ' + (r.candidate_state || 'none') + ' · ' + (r.revision_hash || 'legacy') : 'built-in'"></td>
                     <td class="text-right">
-                      <button x-show="r.is_custom" @click="disableCustomRule(r._customRule)" class="text-[10px] font-mono text-[#CC0000] underline font-bold">
-                        DISABLE
+                      <button x-show="r.is_custom" :id="r.is_custom ? 'rule-open-' + r._customRule.custom_rule_id : 'rule-open-built-in-' + r.rule_id" @click="openRuleWorkbench(r._customRule)" class="text-[10px] font-mono text-[#CC0000] underline font-bold">
+                        WORKBENCH
                       </button>
                     </td>
                   </tr>
@@ -1344,7 +1376,7 @@
          ====================================================================== -->
 
     <!-- OPERATOR TOKEN CLEARANCE MODAL -->
-    <div id="human-access-modal" x-show="tokenModal.show" class="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" style="display:none" @keydown.escape.window="cancelTokenModal()">
+    <div id="human-access-modal" x-show="tokenModal.show" class="fixed inset-0 z-[60] grid place-items-center bg-black/60 p-4" style="display:none" @keydown.escape="cancelTokenModal()">
       <div class="border-2 border-[#111111] bg-white p-6 max-w-md w-full hard-shadow text-[#111111]">
         <div class="flex items-center justify-between border-b border-[#111111] pb-2 mb-3">
           <span class="font-mono text-xs font-bold uppercase text-[#CC0000]">OPERATOR TOKEN</span>
@@ -1508,52 +1540,453 @@
     </div>
 
     <!-- ADD CUSTOM RULE MODAL -->
-    <div x-show="showAddRuleModal" class="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" style="display:none" @keydown.escape.window="showAddRuleModal=false">
-      <div class="border-2 border-[#111111] bg-white p-6 max-w-md w-full hard-shadow text-[#111111]">
-        <div class="flex items-center justify-between border-b border-[#111111] pb-2 mb-3">
-          <span class="font-mono text-xs font-bold uppercase text-[#111111]">NEW DETECTION RULE</span>
-          <button @click="showAddRuleModal=false" class="font-mono font-bold text-base">&times;</button>
+    <div x-show="showAddRuleModal" class="fixed inset-0 z-50 grid place-items-center bg-black/70 p-3 sm:p-5" style="display:none">
+      <section class="border-2 border-[#111111] bg-white p-5 sm:p-6 max-w-6xl w-full max-h-[94vh] overflow-y-auto hard-shadow text-[#111111]" role="dialog" aria-modal="true" aria-labelledby="rule-workbench-title" tabindex="-1" @keydown.tab="trapRuleWorkbenchFocus($event)" @keydown.escape="closeRuleWorkbench()">
+        
+        <!-- Newspaper Header Bar -->
+        <div class="flex items-center justify-between border-b-2 border-[#111111] pb-2.5 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="border border-[#111111] bg-[#111111] text-white px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider">PORYGON ENGINE</span>
+            <span class="font-mono text-xs font-bold uppercase text-[#111111] tracking-wide">DETECTION RULE WORKBENCH</span>
+            <span class="hidden sm:inline-block border-l border-neutral-300 pl-2 text-[10px] font-mono text-neutral-500">OPERATOR GATEWAY v1.0</span>
+          </div>
+          <button id="rule-workbench-close" @click="closeRuleWorkbench()" class="font-mono font-bold text-xs border border-[#111111] px-2.5 py-1 hover:bg-[#111111] hover:text-white transition-colors" aria-label="Close rule workbench">✕ ESC / CLOSE</button>
         </div>
-        <h3 class="font-serif font-bold text-xl text-[#111111] m-0">Add Detection Rule</h3>
-        <p class="font-body text-xs text-neutral-600 mt-1 mb-4">Declarative rule evaluated against incoming execve events.</p>
 
-        <div class="space-y-3 mb-4">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
           <div>
-            <label class="font-mono text-[10px] font-bold block mb-1">RULE SLUG</label>
-            <input type="text" x-model="newRuleDraft.slug" placeholder="e.g. detect-wget-download" class="input-news text-xs">
+            <h3 id="rule-workbench-title" class="font-serif font-black text-2xl text-[#111111] m-0" x-text="ruleWorkbench.selectedRule ? 'Review Rule Revision' : 'Detection Rule Authoring & Verification'"></h3>
+            <p class="font-body text-xs text-neutral-700 mt-1 mb-0">Synthesize, evaluate, and stage deterministic behavioral rules against normalized eBPF and container lifecycle evidence.</p>
           </div>
-          <div>
-            <label class="font-mono text-[10px] font-bold block mb-1">RULE NAME</label>
-            <input type="text" x-model="newRuleDraft.name" placeholder="Title..." class="input-news text-xs">
-          </div>
-          <div class="grid grid-cols-3 gap-2">
-            <div>
-              <label class="font-mono text-[9px] font-bold block mb-0.5">FIELD</label>
-              <select x-model="newRuleDraft.conditions[0].field" class="border border-[#111111] bg-white p-1 w-full font-mono text-xs">
-                <option value="executable">executable</option>
-                <option value="process_name">process_name</option>
-                <option value="command_line">command_line</option>
-              </select>
-            </div>
-            <div>
-              <label class="font-mono text-[9px] font-bold block mb-0.5">OP</label>
-              <select x-model="newRuleDraft.conditions[0].op" class="border border-[#111111] bg-white p-1 w-full font-mono text-xs">
-                <option value="equals">equals</option>
-                <option value="contains">contains</option>
-              </select>
-            </div>
-            <div>
-              <label class="font-mono text-[9px] font-bold block mb-0.5">VALUE</label>
-              <input type="text" x-model="newRuleDraft.conditions[0].value" placeholder="pattern" class="input-news p-1 text-xs">
-            </div>
+          <div class="flex items-center gap-2 text-[11px] font-mono text-neutral-600 bg-neutral-100 border border-neutral-300 px-2 py-1">
+            <span class="w-1.5 h-1.5 bg-emerald-600 animate-pulse"></span>
+            <span>VERIFICATION RUNTIME READY</span>
           </div>
         </div>
 
-        <div class="flex justify-end gap-2">
-          <button @click="showAddRuleModal=false" class="btn-news-secondary py-1 px-3 text-xs">CANCEL</button>
-          <button @click="submitCustomRule()" class="btn-news-primary py-1 px-3 text-xs">SAVE RULE</button>
+        <!-- Mode Tabs -->
+        <div x-show="!ruleWorkbench.selectedRule" class="border-y-2 border-[#111111] py-1.5 mb-4 flex flex-wrap items-center justify-between gap-2 bg-[#F9F9F7]" aria-label="Rule authoring mode">
+          <div class="flex items-center gap-1.5">
+            <span class="font-mono text-[10px] uppercase font-bold text-neutral-500 mr-1 pl-1">MODE:</span>
+            <button id="rule-workbench-guided-tab" type="button" :aria-pressed="ruleWorkbench.mode==='guided'" @click="openRuleAssistant()"
+                    class="px-3.5 py-1.5 font-mono text-xs font-bold border border-[#111111] transition-all flex items-center gap-1.5"
+                    :class="ruleWorkbench.mode==='guided' ? 'bg-[#111111] text-white hard-shadow-sm' : 'bg-white text-[#111111] hover:bg-neutral-100'">
+              <i class="ph ph-sparkle text-sm"></i>
+              <span>AI GUIDED ASSISTANT</span>
+            </button>
+            <button id="rule-workbench-manual-tab" type="button" :aria-pressed="ruleWorkbench.mode==='manual'" @click="ruleWorkbench.mode='manual'"
+                    class="px-3.5 py-1.5 font-mono text-xs font-bold border border-[#111111] transition-all flex items-center gap-1.5"
+                    :class="ruleWorkbench.mode==='manual' ? 'bg-[#111111] text-white hard-shadow-sm' : 'bg-white text-[#111111] hover:bg-neutral-100'">
+              <i class="ph ph-code text-sm"></i>
+              <span>MANUAL AST EDITOR</span>
+            </button>
+          </div>
+          <span class="font-mono text-[10px] text-neutral-500 pr-1 hidden sm:inline">ZERO-HALLUCINATION DETERMINISTIC PLAYBOOKS</span>
         </div>
-      </div>
+
+        <section id="rule-assistant-panel" x-show="!ruleWorkbench.selectedRule && ruleWorkbench.mode==='guided'" aria-labelledby="rule-workbench-guided-tab" class="mb-5 border-2 border-[#111111] bg-[#F9F9F7] hard-shadow">
+          
+          <!-- Assistant Banner Strip -->
+          <div class="border-b-2 border-[#111111] bg-[#111111] text-white px-4 py-2 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <i class="ph ph-sparkle text-amber-300 text-sm"></i>
+              <span class="font-mono text-xs font-bold tracking-wider">AI RULE SYNTHESIS CO-PILOT</span>
+              <span class="bg-neutral-800 text-neutral-200 border border-neutral-600 px-1.5 py-0.5 text-[10px] font-mono">BOUNDED PLAYBOOKS</span>
+            </div>
+            <div class="flex items-center gap-3 text-[11px] font-mono text-neutral-300">
+              <span>LOCAL FIXTURE PROOF ENGINE</span>
+              <span class="text-neutral-500">|</span>
+              <span class="text-emerald-400 font-bold">ALL CHECKS LOCAL</span>
+            </div>
+          </div>
+
+          <!-- Two-Column Broadsheet Grid -->
+          <div class="grid lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] divide-y lg:divide-y-0 lg:divide-x-2 divide-[#111111]">
+            
+            <!-- LEFT COLUMN: OBJECTIVE & PLAYBOOK TRIAGE -->
+            <div class="p-4 sm:p-5 space-y-4">
+              
+              <!-- Step 1 Header -->
+              <div class="border-b border-[#111111] pb-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-[10px] uppercase font-bold text-neutral-500 tracking-wider">STAGE 01 / TRIAGE</span>
+                  <span class="font-mono text-[10px] bg-white border border-[#111111] px-1.5 py-0.2">NATURAL LANGUAGE</span>
+                </div>
+                <h4 class="font-serif font-black text-lg text-[#111111] mt-0.5 m-0">Detection Objective</h4>
+                <p class="font-body text-xs text-neutral-600 mt-0.5 mb-0">Describe the attack or policy condition in plain English. The agent routes it to a deterministic playbook.</p>
+              </div>
+
+              <!-- Input Area -->
+              <div class="space-y-2">
+                <label for="rule-assistant-objective" class="block font-mono text-[10px] font-bold uppercase tracking-wider text-[#111111]">
+                  WHAT SHOULD THIS RULE DETECT?
+                </label>
+                <div class="border-2 border-[#111111] bg-white p-2 focus-within:border-[#CC0000] focus-within:ring-1 focus-within:ring-[#CC0000] transition-colors">
+                  <textarea id="rule-assistant-objective" x-model="ruleAssistant.objective" @input="invalidateRuleObjective()" rows="3" maxlength="500"
+                            class="w-full bg-transparent font-mono text-xs text-[#111111] outline-none resize-none leading-relaxed"
+                            placeholder="e.g. Detect successful writes under /etc/ by an unauthorized process..."></textarea>
+                  <div class="flex items-center justify-between pt-1 border-t border-neutral-200 text-[10px] font-mono text-neutral-400">
+                    <span>Press 'Find a Playbook' or select a quick template</span>
+                    <span x-text="(ruleAssistant.objective?.length || 0) + ' / 500'"></span>
+                  </div>
+                </div>
+
+                <!-- Template Pills -->
+                <div class="pt-1">
+                  <div class="font-mono text-[10px] uppercase font-bold text-neutral-500 mb-1.5 flex items-center gap-1">
+                    <i class="ph ph-lightning text-xs"></i>
+                    <span>QUICK SCENARIO TEMPLATES:</span>
+                  </div>
+                  <div class="flex flex-wrap gap-1.5">
+                    <button type="button" @click="fillAndTriageObjective('Detect successful writes under /etc/ by a process')"
+                            class="border border-[#111111] bg-white hover:bg-[#111111] hover:text-white px-2 py-1 text-[10px] font-mono font-bold transition-colors">
+                      + /etc writes
+                    </button>
+                    <button type="button" @click="fillAndTriageObjective('Detect outbound network connections to ports 4444 and 8080')"
+                            class="border border-[#111111] bg-white hover:bg-[#111111] hover:text-white px-2 py-1 text-[10px] font-mono font-bold transition-colors">
+                      + Outbound ports
+                    </button>
+                    <button type="button" @click="fillAndTriageObjective('Detect memory-backed execution like memfd')"
+                            class="border border-[#111111] bg-white hover:bg-[#111111] hover:text-white px-2 py-1 text-[10px] font-mono font-bold transition-colors">
+                      + memfd exec
+                    </button>
+                    <button type="button" @click="fillAndTriageObjective('Detect writable executable below /tmp')"
+                            class="border border-[#111111] bg-white hover:bg-[#111111] hover:text-white px-2 py-1 text-[10px] font-mono font-bold transition-colors">
+                      + /tmp writable
+                    </button>
+                    <button type="button" @click="fillAndTriageObjective('Detect commands executed under shell ancestry')"
+                            class="border border-[#111111] bg-white hover:bg-[#111111] hover:text-white px-2 py-1 text-[10px] font-mono font-bold transition-colors">
+                      + Shell ancestry
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Triage Action Button -->
+              <button id="rule-assistant-triage" type="button" @click="triageRuleObjective()"
+                      class="btn-news-primary w-full text-xs font-bold tracking-widest py-2.5 hard-shadow-hover flex items-center justify-center gap-2"
+                      :disabled="ruleAssistant.busy || !ruleAssistant.objective.trim()">
+                <i class="ph ph-magnifying-glass font-bold text-sm"></i>
+                <span x-text="ruleAssistant.busy ? 'ANALYZING INTENT...' : 'ANALYZE INTENT & MATCH PLAYBOOK'"></span>
+              </button>
+
+              <!-- Live Status Message -->
+              <div id="rule-assistant-status" role="status" aria-live="polite"
+                   x-show="ruleAssistant.message || ruleAssistant.loadingRecipes || ruleAssistant.busy"
+                   class="border border-[#111111] bg-white px-3 py-2 font-mono text-xs flex items-center gap-2"
+                   :class="ruleAssistant.message?.toLowerCase().includes('failed') || ruleAssistant.message?.toLowerCase().includes('error') ? 'border-red-600 bg-red-50 text-red-800' : 'text-[#111111]'">
+                <span class="w-2 h-2 bg-[#111111] animate-pulse" x-show="ruleAssistant.busy || ruleAssistant.loadingRecipes"></span>
+                <span x-text="ruleAssistant.message || (ruleAssistant.loadingRecipes ? 'Loading local playbooks…' : ruleAssistant.busy ? 'Evaluating objective against deterministic playbooks…' : '')"></span>
+              </div>
+
+              <!-- Clarification Alert -->
+              <div x-show="ruleAssistant.triage?.clarification" class="border-2 border-amber-500 bg-amber-50 p-3 text-xs font-body text-amber-900 hard-shadow-sm">
+                <div class="font-mono text-[10px] font-bold uppercase text-amber-800 mb-1 flex items-center gap-1">
+                  <i class="ph ph-warning-circle text-xs"></i>
+                  <span>CLARIFICATION NEEDED</span>
+                </div>
+                <div x-text="ruleAssistant.triage?.clarification"></div>
+              </div>
+
+              <!-- Routing Rationale Box -->
+              <div x-show="ruleAssistant.triage?.rationale" class="border-2 border-[#111111] bg-white p-3 hard-shadow-sm">
+                <div class="font-mono text-[10px] font-bold uppercase tracking-wider text-[#111111] pb-1 mb-1.5 border-b border-neutral-200 flex items-center justify-between">
+                  <span>PLAYBOOK ROUTING RATIONALE</span>
+                  <span class="text-emerald-700">DETERMINISTIC MATCH</span>
+                </div>
+                <ul class="mb-0 pl-4 list-disc font-body text-xs text-neutral-800 space-y-1">
+                  <template x-for="(reason,index) in (ruleAssistant.triage?.rationale || [])" :key="index">
+                    <li x-text="reason"></li>
+                  </template>
+                </ul>
+              </div>
+
+              <!-- Suggested Playbooks -->
+              <div x-show="ruleAssistant.recommendations.length" class="space-y-2">
+                <div class="font-mono text-[10px] font-bold uppercase tracking-wider text-neutral-600 flex items-center justify-between">
+                  <span>SUGGESTED PLAYBOOKS</span>
+                  <span class="text-[10px] text-neutral-400">CLICK TO SELECT</span>
+                </div>
+                <div class="space-y-1.5">
+                  <template x-for="item in ruleAssistant.recommendations" :key="item.id">
+                    <button type="button" :id="'rule-assistant-recommendation-' + item.id" @click="selectRuleRecipe(item.id)"
+                            class="w-full text-left border-2 p-2.5 transition-all block"
+                            :class="ruleAssistant.recipeId===item.id ? 'border-[#111111] bg-white hard-shadow-sm ring-2 ring-[#111111]' : 'border-neutral-300 bg-white hover:border-[#111111] hover:bg-neutral-50'">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="font-mono text-xs font-bold uppercase" :class="ruleAssistant.recipeId===item.id ? 'text-[#111111]' : 'text-neutral-700'" x-text="recipeTitle(item.id)"></span>
+                        <span x-show="ruleAssistant.recipeId===item.id" class="border border-[#111111] bg-[#111111] text-white px-1.5 py-0.2 text-[9px] font-mono font-bold uppercase">SELECTED</span>
+                      </div>
+                      <div class="font-body text-xs text-neutral-600 mt-1 leading-snug" x-text="item.rationale || recipeDescription(item.id)"></div>
+                    </button>
+                  </template>
+                </div>
+              </div>
+
+              <div x-show="ruleAssistant.recipes.length===0 && !ruleAssistant.loadingRecipes" class="border border-neutral-400 bg-white p-3 text-xs font-body text-neutral-600">
+                No playbooks are currently registered. You can switch to the manual editor.
+              </div>
+
+            </div>
+
+
+            <!-- RIGHT COLUMN: PARAMETERS, SYNTHESIS & 3-TIER VERIFICATION -->
+            <div class="p-4 sm:p-5 space-y-4 bg-white">
+              
+              <!-- Step 2 Header -->
+              <div class="border-b border-[#111111] pb-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-[10px] uppercase font-bold text-neutral-500 tracking-wider">STAGE 02 / SYNTHESIS & PROOF</span>
+                  <span class="font-mono text-[10px] border border-[#111111] px-1.5 py-0.2" :class="ruleAssistant.recipeId ? 'bg-[#111111] text-white' : 'bg-neutral-100 text-neutral-500'" x-text="ruleAssistant.recipeId ? 'PLAYBOOK: ' + ruleAssistant.recipeId.toUpperCase() : 'NO PLAYBOOK SELECTED'"></span>
+                </div>
+                <h4 class="font-serif font-black text-lg text-[#111111] mt-0.5 m-0" x-text="selectedRecipe()?.title || 'Recipe Parameters'"></h4>
+                <p class="font-body text-xs text-neutral-600 mt-0.5 mb-0" x-text="selectedRecipe()?.description || 'Select a playbook to configure parameters and synthesize deterministic AST logic.'"></p>
+              </div>
+
+              <!-- Parameters Form Card -->
+              <div x-show="selectedRecipe()" class="border border-[#111111] bg-[#F9F9F7] p-3.5 space-y-3">
+                <div class="font-mono text-[10px] font-bold uppercase tracking-wider text-neutral-600 pb-1 border-b border-neutral-300">
+                  PLAYBOOK CONFIGURATION VARIABLES
+                </div>
+                <template x-for="param in (selectedRecipe()?.parameters || [])" :key="param.id">
+                  <label class="block font-mono text-[10px] font-bold uppercase text-[#111111]" :for="'rule-assistant-param-' + param.id">
+                    <div class="flex items-center justify-between">
+                      <span x-text="param.label"></span>
+                      <span class="text-[9px] font-mono text-neutral-500 lowercase bg-white border border-neutral-300 px-1 py-0.2" x-text="param.type"></span>
+                    </div>
+                    <input :id="'rule-assistant-param-' + param.id" type="text" x-model="ruleAssistant.parameters[param.id]" @input="invalidateRuleParameters()"
+                           :placeholder="Array.isArray(param.default) ? param.default.join(', ') : String(param.default ?? '')"
+                           class="input-news text-xs mt-1 w-full bg-white px-2 py-1.5 border border-[#111111]"
+                           :aria-describedby="'rule-assistant-help-' + param.id">
+                    <span class="block font-body text-[11px] font-normal text-neutral-600 mt-1" :id="'rule-assistant-help-' + param.id" x-text="param.help + (param.type==='integer_list' || param.type==='string_list' ? ' Separate values with commas.' : '')"></span>
+                  </label>
+                </template>
+                <div x-show="ruleAssistant.suggestedParameters" class="font-mono text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-300 p-2 flex items-center gap-1.5">
+                  <i class="ph ph-check text-xs"></i>
+                  <span>Values safely extracted from natural-language objective. Verify or edit prior to proposal.</span>
+                </div>
+              </div>
+
+              <!-- Propose Button -->
+              <button id="rule-assistant-propose" type="button" @click="proposeRuleDraft()"
+                      class="btn-news-primary w-full text-xs font-bold tracking-widest py-2.5 hard-shadow-hover flex items-center justify-center gap-2"
+                      :disabled="ruleAssistant.busy || !ruleAssistant.recipeId">
+                <i class="ph ph-cpu font-bold text-sm"></i>
+                <span x-text="ruleAssistant.busy ? 'COMPILING & EVALUATING FIXTURES...' : 'SYNTHESIZE AST & RUN VERIFICATION PROOFS'"></span>
+              </button>
+
+              <p id="rule-assistant-proposal-status" class="font-mono text-xs text-neutral-700 [overflow-wrap:anywhere]" role="status" aria-live="polite"
+                 x-show="ruleAssistant.proposal || ruleAssistant.busy || ruleAssistant.message"
+                 x-text="ruleAssistant.busy ? 'Compiling expression and executing local fixture suite…' : ruleAssistant.message"></p>
+
+              <!-- PROPOSAL OUTPUT & THREE-TIER FIXTURES -->
+              <div x-show="ruleAssistant.proposal" class="space-y-3.5 border-t-2 border-[#111111] pt-3.5">
+                
+                <!-- Proof Header & Banner -->
+                <div class="border-2 p-3 flex flex-wrap items-center justify-between gap-2"
+                     :class="ruleAssistant.ready ? 'border-emerald-800 bg-emerald-50 text-emerald-950' : 'border-[#CC0000] bg-red-50 text-red-950'">
+                  <div>
+                    <div class="font-mono text-[10px] uppercase font-bold tracking-wider" :class="ruleAssistant.ready ? 'text-emerald-800' : 'text-[#CC0000]'">
+                      SYNTHESIS VERIFICATION PROOFS
+                    </div>
+                    <div class="font-serif font-bold text-sm mt-0.5">3-Tier Fixture Test Suite Execution</div>
+                  </div>
+                  <div class="border-2 px-3 py-1 font-mono text-xs font-black uppercase tracking-wider flex items-center gap-1.5"
+                       :class="ruleAssistant.ready ? 'border-emerald-800 bg-emerald-200 text-emerald-900' : 'border-[#CC0000] bg-red-200 text-[#CC0000]'">
+                    <i class="ph" :class="ruleAssistant.ready ? 'ph-check-circle-bold' : 'ph-x-circle-bold'"></i>
+                    <span x-text="ruleAssistant.ready ? 'ALL CHECKS PASS' : 'CHECKS NEED REVIEW'"></span>
+                  </div>
+                </div>
+
+                <!-- 3-Column Checks Grid -->
+                <div class="grid sm:grid-cols-3 gap-2">
+                  <template x-for="(check, index) in (ruleAssistant.proposal?.checks || [])" :key="index">
+                    <div class="border-2 p-2.5 bg-[#F9F9F7] flex flex-col justify-between"
+                         :class="check.passed ? 'border-[#111111]' : 'border-[#CC0000] bg-red-50'">
+                      <div>
+                        <div class="flex items-center justify-between gap-1">
+                          <span class="font-mono text-[10px] font-bold uppercase text-[#111111]" x-text="check.label"></span>
+                          <span class="font-mono text-[9px] font-bold px-1.5 py-0.2 border"
+                                :class="check.passed ? 'border-emerald-800 bg-emerald-100 text-emerald-900' : 'border-[#CC0000] bg-red-100 text-[#CC0000]'"
+                                x-text="check.passed ? 'PASS ✓' : 'FAIL ✕'"></span>
+                        </div>
+                        <div class="font-mono text-[11px] text-neutral-600 mt-1.5">
+                          <span class="text-neutral-400">EXP:</span> <span class="font-bold text-[#111111]" x-text="check.expected"></span>
+                          <span class="text-neutral-400 mx-1">·</span>
+                          <span class="text-neutral-400">ACT:</span> <span class="font-bold text-[#111111]" x-text="check.actual"></span>
+                        </div>
+                      </div>
+                      <div class="mt-2 pt-1 border-t border-neutral-300 font-mono text-[9px] text-neutral-500 uppercase">
+                        <span x-text="index===0 ? 'Positive: Attack Event' : index===1 ? 'Negative: Benign Exec' : 'Near-Miss: Baseline'"></span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- Missing Evidence Diagnostic Probe -->
+                <div x-show="(ruleAssistant.proposal?.probes || []).length" class="border border-[#111111] bg-neutral-100 p-2.5 font-mono text-xs">
+                  <div class="flex items-center justify-between pb-1 border-b border-neutral-300 text-[10px] font-bold text-neutral-600 uppercase">
+                    <span>DIAGNOSTIC EVIDENCE PROBE (UNKNOWN OUTCOME)</span>
+                    <span class="text-neutral-400">NON-PROMOTING</span>
+                  </div>
+                  <template x-for="(probe,index) in (ruleAssistant.proposal?.probes || [])" :key="probe.fixture_id || index">
+                    <div class="mt-1 text-[11px] text-neutral-700">
+                      <span class="font-bold text-[#111111]" x-text="probe.label"></span>: <span x-text="probe.fixture_id"></span> · expected: <span class="italic font-bold">unknown</span>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- Requirements & Limitations Columns -->
+                <div class="grid sm:grid-cols-2 gap-2 text-xs">
+                  <div class="border border-[#111111] bg-[#F9F9F7] p-2.5">
+                    <div class="font-mono text-[10px] font-bold uppercase text-neutral-700 pb-1 mb-1 border-b border-neutral-200">REQUIREMENTS</div>
+                    <ul class="list-disc pl-4 space-y-0.5 font-body text-[11px] text-neutral-700 mb-0">
+                      <template x-for="(item,index) in (ruleAssistant.proposal?.requirements || [])" :key="index">
+                        <li x-text="item"></li>
+                      </template>
+                    </ul>
+                  </div>
+                  <div class="border border-[#111111] bg-[#F9F9F7] p-2.5">
+                    <div class="font-mono text-[10px] font-bold uppercase text-neutral-700 pb-1 mb-1 border-b border-neutral-200">LIMITATIONS</div>
+                    <ul class="list-disc pl-4 space-y-0.5 font-body text-[11px] text-neutral-700 mb-0">
+                      <template x-for="(item,index) in (ruleAssistant.proposal?.limitations || [])" :key="index">
+                        <li x-text="item"></li>
+                      </template>
+                    </ul>
+                  </div>
+                </div>
+
+                <!-- Proposed Expression Editor -->
+                <div class="space-y-1">
+                  <div class="flex items-center justify-between">
+                    <label for="rule-assistant-expression" class="font-mono text-[10px] font-bold uppercase tracking-wider text-[#111111]">
+                      SYNTHESIZED DETERMINISTIC AST EXPRESSION · EDITABLE
+                    </label>
+                    <span class="font-mono text-[9px] bg-[#111111] text-emerald-400 px-1.5 py-0.2">DSL AST PYTHON</span>
+                  </div>
+                  <div class="border-2 border-[#111111] bg-[#111111] p-2 hard-shadow-sm">
+                    <textarea id="rule-assistant-expression" x-model="ruleAssistant.proposalExpression" @input="invalidateRuleExpression()" rows="4" spellcheck="false"
+                              class="w-full bg-[#111111] text-emerald-400 font-mono text-xs outline-none resize-none leading-relaxed selection:bg-emerald-800 selection:text-white"></textarea>
+                  </div>
+                </div>
+
+                <!-- Recheck / Stale Banner -->
+                <div x-show="!ruleAssistant.ready" class="font-mono text-[11px] text-red-800 bg-red-50 border border-red-300 p-2 flex items-center gap-1.5">
+                  <i class="ph ph-warning text-xs"></i>
+                  <span>Expression was modified or checks failed. Recheck the current expression before applying.</span>
+                </div>
+
+                <!-- Actions: Recheck and Apply -->
+                <div class="grid sm:grid-cols-2 gap-2 pt-1">
+                  <button id="rule-assistant-recheck" type="button" @click="proposeRuleDraft()"
+                          class="btn-news-secondary text-xs font-bold tracking-wider py-2 flex items-center justify-center gap-1.5"
+                          :disabled="ruleAssistant.busy || !ruleAssistant.recipeId">
+                    <i class="ph ph-arrows-clockwise text-xs"></i>
+                    <span>RECHECK EXPRESSION</span>
+                  </button>
+                  <button id="rule-assistant-apply" type="button" @click="applyRuleProposal()"
+                          class="btn-news-primary text-xs font-bold tracking-wider py-2 hard-shadow-hover flex items-center justify-center gap-1.5"
+                          :disabled="!ruleAssistant.ready">
+                    <i class="ph ph-check-bold text-xs"></i>
+                    <span>APPLY TO EDITABLE DRAFT</span>
+                  </button>
+                </div>
+                <p class="font-body text-[11px] text-neutral-500 text-center mb-0">Applying transfers the expression and verification fixtures into the editor for operator review and staging.</p>
+
+              </div>
+
+            </div>
+
+          </div>
+        </section>
+
+        <div x-show="ruleWorkbench.mode==='manual' || ruleWorkbench.selectedRule" class="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)] gap-5">
+          <div class="space-y-3">
+            <div class="grid sm:grid-cols-2 gap-3">
+              <label class="font-mono text-[10px] font-bold">RULE SLUG
+                <input id="rule-workbench-slug" type="text" x-model="newRuleDraft.slug" placeholder="sensitive-config-write" class="input-news text-xs mt-1 w-full" :readonly="!!ruleWorkbench.selectedRule">
+              </label>
+              <label class="font-mono text-[10px] font-bold">TARGET
+                <select id="rule-workbench-target" x-model="newRuleDraft.target" class="input-news text-xs mt-1 w-full">
+                  <option value="process">Process execution</option><option value="runtime">Docker lifecycle</option><option value="kernel">Kernel syscall evidence</option>
+                </select>
+              </label>
+              <label class="font-mono text-[10px] font-bold">RULE NAME
+                <input id="rule-workbench-name" type="text" x-model="newRuleDraft.name" placeholder="Writable sensitive path" class="input-news text-xs mt-1 w-full">
+              </label>
+              <label class="font-mono text-[10px] font-bold">CATEGORY
+                <input id="rule-workbench-category" type="text" x-model="newRuleDraft.category" :placeholder="newRuleDraft.target === 'kernel' ? 'kernel-runtime' : newRuleDraft.target === 'runtime' ? 'container-lifecycle' : 'process-exec'" class="input-news text-xs mt-1 w-full">
+              </label>
+            </div>
+            <label class="font-mono text-[10px] font-bold block">DESCRIPTION
+              <textarea id="rule-workbench-description" x-model="newRuleDraft.description" rows="2" class="input-news text-xs mt-1 w-full" maxlength="4000"></textarea>
+            </label>
+            <label class="font-mono text-[10px] font-bold block">CONDITION EXPRESSION
+              <textarea id="rule-workbench-expression" x-model="newRuleDraft.expression" rows="5" spellcheck="false" class="input-news text-xs mt-1 w-full font-mono" :placeholder="newRuleDraft.target === 'process' ? 'executable == &quot;curl&quot; and exe_writable == true' : newRuleDraft.target === 'runtime' ? 'action == &quot;start&quot; and privileged == true' : 'runtime_action == &quot;file_write&quot; and return_value > 0 and file_path startswith &quot;/etc/&quot;'"></textarea>
+              <span class="font-sans text-[11px] font-normal text-neutral-700 block mt-1">Use <code>and</code>, <code>or</code>, <code>not</code>, parentheses, comparisons, <code>in</code>, <code>contains</code>, and bounded path <code>startswith</code>. No Python or regular expressions.</span>
+              <span id="rule-workbench-fields" class="font-mono text-[10px] font-normal text-neutral-700 block mt-1" x-text="'Target fields: ' + expressionFields.join(', ')"></span>
+            </label>
+            <div class="grid sm:grid-cols-3 gap-3">
+              <label class="font-mono text-[10px] font-bold">SEVERITY
+                <input id="rule-workbench-severity" type="number" min="0" max="1" step="0.01" x-model="newRuleDraft.severity_weight" class="input-news text-xs mt-1 w-full">
+              </label>
+              <label class="font-mono text-[10px] font-bold">CONFIDENCE
+                <input id="rule-workbench-confidence" type="number" min="0" max="1" step="0.01" x-model="newRuleDraft.confidence_weight" class="input-news text-xs mt-1 w-full">
+              </label>
+              <label class="font-mono text-[10px] font-bold flex items-center gap-2 mt-5"><input id="rule-workbench-incident" type="checkbox" x-model="newRuleDraft.incident_eligible"> INCIDENT ELIGIBLE</label>
+            </div>
+            <div class="flex flex-wrap gap-2 border-t border-neutral-300 pt-3">
+              <button id="rule-workbench-validate" @click="validateRuleDraft()" class="btn-news-secondary py-1 px-3 text-xs" :disabled="ruleWorkbench.busy">VALIDATE</button>
+              <button id="rule-workbench-save" @click="saveRuleDraft()" class="btn-news-primary py-1 px-3 text-xs" x-text="ruleWorkbench.selectedRule ? 'SAVE REVISION AS DRAFT' : 'SAVE DRAFT'" :disabled="ruleWorkbench.busy"></button>
+            </div>
+            <p id="rule-workbench-message" class="font-sans text-xs [overflow-wrap:anywhere]" role="status" aria-live="polite" x-text="ruleWorkbench.message"></p>
+          </div>
+
+          <aside class="border-t-2 lg:border-t-0 lg:border-l-2 border-[#111111] pt-4 lg:pt-0 lg:pl-5 space-y-3">
+            <div class="font-mono text-[10px] font-bold">PREVIEW EVIDENCE</div>
+            <label class="font-mono text-[10px] font-bold block">EVENT IDS, COMMA SEPARATED
+              <textarea id="rule-workbench-event-ids" x-model="ruleWorkbench.eventIds" rows="3" class="input-news text-xs mt-1 w-full font-mono" placeholder="Select up to 250 event IDs"></textarea>
+            </label>
+            <label class="font-mono text-[10px] font-bold block">OR LABELED LOCAL FIXTURES (JSON ARRAY)
+              <textarea id="rule-workbench-fixtures" x-model="ruleWorkbench.fixtures" rows="5" class="input-news text-xs mt-1 w-full font-mono" :placeholder="newRuleDraft.target === 'kernel' ? '[{&quot;fixture_id&quot;:&quot;write-positive&quot;,&quot;label&quot;:&quot;positive&quot;,&quot;fields&quot;:{&quot;runtime_action&quot;:&quot;file_write&quot;,&quot;return_value&quot;:12,&quot;file_path&quot;:&quot;/etc/app.conf&quot;}},{&quot;fixture_id&quot;:&quot;write-negative&quot;,&quot;label&quot;:&quot;negative&quot;,&quot;fields&quot;:{&quot;runtime_action&quot;:&quot;file_write&quot;,&quot;return_value&quot;:12,&quot;file_path&quot;:&quot;/usr/bin/app&quot;}}]' : '[{&quot;fixture_id&quot;:&quot;exec-positive&quot;,&quot;label&quot;:&quot;positive&quot;,&quot;fields&quot;:{&quot;executable&quot;:&quot;curl&quot;,&quot;exe_writable&quot;:true}},{&quot;fixture_id&quot;:&quot;exec-negative&quot;,&quot;label&quot;:&quot;negative&quot;,&quot;fields&quot;:{&quot;executable&quot;:&quot;curl&quot;,&quot;exe_writable&quot;:false}}]'"></textarea>
+            </label>
+            <p class="font-sans text-[11px] text-neutral-700">Event previews are limited to one host and container, one hour, and one sensor epoch. Kernel previews also require a single verified process lifetime. Responses contain counts and sanitized field reasons, never argv values.</p>
+            <div class="flex flex-wrap gap-2">
+              <button id="rule-workbench-preview" @click="runRuleWorkbench('preview')" class="btn-news-secondary py-1 px-2 text-[10px]" :disabled="ruleWorkbench.busy || !ruleWorkbench.selectedRule">PREVIEW</button>
+              <button id="rule-workbench-shadow" @click="runRuleWorkbench('shadow')" class="btn-news-secondary py-1 px-2 text-[10px]" :disabled="ruleWorkbench.busy || !ruleWorkbench.selectedRule">SHADOW REVIEW</button>
+            </div>
+            <div x-show="ruleWorkbench.result" class="border-t border-neutral-400 pt-2">
+              <div class="font-mono text-[10px] font-bold">RESULT COUNTS</div>
+              <div class="grid grid-cols-3 gap-1 font-mono text-xs mt-1">
+                <div>Match <strong x-text="ruleWorkbench.result?.result?.match_count ?? '—'"></strong></div>
+                <div>Nonmatch <strong x-text="ruleWorkbench.result?.result?.nonmatch_count ?? '—'"></strong></div>
+                <div>Unknown <strong x-text="ruleWorkbench.result?.result?.unknown_count ?? '—'"></strong></div>
+              </div>
+              <p class="font-sans text-[11px] text-neutral-700 mt-1" x-text="ruleWorkbench.result?.provenance?.coverage || ''"></p>
+              <p class="font-mono text-[10px] text-neutral-700" x-show="ruleWorkbench.result?.result?.budget_exhausted" x-text="'Evaluation budget exhausted · ' + ruleWorkbench.result?.result?.work_operations + ' operations'"></p>
+            </div>
+            <label class="font-mono text-[10px] font-bold block">OPERATOR REFERENCE
+              <input id="rule-workbench-reference" type="text" x-model="ruleWorkbench.reference" maxlength="255" class="input-news text-xs mt-1 w-full" placeholder="review record or change request">
+            </label>
+            <label class="font-mono text-[10px] font-bold block">REVISION TO ROLLBACK TO
+              <select id="rule-workbench-rollback-revision" x-model="ruleWorkbench.rollbackRevisionHash" class="input-news text-[10px] mt-1 w-full">
+                <option value="">Select immutable revision</option>
+                <template x-for="revision in ruleWorkbench.revisions" :key="revision.revision_hash">
+                  <option :value="revision.revision_hash" x-text="revision.revision_hash + ' · ' + revision.provenance"></option>
+                </template>
+              </select>
+            </label>
+            <div class="flex flex-wrap gap-2">
+              <button id="rule-workbench-activate" @click="runRuleWorkbench('activate')" class="btn-news-primary py-1 px-2 text-[10px]" :disabled="ruleWorkbench.busy || !ruleWorkbench.selectedRule">ACTIVATE</button>
+              <button id="rule-workbench-disable" @click="runRuleWorkbench('disable')" class="btn-news-secondary py-1 px-2 text-[10px]" :disabled="ruleWorkbench.busy || !ruleWorkbench.selectedRule">DISABLE</button>
+              <button id="rule-workbench-rollback" @click="runRuleWorkbench('rollback')" class="btn-news-secondary py-1 px-2 text-[10px]" :disabled="ruleWorkbench.busy || !ruleWorkbench.selectedRule">STAGE ROLLBACK</button>
+            </div>
+            <div class="font-mono text-[10px] text-neutral-700 break-all space-y-1" x-show="ruleWorkbench.selectedRule">
+              <div x-text="'Candidate: ' + (ruleWorkbench.selectedRule?.candidate_state || 'draft') + ' · ' + (ruleWorkbench.selectedRule?.revision_hash || 'legacy content')"></div>
+              <div x-text="'Live revision: ' + (ruleWorkbench.selectedRule?.active_revision_hash || 'none')"></div>
+            </div>
+          </aside>
+        </div>
+      </section>
     </div>
 
     <!-- AI CONFIG MODAL -->
