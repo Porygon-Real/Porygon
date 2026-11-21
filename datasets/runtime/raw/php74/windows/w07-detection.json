@@ -1,0 +1,1517 @@
+{
+  "incident": {
+    "acknowledged_at": null,
+    "acknowledged_by": null,
+    "anomaly_score": 0.155747202982,
+    "closed_at": null,
+    "closed_by": null,
+    "closure_note": null,
+    "confidence_level": "high",
+    "confidence_score": 0.916666666667,
+    "container_ids": [
+      "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd"
+    ],
+    "created_at": "2026-11-20T11:41:45.058137Z",
+    "detection_run_id": "17da4155-53d0-4b75-abf8-0de06aff0755",
+    "findings": [
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:01.515290+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "b93c50009191d711f924946014ecbd0d372b2dad476e18e6b6171ef169d476b7",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:01.515484+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "c4a6cba8140510906c9971edbecf268e2a60ab737938ecce167d13f4277c8e5b",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:01.544557+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "0e98b54ce4eb1ad07857bd4e6675ba7fbc0e1834e3eaa63e328600371240d55e",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "cp /bin/sleep /tmp/kdevtmpfsi",
+          "executable": "/bin/cp",
+          "parent_executable": "/bin/dash",
+          "parent_name": "sh",
+          "process_chain": [
+            {
+              "event_id": "c25bc1de644bead4735090bc2eb05428383310948a51a954827c185797abbdc1",
+              "executable": "/bin/cp",
+              "occurred_at": "2026-11-20T11:40:04.938910+00:00",
+              "parent_executable": "/bin/dash"
+            },
+            {
+              "event_id": "fa472014556354545aca99a04edc0b26604a0ce3274d664398cd5f86a4ea3745",
+              "executable": "/bin/dash",
+              "occurred_at": "2026-11-20T11:40:04.936364+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "cp",
+          "raw_executable": "/bin/cp",
+          "raw_parent_executable": "/bin/dash"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T11:40:04.938910+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "c25bc1de644bead4735090bc2eb05428383310948a51a954827c185797abbdc1",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /bin/cp executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "chmod +x /tmp/kdevtmpfsi",
+          "executable": "/bin/chmod",
+          "parent_executable": "/bin/dash",
+          "parent_name": "sh",
+          "process_chain": [
+            {
+              "event_id": "eafa8f83bf9ebb754f108b0ef11993c823fcbf7568a4267486890dea11d4138f",
+              "executable": "/bin/chmod",
+              "occurred_at": "2026-11-20T11:40:04.944144+00:00",
+              "parent_executable": "/bin/dash"
+            },
+            {
+              "event_id": "fa472014556354545aca99a04edc0b26604a0ce3274d664398cd5f86a4ea3745",
+              "executable": "/bin/dash",
+              "occurred_at": "2026-11-20T11:40:04.936364+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "chmod",
+          "raw_executable": "/bin/chmod",
+          "raw_parent_executable": "/bin/dash"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T11:40:04.944144+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "eafa8f83bf9ebb754f108b0ef11993c823fcbf7568a4267486890dea11d4138f",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /bin/chmod executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "kdevtmpfsi 2",
+          "executable": "/tmp/kdevtmpfsi",
+          "parent_executable": "/bin/dash",
+          "parent_name": "sh",
+          "process_chain": [
+            {
+              "event_id": "f18aa891b8fa073f398815cae8c1ff4215a3d521c5c8386d72b452ad1f4f855d",
+              "executable": "/tmp/kdevtmpfsi",
+              "occurred_at": "2026-11-20T11:40:04.944656+00:00",
+              "parent_executable": "/bin/dash"
+            },
+            {
+              "event_id": "fa472014556354545aca99a04edc0b26604a0ce3274d664398cd5f86a4ea3745",
+              "executable": "/bin/dash",
+              "occurred_at": "2026-11-20T11:40:04.936364+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "kdevtmpfsi",
+          "raw_executable": "/tmp/kdevtmpfsi",
+          "raw_parent_executable": "/bin/dash"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T11:40:04.944656+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "f18aa891b8fa073f398815cae8c1ff4215a3d521c5c8386d72b452ad1f4f855d",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /tmp/kdevtmpfsi executed."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c cp \"$(command -v sleep)\" /tmp/kdevtmpfsi; chmod +x /tmp/kdevtmpfsi; /tmp/kdevtmpfsi 2"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:05.027516+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "ddbb9e41443f4d05b3607e789bb3d594cae5f6eb382f339e89861e3a46806e84",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c cp \"$(command -v sleep)\" /tmp/kdevtmpfsi; chmod +x /tmp/kdevtmpfsi; /tmp/kdevtmpfsi 2"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:05.029415+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "c1bbe5e05dde7f03d219beca287266f8812062c9ebac8e85f5126c1cb8040e85",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:07.068647+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "9c22ce91142717aaba98b6729b74723c5eda4d93d110cfd09784746dedd55050",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:11.547126+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "a045013619507b891e165372fe8e8c95a188c52331846f17048ff2877be99271",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:11.547221+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "07adfc37ab84f7a5131a5dd8ef185d197b8e0f0f2d84f2b0be13cfd2aa5b9e78",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:11.579102+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "5ed49f807e36f630c46ba6c612ee4ea4950c9eeec50c5f7e5135f7c997632144",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:21.581262+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "b2b7c3c293b8efac511364b7bbf9803d6b783bf7aef51ab877806a99fa34b987",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:21.581374+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "604c522007094b32061ba76898325f4c24eb66f92850a5a72ec7730e168e8fac",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:21.609310+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "d4af48bc1016e00bf9a5da00d613c08839222a019129603ccd145a8d027c775b",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:31.611396+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "8c46ca2d5b6ee93279502d99f2bbe7883b3360c2c38e96c63e38ae5cc1cd48d1",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:31.611557+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "652fac0e4133c6dd50817b37efb1fd2e4b0c4c940e5f5ca408de73604531d00b",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:31.642334+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "21932fb5039300f33a7c0c69f1550f36826e595f50c5e49202b10ead196149be",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:41.646164+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "91405ece2920dbca112a683a8f0eea175a797f5bde07a3995b75f7c5854c03b5",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:41.646266+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "ff416688768fac769b8b418170a4ea8e29895126e472caf9a97c0d9ff163e395",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:41.680218+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "fdf0a54991c268b6aa7f41d685f984622ff92d30357b43725550450462178087",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:51.683621+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "62b1510ecaffd137b203e0ca09f0077448c3f217786ebf0ddb824b4af558e901",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:51.684241+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "7048d5b224fd3a4ac0283f38f13984275efe733b8ff0c438addbdeb16d2034c2",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T11:40:51.734613+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "5b202a6467d96ce6db95e1a77364c5753afd39ae6c735566cdd6053cc4ced914",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      }
+    ],
+    "first_seen_at": "2026-11-20T11:40:01.515290Z",
+    "image_digest": "php@sha256:c9d7e608f73832673479770d66aacc8100011ec751d1905ff63fae3fe2e0ca6d",
+    "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+    "last_seen_at": "2026-11-20T11:40:51.734613Z",
+    "score_id": "23b40285-dd4c-4bcc-9b9c-c8267ce6597d",
+    "severity_level": "high",
+    "severity_score": 0.530511521044,
+    "status": "open",
+    "summary": "3 incident-eligible rule match(es) correlated for php@sha256:c9d7e608f73832673479770d66aacc8100011ec751d1905ff63fae3fe2e0ca6d.",
+    "title": "Previously Unseen Non-Shell Executable in php",
+    "updated_at": "2026-11-20T11:41:45.058137Z"
+  },
+  "run": {
+    "allowlist_set_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "applied_allowlist_ids": [],
+    "created_at": "2026-11-20T11:41:45.058137Z",
+    "custom_ruleset_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "image_digest": "php@sha256:c9d7e608f73832673479770d66aacc8100011ec751d1905ff63fae3fe2e0ca6d",
+    "incident_created": true,
+    "matches_count": 24,
+    "result": {
+      "anomaly_score": 0.155747202982,
+      "confidence_level": "high",
+      "confidence_score": 0.916666666667,
+      "custom_ruleset_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "incident_eligible": true,
+      "matches": [
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:01.515290+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "b93c50009191d711f924946014ecbd0d372b2dad476e18e6b6171ef169d476b7",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:01.515484+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "c4a6cba8140510906c9971edbecf268e2a60ab737938ecce167d13f4277c8e5b",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:01.544557+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "0e98b54ce4eb1ad07857bd4e6675ba7fbc0e1834e3eaa63e328600371240d55e",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "cp /bin/sleep /tmp/kdevtmpfsi",
+            "executable": "/bin/cp",
+            "parent_executable": "/bin/dash",
+            "parent_name": "sh",
+            "process_chain": [
+              {
+                "event_id": "c25bc1de644bead4735090bc2eb05428383310948a51a954827c185797abbdc1",
+                "executable": "/bin/cp",
+                "occurred_at": "2026-11-20T11:40:04.938910+00:00",
+                "parent_executable": "/bin/dash"
+              },
+              {
+                "event_id": "fa472014556354545aca99a04edc0b26604a0ce3274d664398cd5f86a4ea3745",
+                "executable": "/bin/dash",
+                "occurred_at": "2026-11-20T11:40:04.936364+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "cp",
+            "raw_executable": "/bin/cp",
+            "raw_parent_executable": "/bin/dash"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T11:40:04.938910+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "c25bc1de644bead4735090bc2eb05428383310948a51a954827c185797abbdc1",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /bin/cp executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "chmod +x /tmp/kdevtmpfsi",
+            "executable": "/bin/chmod",
+            "parent_executable": "/bin/dash",
+            "parent_name": "sh",
+            "process_chain": [
+              {
+                "event_id": "eafa8f83bf9ebb754f108b0ef11993c823fcbf7568a4267486890dea11d4138f",
+                "executable": "/bin/chmod",
+                "occurred_at": "2026-11-20T11:40:04.944144+00:00",
+                "parent_executable": "/bin/dash"
+              },
+              {
+                "event_id": "fa472014556354545aca99a04edc0b26604a0ce3274d664398cd5f86a4ea3745",
+                "executable": "/bin/dash",
+                "occurred_at": "2026-11-20T11:40:04.936364+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "chmod",
+            "raw_executable": "/bin/chmod",
+            "raw_parent_executable": "/bin/dash"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T11:40:04.944144+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "eafa8f83bf9ebb754f108b0ef11993c823fcbf7568a4267486890dea11d4138f",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /bin/chmod executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "kdevtmpfsi 2",
+            "executable": "/tmp/kdevtmpfsi",
+            "parent_executable": "/bin/dash",
+            "parent_name": "sh",
+            "process_chain": [
+              {
+                "event_id": "f18aa891b8fa073f398815cae8c1ff4215a3d521c5c8386d72b452ad1f4f855d",
+                "executable": "/tmp/kdevtmpfsi",
+                "occurred_at": "2026-11-20T11:40:04.944656+00:00",
+                "parent_executable": "/bin/dash"
+              },
+              {
+                "event_id": "fa472014556354545aca99a04edc0b26604a0ce3274d664398cd5f86a4ea3745",
+                "executable": "/bin/dash",
+                "occurred_at": "2026-11-20T11:40:04.936364+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "kdevtmpfsi",
+            "raw_executable": "/tmp/kdevtmpfsi",
+            "raw_parent_executable": "/bin/dash"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T11:40:04.944656+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "f18aa891b8fa073f398815cae8c1ff4215a3d521c5c8386d72b452ad1f4f855d",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /tmp/kdevtmpfsi executed."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c cp \"$(command -v sleep)\" /tmp/kdevtmpfsi; chmod +x /tmp/kdevtmpfsi; /tmp/kdevtmpfsi 2"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:05.027516+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "ddbb9e41443f4d05b3607e789bb3d594cae5f6eb382f339e89861e3a46806e84",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c cp \"$(command -v sleep)\" /tmp/kdevtmpfsi; chmod +x /tmp/kdevtmpfsi; /tmp/kdevtmpfsi 2"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:05.029415+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "c1bbe5e05dde7f03d219beca287266f8812062c9ebac8e85f5126c1cb8040e85",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:07.068647+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "9c22ce91142717aaba98b6729b74723c5eda4d93d110cfd09784746dedd55050",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:11.547126+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "a045013619507b891e165372fe8e8c95a188c52331846f17048ff2877be99271",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:11.547221+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "07adfc37ab84f7a5131a5dd8ef185d197b8e0f0f2d84f2b0be13cfd2aa5b9e78",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:11.579102+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "5ed49f807e36f630c46ba6c612ee4ea4950c9eeec50c5f7e5135f7c997632144",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:21.581262+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "b2b7c3c293b8efac511364b7bbf9803d6b783bf7aef51ab877806a99fa34b987",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:21.581374+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "604c522007094b32061ba76898325f4c24eb66f92850a5a72ec7730e168e8fac",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:21.609310+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "d4af48bc1016e00bf9a5da00d613c08839222a019129603ccd145a8d027c775b",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:31.611396+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "8c46ca2d5b6ee93279502d99f2bbe7883b3360c2c38e96c63e38ae5cc1cd48d1",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:31.611557+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "652fac0e4133c6dd50817b37efb1fd2e4b0c4c940e5f5ca408de73604531d00b",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:31.642334+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "21932fb5039300f33a7c0c69f1550f36826e595f50c5e49202b10ead196149be",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:41.646164+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "91405ece2920dbca112a683a8f0eea175a797f5bde07a3995b75f7c5854c03b5",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:41.646266+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "ff416688768fac769b8b418170a4ea8e29895126e472caf9a97c0d9ff163e395",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:41.680218+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "fdf0a54991c268b6aa7f41d685f984622ff92d30357b43725550450462178087",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:51.683621+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "62b1510ecaffd137b203e0ca09f0077448c3f217786ebf0ddb824b4af558e901",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:51.684241+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "7048d5b224fd3a4ac0283f38f13984275efe733b8ff0c438addbdeb16d2034c2",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "b02ba0083268224fad46a74cd38c80e9f966f00d6c46fb0437b74aad53a326fd",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T11:40:51.734613+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "5b202a6467d96ce6db95e1a77364c5753afd39ae6c735566cdd6053cc4ced914",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        }
+      ],
+      "metrics": {
+        "additional_unseen_executables": 0,
+        "correlation_window_seconds": 120,
+        "eligible_matches": 3,
+        "informational_matches": 21,
+        "process_events": 28,
+        "runtime_events": 21,
+        "source_types": [
+          "process_event",
+          "runtime_event"
+        ],
+        "suppressed_matches": 0
+      },
+      "rule_errors": [],
+      "ruleset_hash": "dfb4e9343108adb77b1a42d72438bc55b4aad3e267770fed9c9440522a8cbbf2",
+      "ruleset_version": "porygon.detection.v1",
+      "severity_level": "high",
+      "severity_score": 0.530511521044,
+      "status": "incident_created",
+      "summary": "3 incident-eligible rule match(es) correlated for php@sha256:c9d7e608f73832673479770d66aacc8100011ec751d1905ff63fae3fe2e0ca6d.",
+      "suppressed_matches": []
+    },
+    "ruleset_hash": "dfb4e9343108adb77b1a42d72438bc55b4aad3e267770fed9c9440522a8cbbf2",
+    "ruleset_version": "porygon.detection.v1",
+    "run_id": "17da4155-53d0-4b75-abf8-0de06aff0755",
+    "run_key": "28b89d1e8a4f0dceffe93e904f2423055450b6dd3a10f018258ce46162a8506c",
+    "score_id": "23b40285-dd4c-4bcc-9b9c-c8267ce6597d",
+    "status": "incident_created",
+    "window_end": "2026-11-20T11:41:00Z",
+    "window_start": "2026-11-20T11:40:00Z"
+  },
+  "timeline": [
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "63aabaac-24b7-41c6-9590-01197753e077",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:01.515290Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 1,
+      "source_id": "b93c50009191d711f924946014ecbd0d372b2dad476e18e6b6171ef169d476b7",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "cfbb0a02-d035-4056-bf79-9265aacd1a22",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:01.515484Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 2,
+      "source_id": "c4a6cba8140510906c9971edbecf268e2a60ab737938ecce167d13f4277c8e5b",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_die",
+        "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+      },
+      "evidence_id": "b17209b2-8f8e-4e33-aad3-a7664fea76e3",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:01.544557Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 3,
+      "source_id": "0e98b54ce4eb1ad07857bd4e6675ba7fbc0e1834e3eaa63e328600371240d55e",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "command_line": "cp /bin/sleep /tmp/kdevtmpfsi",
+        "executable": "/bin/cp",
+        "parent_executable": "/bin/dash",
+        "parent_name": "sh",
+        "process_chain": [
+          {
+            "event_id": "c25bc1de644bead4735090bc2eb05428383310948a51a954827c185797abbdc1",
+            "executable": "/bin/cp",
+            "occurred_at": "2026-11-20T11:40:04.938910+00:00",
+            "parent_executable": "/bin/dash"
+          },
+          {
+            "event_id": "fa472014556354545aca99a04edc0b26604a0ce3274d664398cd5f86a4ea3745",
+            "executable": "/bin/dash",
+            "occurred_at": "2026-11-20T11:40:04.936364+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "cp",
+        "raw_executable": "/bin/cp",
+        "raw_parent_executable": "/bin/dash"
+      },
+      "evidence_id": "85d31750-9514-41eb-bbc0-b215a23e4d07",
+      "evidence_type": "execution",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:04.938910Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 4,
+      "source_id": "c25bc1de644bead4735090bc2eb05428383310948a51a954827c185797abbdc1",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /bin/cp executed."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "command_line": "chmod +x /tmp/kdevtmpfsi",
+        "executable": "/bin/chmod",
+        "parent_executable": "/bin/dash",
+        "parent_name": "sh",
+        "process_chain": [
+          {
+            "event_id": "eafa8f83bf9ebb754f108b0ef11993c823fcbf7568a4267486890dea11d4138f",
+            "executable": "/bin/chmod",
+            "occurred_at": "2026-11-20T11:40:04.944144+00:00",
+            "parent_executable": "/bin/dash"
+          },
+          {
+            "event_id": "fa472014556354545aca99a04edc0b26604a0ce3274d664398cd5f86a4ea3745",
+            "executable": "/bin/dash",
+            "occurred_at": "2026-11-20T11:40:04.936364+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "chmod",
+        "raw_executable": "/bin/chmod",
+        "raw_parent_executable": "/bin/dash"
+      },
+      "evidence_id": "71a0488a-1ef7-469f-b6ce-a50033169ae9",
+      "evidence_type": "execution",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:04.944144Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 5,
+      "source_id": "eafa8f83bf9ebb754f108b0ef11993c823fcbf7568a4267486890dea11d4138f",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /bin/chmod executed."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "command_line": "kdevtmpfsi 2",
+        "executable": "/tmp/kdevtmpfsi",
+        "parent_executable": "/bin/dash",
+        "parent_name": "sh",
+        "process_chain": [
+          {
+            "event_id": "f18aa891b8fa073f398815cae8c1ff4215a3d521c5c8386d72b452ad1f4f855d",
+            "executable": "/tmp/kdevtmpfsi",
+            "occurred_at": "2026-11-20T11:40:04.944656+00:00",
+            "parent_executable": "/bin/dash"
+          },
+          {
+            "event_id": "fa472014556354545aca99a04edc0b26604a0ce3274d664398cd5f86a4ea3745",
+            "executable": "/bin/dash",
+            "occurred_at": "2026-11-20T11:40:04.936364+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "kdevtmpfsi",
+        "raw_executable": "/tmp/kdevtmpfsi",
+        "raw_parent_executable": "/bin/dash"
+      },
+      "evidence_id": "0a9bf41f-ad13-443f-8817-1136048cef40",
+      "evidence_type": "execution",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:04.944656Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 6,
+      "source_id": "f18aa891b8fa073f398815cae8c1ff4215a3d521c5c8386d72b452ad1f4f855d",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /tmp/kdevtmpfsi executed."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c cp \"$(command -v sleep)\" /tmp/kdevtmpfsi; chmod +x /tmp/kdevtmpfsi; /tmp/kdevtmpfsi 2"
+      },
+      "evidence_id": "8c32dbfd-e733-4ad0-8063-675406521992",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:05.027516Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 7,
+      "source_id": "ddbb9e41443f4d05b3607e789bb3d594cae5f6eb382f339e89861e3a46806e84",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c cp \"$(command -v sleep)\" /tmp/kdevtmpfsi; chmod +x /tmp/kdevtmpfsi; /tmp/kdevtmpfsi 2"
+      },
+      "evidence_id": "eede5781-e36a-4b9f-9ad6-1a5c084d53a8",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:05.029415Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 8,
+      "source_id": "c1bbe5e05dde7f03d219beca287266f8812062c9ebac8e85f5126c1cb8040e85",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_die",
+        "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+      },
+      "evidence_id": "c6e53e45-c66d-44ba-a344-12d3269fbade",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:07.068647Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 9,
+      "source_id": "9c22ce91142717aaba98b6729b74723c5eda4d93d110cfd09784746dedd55050",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "92cd43c9-ef56-4275-887c-56624705d4e2",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:11.547126Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 10,
+      "source_id": "a045013619507b891e165372fe8e8c95a188c52331846f17048ff2877be99271",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "ca95078a-da80-467c-a182-5ae581351bae",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:11.547221Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 11,
+      "source_id": "07adfc37ab84f7a5131a5dd8ef185d197b8e0f0f2d84f2b0be13cfd2aa5b9e78",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_die",
+        "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+      },
+      "evidence_id": "354f376d-9a33-4bbc-b6d1-0fee5008ac98",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:11.579102Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 12,
+      "source_id": "5ed49f807e36f630c46ba6c612ee4ea4950c9eeec50c5f7e5135f7c997632144",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "91145299-56c5-442a-b542-9c9bfd52f012",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:21.581262Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 13,
+      "source_id": "b2b7c3c293b8efac511364b7bbf9803d6b783bf7aef51ab877806a99fa34b987",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "bd736f87-35b4-411b-9288-049cc10c6351",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:21.581374Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 14,
+      "source_id": "604c522007094b32061ba76898325f4c24eb66f92850a5a72ec7730e168e8fac",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_die",
+        "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+      },
+      "evidence_id": "85b1dfbb-2065-49f9-94e4-15b37378a997",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:21.609310Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 15,
+      "source_id": "d4af48bc1016e00bf9a5da00d613c08839222a019129603ccd145a8d027c775b",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "3468ebc6-23cf-4182-bda3-4997132a4289",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:31.611396Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 16,
+      "source_id": "8c46ca2d5b6ee93279502d99f2bbe7883b3360c2c38e96c63e38ae5cc1cd48d1",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "b494e359-9c34-415b-af17-f9f935839a1f",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:31.611557Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 17,
+      "source_id": "652fac0e4133c6dd50817b37efb1fd2e4b0c4c940e5f5ca408de73604531d00b",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_die",
+        "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+      },
+      "evidence_id": "146bde0e-9c07-49e2-8f56-867d196e890a",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:31.642334Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 18,
+      "source_id": "21932fb5039300f33a7c0c69f1550f36826e595f50c5e49202b10ead196149be",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "3cec90dd-3116-46e5-8ffa-152eeee35fa7",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:41.646164Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 19,
+      "source_id": "91405ece2920dbca112a683a8f0eea175a797f5bde07a3995b75f7c5854c03b5",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "ad54025c-0c84-43bb-a813-56abadc0ec88",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:41.646266Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 20,
+      "source_id": "ff416688768fac769b8b418170a4ea8e29895126e472caf9a97c0d9ff163e395",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_die",
+        "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+      },
+      "evidence_id": "81377c4e-105b-4527-8b9a-21b41a169bdb",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:41.680218Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 21,
+      "source_id": "fdf0a54991c268b6aa7f41d685f984622ff92d30357b43725550450462178087",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "dfa159c5-cc02-4feb-a69a-469144f3ec8d",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:51.683621Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 22,
+      "source_id": "62b1510ecaffd137b203e0ca09f0077448c3f217786ebf0ddb824b4af558e901",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/80 && printf \"GET /index.php HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "75814aaa-bdc3-4e1c-a0de-66bb1bd47eb2",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:51.684241Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 23,
+      "source_id": "7048d5b224fd3a4ac0283f38f13984275efe733b8ff0c438addbdeb16d2034c2",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "action": "exec_die",
+        "command": "bash -c echo '<?php echo date(\"c\"), \"\\n\";' > /var/www/html/index.php && exec apache2-foreground"
+      },
+      "evidence_id": "a1475629-3755-4acd-9a3c-8312560ee6a0",
+      "evidence_type": "container-control",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:40:51.734613Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 24,
+      "source_id": "5b202a6467d96ce6db95e1a77364c5753afd39ae6c735566cdd6053cc4ced914",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T11:41:45.058137Z",
+      "details": {
+        "algorithm_version": "porygon.distance.v1",
+        "profile_id": "49749273-da9d-412a-8eee-dbdcc515cc8f",
+        "profile_version": 1,
+        "score_band": "baseline_like",
+        "total_score": 0.155747202982
+      },
+      "evidence_id": "dfeca4e5-286b-4f1a-88b3-0cb98d1199e7",
+      "evidence_type": "behavioural_distance",
+      "incident_id": "394d431e-f587-4299-96c9-64303fb2d1a1",
+      "occurred_at": "2026-11-20T11:41:00Z",
+      "rule_id": null,
+      "sequence_no": 25,
+      "source_id": "23b40285-dd4c-4bcc-9b9c-c8267ce6597d",
+      "source_type": "anomaly_score",
+      "summary": "Observed behavioural distance was 0.156 (baseline_like)."
+    }
+  ]
+}

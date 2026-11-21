@@ -1,0 +1,2406 @@
+{
+  "incident": {
+    "acknowledged_at": null,
+    "acknowledged_by": null,
+    "anomaly_score": 0.297441550834,
+    "closed_at": null,
+    "closed_by": null,
+    "closure_note": null,
+    "confidence_level": "high",
+    "confidence_score": 0.916666666667,
+    "container_ids": [
+      "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c"
+    ],
+    "created_at": "2026-11-20T12:55:45.029512Z",
+    "detection_run_id": "122570e6-b1ee-4589-a149-9372402f051c",
+    "findings": [
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:02.053035+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "f63c02ad87726aad89d5e6f9ae9bbf49ad1d7f29ad56947ad57732345643a37f",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:02.053141+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "9c1a1d06c1f8bfc605462e7c05adf2aaba5a776c2e2a3c695e9608a5622a205a",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "catalina.sh run"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:02.087092+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "55f7d0da66ba7348584075d7d9d3989956063a3411c4e5a5f2aac85ce8f3585e",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "apt-get update -qq",
+          "executable": "/usr/bin/apt-get",
+          "parent_executable": "/usr/bin/dash",
+          "parent_name": "sh",
+          "process_chain": [
+            {
+              "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+              "executable": "/usr/bin/apt-get",
+              "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+              "parent_executable": "/usr/bin/runc"
+            }
+          ],
+          "process_name": "apt-get",
+          "raw_executable": "/usr/bin/apt-get",
+          "raw_parent_executable": "/usr/bin/dash"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/apt-get executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "dpkg --print-foreign-architectures",
+          "executable": "/usr/bin/dpkg",
+          "parent_executable": "/usr/bin/apt-get",
+          "parent_name": "apt-get",
+          "process_chain": [
+            {
+              "event_id": "ddbfa3a351cceaf03af433b25ccf4574ee54c12f8da77c0529de00be39ae798a",
+              "executable": "/usr/bin/dpkg",
+              "occurred_at": "2026-11-20T12:54:04.978071+00:00",
+              "parent_executable": "/usr/bin/apt-get"
+            },
+            {
+              "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+              "executable": "/usr/bin/apt-get",
+              "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+              "parent_executable": "/usr/bin/runc"
+            }
+          ],
+          "process_name": "dpkg",
+          "raw_executable": "/usr/bin/dpkg",
+          "raw_parent_executable": "/usr/bin/apt-get"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:04.978071+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "ddbfa3a351cceaf03af433b25ccf4574ee54c12f8da77c0529de00be39ae798a",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "http",
+          "executable": "/usr/lib/apt/methods/http",
+          "parent_executable": "/usr/bin/apt-get",
+          "parent_name": "apt-get",
+          "process_chain": [
+            {
+              "event_id": "93735500da10a6db401508acc80befd8e25e7b6a87ae37e57b9753e1c1f97cd9",
+              "executable": "/usr/lib/apt/methods/http",
+              "occurred_at": "2026-11-20T12:54:04.982047+00:00",
+              "parent_executable": "/usr/bin/apt-get"
+            },
+            {
+              "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+              "executable": "/usr/bin/apt-get",
+              "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+              "parent_executable": "/usr/bin/runc"
+            }
+          ],
+          "process_name": "http",
+          "raw_executable": "/usr/lib/apt/methods/http",
+          "raw_parent_executable": "/usr/bin/apt-get"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:04.982047+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "93735500da10a6db401508acc80befd8e25e7b6a87ae37e57b9753e1c1f97cd9",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/lib/apt/methods/http executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "http",
+          "executable": "/usr/lib/apt/methods/http",
+          "parent_executable": "/usr/bin/apt-get",
+          "parent_name": "apt-get",
+          "process_chain": [
+            {
+              "event_id": "3862ac900dcad6713fe86b033c98039a0dd11948961769d10239d839b6688ea0",
+              "executable": "/usr/lib/apt/methods/http",
+              "occurred_at": "2026-11-20T12:54:04.984020+00:00",
+              "parent_executable": "/usr/bin/apt-get"
+            },
+            {
+              "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+              "executable": "/usr/bin/apt-get",
+              "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+              "parent_executable": "/usr/bin/runc"
+            }
+          ],
+          "process_name": "http",
+          "raw_executable": "/usr/lib/apt/methods/http",
+          "raw_parent_executable": "/usr/bin/apt-get"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:04.984020+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "3862ac900dcad6713fe86b033c98039a0dd11948961769d10239d839b6688ea0",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/lib/apt/methods/http executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "http",
+          "executable": "/usr/lib/apt/methods/http",
+          "parent_executable": "/usr/bin/apt-get",
+          "parent_name": "apt-get",
+          "process_chain": [
+            {
+              "event_id": "9365fb1b570b21519a8c68e94d685dd6dd389b8f29e0b7589e4329d776106bcd",
+              "executable": "/usr/lib/apt/methods/http",
+              "occurred_at": "2026-11-20T12:54:04.985336+00:00",
+              "parent_executable": "/usr/bin/apt-get"
+            },
+            {
+              "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+              "executable": "/usr/bin/apt-get",
+              "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+              "parent_executable": "/usr/bin/runc"
+            }
+          ],
+          "process_name": "http",
+          "raw_executable": "/usr/lib/apt/methods/http",
+          "raw_parent_executable": "/usr/bin/apt-get"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:04.985336+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "9365fb1b570b21519a8c68e94d685dd6dd389b8f29e0b7589e4329d776106bcd",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/lib/apt/methods/http executed."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c if command -v apt-get >/dev/null 2>&1; then apt-get update -qq; apt-get install -y -qq nmap; elif command -v apk >/dev/null 2>&1; then apk add --no-cache nmap; elif command -v microdnf >/dev/null 2>&1; then microdnf install -y nmap; elif command -v dnf >/dev/null 2>&1; then dnf install -y nmap; else yum install -y nmap; fi"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:05.048897+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "90827836a01c6842cdf60cb872f3b684ff3db873e97b552b5014bfa81162b3c4",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c if command -v apt-get >/dev/null 2>&1; then apt-get update -qq; apt-get install -y -qq nmap; elif command -v apk >/dev/null 2>&1; then apk add --no-cache nmap; elif command -v microdnf >/dev/null 2>&1; then microdnf install -y nmap; elif command -v dnf >/dev/null 2>&1; then dnf install -y nmap; else yum install -y nmap; fi"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:05.051738+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "f9023b0f0947943294eae033cb66d6c637f77bcdaafb412caa7fb2d9a7e657db",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb /var/cache/apt/*.bin",
+          "executable": "/usr/bin/gnurm",
+          "parent_executable": "/usr/bin/dash",
+          "parent_name": "sh",
+          "process_chain": [
+            {
+              "event_id": "7006a7818bfd801e18703f7288c6fe01af0d083d383c53bdf56694277cecefd3",
+              "executable": "/usr/bin/gnurm",
+              "occurred_at": "2026-11-20T12:54:11.998387+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "414808e712a703a64c0e0ef1efd039da2831e1af0bfcb2c21d82d3b242a23ce7",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:11.997053+00:00",
+              "parent_executable": "/usr/bin/apt-get"
+            }
+          ],
+          "process_name": "rm",
+          "raw_executable": "/usr/bin/gnurm",
+          "raw_parent_executable": "/usr/bin/dash"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:11.998387+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "7006a7818bfd801e18703f7288c6fe01af0d083d383c53bdf56694277cecefd3",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/gnurm executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "dpkg --print-foreign-architectures",
+          "executable": "/usr/bin/dpkg",
+          "parent_executable": "/usr/bin/apt-get",
+          "parent_name": "apt-get",
+          "process_chain": [
+            {
+              "event_id": "e8704c643d17293788e66d6111c710237f3a7f81abbc7bb6e3626c7ea5e50bc5",
+              "executable": "/usr/bin/dpkg",
+              "occurred_at": "2026-11-20T12:54:11.998957+00:00",
+              "parent_executable": "/usr/bin/apt-get"
+            },
+            {
+              "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+              "executable": "/usr/bin/apt-get",
+              "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+              "parent_executable": "/usr/bin/runc"
+            }
+          ],
+          "process_name": "dpkg",
+          "raw_executable": "/usr/bin/dpkg",
+          "raw_parent_executable": "/usr/bin/apt-get"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:11.998957+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "e8704c643d17293788e66d6111c710237f3a7f81abbc7bb6e3626c7ea5e50bc5",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "dpkg --print-foreign-architectures",
+          "executable": "/usr/bin/dpkg",
+          "parent_executable": "/usr/bin/apt-get",
+          "parent_name": "apt-get",
+          "process_chain": [
+            {
+              "event_id": "5e4e8e22228aa42551d94415aaa052896c32a64bc4d7922ed39a37ae4d282793",
+              "executable": "/usr/bin/dpkg",
+              "occurred_at": "2026-11-20T12:54:12.004071+00:00",
+              "parent_executable": "/usr/bin/apt-get"
+            },
+            {
+              "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+              "executable": "/usr/bin/apt-get",
+              "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+              "parent_executable": "/usr/bin/runc"
+            }
+          ],
+          "process_name": "dpkg",
+          "raw_executable": "/usr/bin/dpkg",
+          "raw_parent_executable": "/usr/bin/apt-get"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:12.004071+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "5e4e8e22228aa42551d94415aaa052896c32a64bc4d7922ed39a37ae4d282793",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "apt-get install -y -qq nmap",
+          "executable": "/usr/bin/apt-get",
+          "parent_executable": "/usr/bin/dash",
+          "parent_name": "sh",
+          "process_chain": [
+            {
+              "event_id": "0c8bf5939bf7dd84b5394a8ba5948e33dc2337d21eceab11f15ac2a7018619fd",
+              "executable": "/usr/bin/apt-get",
+              "occurred_at": "2026-11-20T12:54:12.005331+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+              "parent_executable": "/usr/bin/runc"
+            }
+          ],
+          "process_name": "apt-get",
+          "raw_executable": "/usr/bin/apt-get",
+          "raw_parent_executable": "/usr/bin/dash"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:12.005331+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "0c8bf5939bf7dd84b5394a8ba5948e33dc2337d21eceab11f15ac2a7018619fd",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/apt-get executed."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "dpkg --print-foreign-architectures",
+          "executable": "/usr/bin/dpkg",
+          "parent_executable": "/usr/bin/apt-get",
+          "parent_name": "apt-get",
+          "process_chain": [
+            {
+              "event_id": "9fcafed5017adc7c85b11782ffc6328ff478116b79a818fb3cc938803eb53ab7",
+              "executable": "/usr/bin/dpkg",
+              "occurred_at": "2026-11-20T12:54:12.007522+00:00",
+              "parent_executable": "/usr/bin/apt-get"
+            },
+            {
+              "event_id": "0c8bf5939bf7dd84b5394a8ba5948e33dc2337d21eceab11f15ac2a7018619fd",
+              "executable": "/usr/bin/apt-get",
+              "occurred_at": "2026-11-20T12:54:12.005331+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+              "parent_executable": "/usr/bin/runc"
+            }
+          ],
+          "process_name": "dpkg",
+          "raw_executable": "/usr/bin/dpkg",
+          "raw_parent_executable": "/usr/bin/apt-get"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T12:54:12.007522+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "9fcafed5017adc7c85b11782ffc6328ff478116b79a818fb3cc938803eb53ab7",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:12.087487+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "f0aa05c6fd732acc611eb421d60aec3a5a0a43c552a5704eeb3d0f47109b8dca",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:12.087558+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "bfd4976444587d8f313ec1a9f60c3a17123e75ec16d18e3bd3e36610100711ef",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "catalina.sh run"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:12.115473+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "9ea4bfc7b52d7a5020473a010b404ba96115f37acc0e5d7d3eeb01f3f6de2cb5",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "catalina.sh run"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:12.125613+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "2563d31326d3481b491f5ad4af2160871c04afc9eb2018198274b72c26f9220d",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:22.117371+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "0889253b514f24a28034a073ac4f572d5b36dacb0d2985050d517ff100bd044b",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:22.117754+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "661a49b9183d622bbd0f86361442da0f408af8c6d01082834ec42ea860467c6f",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "catalina.sh run"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:22.169007+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "f40afc5e12f3dc5d71425e9c62b699ca2304784a512b9561860da16afde778f6",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:32.170020+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "49195191893ffbc647d237a0a4ef1f2bc7e8b825fc1538fc18d1fa4c3f24ba71",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:32.170432+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "b529e6841a80d5f1c181b1aec8545b5d3d8ea4b8062a32399146183ff30246c5",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "catalina.sh run"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:32.219497+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "11d8563d683235cf6b780d0d9190498629a10f9485415f70c0c9eba196211412",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:42.220248+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "b653a06e33584f775574b77c20bb8f2fafa10aae8aa0f46ed770a285d8e8c3c0",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:42.220556+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "7f4e740b5789d756c3f5d36419b0b73dfc8483442c29aac41e0bde5b1c407e66",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "catalina.sh run"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:42.245777+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "a692a9a6004e15b492ec741f29e5d2050adb53d3090217596b046c83ae57814a",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:52.246398+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "4ab68b095039524c4f1db8d5fa45e1b3ec0ab57e6809165d2cd16c431571517c",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:52.246763+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "9cd7d483215963c52cf6c3976ef6e0150e4f3d9ae104cb36b97b4d99f8c64cc4",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "catalina.sh run"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T12:54:52.272207+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "075835c9505b17f67a26f4614b394a7000d987c650e087ae4f160864794a040f",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      }
+    ],
+    "first_seen_at": "2026-11-20T12:54:02.053035Z",
+    "image_digest": "tomcat@sha256:05408121de3ab2c3569254fc001f306451e7d4092169f9924b5c1ec2416b30a7",
+    "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+    "last_seen_at": "2026-11-20T12:54:52.272207Z",
+    "score_id": "558bbf9f-84ae-45e2-a76d-395562a13e9f",
+    "severity_level": "high",
+    "severity_score": 0.640104542792,
+    "status": "open",
+    "summary": "10 incident-eligible rule match(es) correlated for tomcat@sha256:05408121de3ab2c3569254fc001f306451e7d4092169f9924b5c1ec2416b30a7.",
+    "title": "Previously Unseen Non-Shell Executable in tomcat",
+    "updated_at": "2026-11-20T12:55:45.029512Z"
+  },
+  "run": {
+    "allowlist_set_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "applied_allowlist_ids": [],
+    "created_at": "2026-11-20T12:55:45.029512Z",
+    "custom_ruleset_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "image_digest": "tomcat@sha256:05408121de3ab2c3569254fc001f306451e7d4092169f9924b5c1ec2416b30a7",
+    "incident_created": true,
+    "matches_count": 31,
+    "result": {
+      "anomaly_score": 0.297441550834,
+      "confidence_level": "high",
+      "confidence_score": 0.916666666667,
+      "custom_ruleset_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "incident_eligible": true,
+      "matches": [
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:02.053035+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "f63c02ad87726aad89d5e6f9ae9bbf49ad1d7f29ad56947ad57732345643a37f",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:02.053141+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "9c1a1d06c1f8bfc605462e7c05adf2aaba5a776c2e2a3c695e9608a5622a205a",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "catalina.sh run"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:02.087092+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "55f7d0da66ba7348584075d7d9d3989956063a3411c4e5a5f2aac85ce8f3585e",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "apt-get update -qq",
+            "executable": "/usr/bin/apt-get",
+            "parent_executable": "/usr/bin/dash",
+            "parent_name": "sh",
+            "process_chain": [
+              {
+                "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+                "executable": "/usr/bin/apt-get",
+                "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+                "parent_executable": "/usr/bin/runc"
+              }
+            ],
+            "process_name": "apt-get",
+            "raw_executable": "/usr/bin/apt-get",
+            "raw_parent_executable": "/usr/bin/dash"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/apt-get executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "dpkg --print-foreign-architectures",
+            "executable": "/usr/bin/dpkg",
+            "parent_executable": "/usr/bin/apt-get",
+            "parent_name": "apt-get",
+            "process_chain": [
+              {
+                "event_id": "ddbfa3a351cceaf03af433b25ccf4574ee54c12f8da77c0529de00be39ae798a",
+                "executable": "/usr/bin/dpkg",
+                "occurred_at": "2026-11-20T12:54:04.978071+00:00",
+                "parent_executable": "/usr/bin/apt-get"
+              },
+              {
+                "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+                "executable": "/usr/bin/apt-get",
+                "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+                "parent_executable": "/usr/bin/runc"
+              }
+            ],
+            "process_name": "dpkg",
+            "raw_executable": "/usr/bin/dpkg",
+            "raw_parent_executable": "/usr/bin/apt-get"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:04.978071+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "ddbfa3a351cceaf03af433b25ccf4574ee54c12f8da77c0529de00be39ae798a",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "http",
+            "executable": "/usr/lib/apt/methods/http",
+            "parent_executable": "/usr/bin/apt-get",
+            "parent_name": "apt-get",
+            "process_chain": [
+              {
+                "event_id": "93735500da10a6db401508acc80befd8e25e7b6a87ae37e57b9753e1c1f97cd9",
+                "executable": "/usr/lib/apt/methods/http",
+                "occurred_at": "2026-11-20T12:54:04.982047+00:00",
+                "parent_executable": "/usr/bin/apt-get"
+              },
+              {
+                "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+                "executable": "/usr/bin/apt-get",
+                "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+                "parent_executable": "/usr/bin/runc"
+              }
+            ],
+            "process_name": "http",
+            "raw_executable": "/usr/lib/apt/methods/http",
+            "raw_parent_executable": "/usr/bin/apt-get"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:04.982047+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "93735500da10a6db401508acc80befd8e25e7b6a87ae37e57b9753e1c1f97cd9",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/lib/apt/methods/http executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "http",
+            "executable": "/usr/lib/apt/methods/http",
+            "parent_executable": "/usr/bin/apt-get",
+            "parent_name": "apt-get",
+            "process_chain": [
+              {
+                "event_id": "3862ac900dcad6713fe86b033c98039a0dd11948961769d10239d839b6688ea0",
+                "executable": "/usr/lib/apt/methods/http",
+                "occurred_at": "2026-11-20T12:54:04.984020+00:00",
+                "parent_executable": "/usr/bin/apt-get"
+              },
+              {
+                "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+                "executable": "/usr/bin/apt-get",
+                "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+                "parent_executable": "/usr/bin/runc"
+              }
+            ],
+            "process_name": "http",
+            "raw_executable": "/usr/lib/apt/methods/http",
+            "raw_parent_executable": "/usr/bin/apt-get"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:04.984020+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "3862ac900dcad6713fe86b033c98039a0dd11948961769d10239d839b6688ea0",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/lib/apt/methods/http executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "http",
+            "executable": "/usr/lib/apt/methods/http",
+            "parent_executable": "/usr/bin/apt-get",
+            "parent_name": "apt-get",
+            "process_chain": [
+              {
+                "event_id": "9365fb1b570b21519a8c68e94d685dd6dd389b8f29e0b7589e4329d776106bcd",
+                "executable": "/usr/lib/apt/methods/http",
+                "occurred_at": "2026-11-20T12:54:04.985336+00:00",
+                "parent_executable": "/usr/bin/apt-get"
+              },
+              {
+                "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+                "executable": "/usr/bin/apt-get",
+                "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+                "parent_executable": "/usr/bin/runc"
+              }
+            ],
+            "process_name": "http",
+            "raw_executable": "/usr/lib/apt/methods/http",
+            "raw_parent_executable": "/usr/bin/apt-get"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:04.985336+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "9365fb1b570b21519a8c68e94d685dd6dd389b8f29e0b7589e4329d776106bcd",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/lib/apt/methods/http executed."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c if command -v apt-get >/dev/null 2>&1; then apt-get update -qq; apt-get install -y -qq nmap; elif command -v apk >/dev/null 2>&1; then apk add --no-cache nmap; elif command -v microdnf >/dev/null 2>&1; then microdnf install -y nmap; elif command -v dnf >/dev/null 2>&1; then dnf install -y nmap; else yum install -y nmap; fi"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:05.048897+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "90827836a01c6842cdf60cb872f3b684ff3db873e97b552b5014bfa81162b3c4",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c if command -v apt-get >/dev/null 2>&1; then apt-get update -qq; apt-get install -y -qq nmap; elif command -v apk >/dev/null 2>&1; then apk add --no-cache nmap; elif command -v microdnf >/dev/null 2>&1; then microdnf install -y nmap; elif command -v dnf >/dev/null 2>&1; then dnf install -y nmap; else yum install -y nmap; fi"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:05.051738+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "f9023b0f0947943294eae033cb66d6c637f77bcdaafb412caa7fb2d9a7e657db",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb /var/cache/apt/*.bin",
+            "executable": "/usr/bin/gnurm",
+            "parent_executable": "/usr/bin/dash",
+            "parent_name": "sh",
+            "process_chain": [
+              {
+                "event_id": "7006a7818bfd801e18703f7288c6fe01af0d083d383c53bdf56694277cecefd3",
+                "executable": "/usr/bin/gnurm",
+                "occurred_at": "2026-11-20T12:54:11.998387+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "414808e712a703a64c0e0ef1efd039da2831e1af0bfcb2c21d82d3b242a23ce7",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:11.997053+00:00",
+                "parent_executable": "/usr/bin/apt-get"
+              }
+            ],
+            "process_name": "rm",
+            "raw_executable": "/usr/bin/gnurm",
+            "raw_parent_executable": "/usr/bin/dash"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:11.998387+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "7006a7818bfd801e18703f7288c6fe01af0d083d383c53bdf56694277cecefd3",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/gnurm executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "dpkg --print-foreign-architectures",
+            "executable": "/usr/bin/dpkg",
+            "parent_executable": "/usr/bin/apt-get",
+            "parent_name": "apt-get",
+            "process_chain": [
+              {
+                "event_id": "e8704c643d17293788e66d6111c710237f3a7f81abbc7bb6e3626c7ea5e50bc5",
+                "executable": "/usr/bin/dpkg",
+                "occurred_at": "2026-11-20T12:54:11.998957+00:00",
+                "parent_executable": "/usr/bin/apt-get"
+              },
+              {
+                "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+                "executable": "/usr/bin/apt-get",
+                "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+                "parent_executable": "/usr/bin/runc"
+              }
+            ],
+            "process_name": "dpkg",
+            "raw_executable": "/usr/bin/dpkg",
+            "raw_parent_executable": "/usr/bin/apt-get"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:11.998957+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "e8704c643d17293788e66d6111c710237f3a7f81abbc7bb6e3626c7ea5e50bc5",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "dpkg --print-foreign-architectures",
+            "executable": "/usr/bin/dpkg",
+            "parent_executable": "/usr/bin/apt-get",
+            "parent_name": "apt-get",
+            "process_chain": [
+              {
+                "event_id": "5e4e8e22228aa42551d94415aaa052896c32a64bc4d7922ed39a37ae4d282793",
+                "executable": "/usr/bin/dpkg",
+                "occurred_at": "2026-11-20T12:54:12.004071+00:00",
+                "parent_executable": "/usr/bin/apt-get"
+              },
+              {
+                "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+                "executable": "/usr/bin/apt-get",
+                "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+                "parent_executable": "/usr/bin/runc"
+              }
+            ],
+            "process_name": "dpkg",
+            "raw_executable": "/usr/bin/dpkg",
+            "raw_parent_executable": "/usr/bin/apt-get"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:12.004071+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "5e4e8e22228aa42551d94415aaa052896c32a64bc4d7922ed39a37ae4d282793",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "apt-get install -y -qq nmap",
+            "executable": "/usr/bin/apt-get",
+            "parent_executable": "/usr/bin/dash",
+            "parent_name": "sh",
+            "process_chain": [
+              {
+                "event_id": "0c8bf5939bf7dd84b5394a8ba5948e33dc2337d21eceab11f15ac2a7018619fd",
+                "executable": "/usr/bin/apt-get",
+                "occurred_at": "2026-11-20T12:54:12.005331+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+                "parent_executable": "/usr/bin/runc"
+              }
+            ],
+            "process_name": "apt-get",
+            "raw_executable": "/usr/bin/apt-get",
+            "raw_parent_executable": "/usr/bin/dash"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:12.005331+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "0c8bf5939bf7dd84b5394a8ba5948e33dc2337d21eceab11f15ac2a7018619fd",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/apt-get executed."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "dpkg --print-foreign-architectures",
+            "executable": "/usr/bin/dpkg",
+            "parent_executable": "/usr/bin/apt-get",
+            "parent_name": "apt-get",
+            "process_chain": [
+              {
+                "event_id": "9fcafed5017adc7c85b11782ffc6328ff478116b79a818fb3cc938803eb53ab7",
+                "executable": "/usr/bin/dpkg",
+                "occurred_at": "2026-11-20T12:54:12.007522+00:00",
+                "parent_executable": "/usr/bin/apt-get"
+              },
+              {
+                "event_id": "0c8bf5939bf7dd84b5394a8ba5948e33dc2337d21eceab11f15ac2a7018619fd",
+                "executable": "/usr/bin/apt-get",
+                "occurred_at": "2026-11-20T12:54:12.005331+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+                "parent_executable": "/usr/bin/runc"
+              }
+            ],
+            "process_name": "dpkg",
+            "raw_executable": "/usr/bin/dpkg",
+            "raw_parent_executable": "/usr/bin/apt-get"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T12:54:12.007522+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "9fcafed5017adc7c85b11782ffc6328ff478116b79a818fb3cc938803eb53ab7",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:12.087487+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "f0aa05c6fd732acc611eb421d60aec3a5a0a43c552a5704eeb3d0f47109b8dca",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:12.087558+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "bfd4976444587d8f313ec1a9f60c3a17123e75ec16d18e3bd3e36610100711ef",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "catalina.sh run"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:12.115473+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "9ea4bfc7b52d7a5020473a010b404ba96115f37acc0e5d7d3eeb01f3f6de2cb5",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "catalina.sh run"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:12.125613+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "2563d31326d3481b491f5ad4af2160871c04afc9eb2018198274b72c26f9220d",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:22.117371+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "0889253b514f24a28034a073ac4f572d5b36dacb0d2985050d517ff100bd044b",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:22.117754+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "661a49b9183d622bbd0f86361442da0f408af8c6d01082834ec42ea860467c6f",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "catalina.sh run"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:22.169007+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "f40afc5e12f3dc5d71425e9c62b699ca2304784a512b9561860da16afde778f6",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:32.170020+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "49195191893ffbc647d237a0a4ef1f2bc7e8b825fc1538fc18d1fa4c3f24ba71",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:32.170432+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "b529e6841a80d5f1c181b1aec8545b5d3d8ea4b8062a32399146183ff30246c5",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "catalina.sh run"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:32.219497+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "11d8563d683235cf6b780d0d9190498629a10f9485415f70c0c9eba196211412",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:42.220248+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "b653a06e33584f775574b77c20bb8f2fafa10aae8aa0f46ed770a285d8e8c3c0",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:42.220556+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "7f4e740b5789d756c3f5d36419b0b73dfc8483442c29aac41e0bde5b1c407e66",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "catalina.sh run"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:42.245777+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "a692a9a6004e15b492ec741f29e5d2050adb53d3090217596b046c83ae57814a",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:52.246398+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "4ab68b095039524c4f1db8d5fa45e1b3ec0ab57e6809165d2cd16c431571517c",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:52.246763+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "9cd7d483215963c52cf6c3976ef6e0150e4f3d9ae104cb36b97b4d99f8c64cc4",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "8edaf21e56a41bf4d31f1191fed0aec038799027e0ea015dcd33d5679b9a0b0c",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "catalina.sh run"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T12:54:52.272207+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "075835c9505b17f67a26f4614b394a7000d987c650e087ae4f160864794a040f",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        }
+      ],
+      "metrics": {
+        "additional_unseen_executables": 2,
+        "correlation_window_seconds": 120,
+        "eligible_matches": 10,
+        "informational_matches": 21,
+        "process_events": 38,
+        "runtime_events": 21,
+        "source_types": [
+          "process_event",
+          "runtime_event"
+        ],
+        "suppressed_matches": 0
+      },
+      "rule_errors": [],
+      "ruleset_hash": "dfb4e9343108adb77b1a42d72438bc55b4aad3e267770fed9c9440522a8cbbf2",
+      "ruleset_version": "porygon.detection.v1",
+      "severity_level": "high",
+      "severity_score": 0.640104542792,
+      "status": "incident_created",
+      "summary": "10 incident-eligible rule match(es) correlated for tomcat@sha256:05408121de3ab2c3569254fc001f306451e7d4092169f9924b5c1ec2416b30a7.",
+      "suppressed_matches": []
+    },
+    "ruleset_hash": "dfb4e9343108adb77b1a42d72438bc55b4aad3e267770fed9c9440522a8cbbf2",
+    "ruleset_version": "porygon.detection.v1",
+    "run_id": "122570e6-b1ee-4589-a149-9372402f051c",
+    "run_key": "b77cee8256a8a4b9f26f473779daef7e6bbf2ebdd7d3fff6d49d4aae62b5c22c",
+    "score_id": "558bbf9f-84ae-45e2-a76d-395562a13e9f",
+    "status": "incident_created",
+    "window_end": "2026-11-20T12:55:00Z",
+    "window_start": "2026-11-20T12:54:00Z"
+  },
+  "timeline": [
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "87df5793-1721-485c-9fac-274e15142c75",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:02.053035Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 1,
+      "source_id": "f63c02ad87726aad89d5e6f9ae9bbf49ad1d7f29ad56947ad57732345643a37f",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "a781f0e3-2e78-41e9-84c4-a9c60b972851",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:02.053141Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 2,
+      "source_id": "9c1a1d06c1f8bfc605462e7c05adf2aaba5a776c2e2a3c695e9608a5622a205a",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_die",
+        "command": "catalina.sh run"
+      },
+      "evidence_id": "13667b62-644e-492f-8e5b-1419cfe444ab",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:02.087092Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 3,
+      "source_id": "55f7d0da66ba7348584075d7d9d3989956063a3411c4e5a5f2aac85ce8f3585e",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "apt-get update -qq",
+        "executable": "/usr/bin/apt-get",
+        "parent_executable": "/usr/bin/dash",
+        "parent_name": "sh",
+        "process_chain": [
+          {
+            "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+            "executable": "/usr/bin/apt-get",
+            "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+            "parent_executable": "/usr/bin/runc"
+          }
+        ],
+        "process_name": "apt-get",
+        "raw_executable": "/usr/bin/apt-get",
+        "raw_parent_executable": "/usr/bin/dash"
+      },
+      "evidence_id": "b16c8f28-f409-485d-a264-1e53f55d92d4",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:04.968918Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 4,
+      "source_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/apt-get executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "dpkg --print-foreign-architectures",
+        "executable": "/usr/bin/dpkg",
+        "parent_executable": "/usr/bin/apt-get",
+        "parent_name": "apt-get",
+        "process_chain": [
+          {
+            "event_id": "ddbfa3a351cceaf03af433b25ccf4574ee54c12f8da77c0529de00be39ae798a",
+            "executable": "/usr/bin/dpkg",
+            "occurred_at": "2026-11-20T12:54:04.978071+00:00",
+            "parent_executable": "/usr/bin/apt-get"
+          },
+          {
+            "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+            "executable": "/usr/bin/apt-get",
+            "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+            "parent_executable": "/usr/bin/runc"
+          }
+        ],
+        "process_name": "dpkg",
+        "raw_executable": "/usr/bin/dpkg",
+        "raw_parent_executable": "/usr/bin/apt-get"
+      },
+      "evidence_id": "f22e47c1-45a0-4a5e-8393-157c7aeb5593",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:04.978071Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 5,
+      "source_id": "ddbfa3a351cceaf03af433b25ccf4574ee54c12f8da77c0529de00be39ae798a",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "http",
+        "executable": "/usr/lib/apt/methods/http",
+        "parent_executable": "/usr/bin/apt-get",
+        "parent_name": "apt-get",
+        "process_chain": [
+          {
+            "event_id": "93735500da10a6db401508acc80befd8e25e7b6a87ae37e57b9753e1c1f97cd9",
+            "executable": "/usr/lib/apt/methods/http",
+            "occurred_at": "2026-11-20T12:54:04.982047+00:00",
+            "parent_executable": "/usr/bin/apt-get"
+          },
+          {
+            "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+            "executable": "/usr/bin/apt-get",
+            "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+            "parent_executable": "/usr/bin/runc"
+          }
+        ],
+        "process_name": "http",
+        "raw_executable": "/usr/lib/apt/methods/http",
+        "raw_parent_executable": "/usr/bin/apt-get"
+      },
+      "evidence_id": "14f068e6-8a12-4392-a0be-c4a7555231b7",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:04.982047Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 6,
+      "source_id": "93735500da10a6db401508acc80befd8e25e7b6a87ae37e57b9753e1c1f97cd9",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/lib/apt/methods/http executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "http",
+        "executable": "/usr/lib/apt/methods/http",
+        "parent_executable": "/usr/bin/apt-get",
+        "parent_name": "apt-get",
+        "process_chain": [
+          {
+            "event_id": "3862ac900dcad6713fe86b033c98039a0dd11948961769d10239d839b6688ea0",
+            "executable": "/usr/lib/apt/methods/http",
+            "occurred_at": "2026-11-20T12:54:04.984020+00:00",
+            "parent_executable": "/usr/bin/apt-get"
+          },
+          {
+            "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+            "executable": "/usr/bin/apt-get",
+            "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+            "parent_executable": "/usr/bin/runc"
+          }
+        ],
+        "process_name": "http",
+        "raw_executable": "/usr/lib/apt/methods/http",
+        "raw_parent_executable": "/usr/bin/apt-get"
+      },
+      "evidence_id": "75308b72-2b27-4930-b6d7-f1d4b95b3047",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:04.984020Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 7,
+      "source_id": "3862ac900dcad6713fe86b033c98039a0dd11948961769d10239d839b6688ea0",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/lib/apt/methods/http executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "http",
+        "executable": "/usr/lib/apt/methods/http",
+        "parent_executable": "/usr/bin/apt-get",
+        "parent_name": "apt-get",
+        "process_chain": [
+          {
+            "event_id": "9365fb1b570b21519a8c68e94d685dd6dd389b8f29e0b7589e4329d776106bcd",
+            "executable": "/usr/lib/apt/methods/http",
+            "occurred_at": "2026-11-20T12:54:04.985336+00:00",
+            "parent_executable": "/usr/bin/apt-get"
+          },
+          {
+            "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+            "executable": "/usr/bin/apt-get",
+            "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+            "parent_executable": "/usr/bin/runc"
+          }
+        ],
+        "process_name": "http",
+        "raw_executable": "/usr/lib/apt/methods/http",
+        "raw_parent_executable": "/usr/bin/apt-get"
+      },
+      "evidence_id": "d5a070d3-9467-4f00-9301-5f235e958270",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:04.985336Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 8,
+      "source_id": "9365fb1b570b21519a8c68e94d685dd6dd389b8f29e0b7589e4329d776106bcd",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/lib/apt/methods/http executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c if command -v apt-get >/dev/null 2>&1; then apt-get update -qq; apt-get install -y -qq nmap; elif command -v apk >/dev/null 2>&1; then apk add --no-cache nmap; elif command -v microdnf >/dev/null 2>&1; then microdnf install -y nmap; elif command -v dnf >/dev/null 2>&1; then dnf install -y nmap; else yum install -y nmap; fi"
+      },
+      "evidence_id": "627eac31-8278-49a3-897f-e07f03fd6d84",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:05.048897Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 9,
+      "source_id": "90827836a01c6842cdf60cb872f3b684ff3db873e97b552b5014bfa81162b3c4",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c if command -v apt-get >/dev/null 2>&1; then apt-get update -qq; apt-get install -y -qq nmap; elif command -v apk >/dev/null 2>&1; then apk add --no-cache nmap; elif command -v microdnf >/dev/null 2>&1; then microdnf install -y nmap; elif command -v dnf >/dev/null 2>&1; then dnf install -y nmap; else yum install -y nmap; fi"
+      },
+      "evidence_id": "b484cdd1-d2c0-433b-9c2c-071eda8a161d",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:05.051738Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 10,
+      "source_id": "f9023b0f0947943294eae033cb66d6c637f77bcdaafb412caa7fb2d9a7e657db",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb /var/cache/apt/*.bin",
+        "executable": "/usr/bin/gnurm",
+        "parent_executable": "/usr/bin/dash",
+        "parent_name": "sh",
+        "process_chain": [
+          {
+            "event_id": "7006a7818bfd801e18703f7288c6fe01af0d083d383c53bdf56694277cecefd3",
+            "executable": "/usr/bin/gnurm",
+            "occurred_at": "2026-11-20T12:54:11.998387+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "414808e712a703a64c0e0ef1efd039da2831e1af0bfcb2c21d82d3b242a23ce7",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:11.997053+00:00",
+            "parent_executable": "/usr/bin/apt-get"
+          }
+        ],
+        "process_name": "rm",
+        "raw_executable": "/usr/bin/gnurm",
+        "raw_parent_executable": "/usr/bin/dash"
+      },
+      "evidence_id": "987d77bb-883f-4ade-8fc2-afc4e0b29db2",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:11.998387Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 11,
+      "source_id": "7006a7818bfd801e18703f7288c6fe01af0d083d383c53bdf56694277cecefd3",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/gnurm executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "dpkg --print-foreign-architectures",
+        "executable": "/usr/bin/dpkg",
+        "parent_executable": "/usr/bin/apt-get",
+        "parent_name": "apt-get",
+        "process_chain": [
+          {
+            "event_id": "e8704c643d17293788e66d6111c710237f3a7f81abbc7bb6e3626c7ea5e50bc5",
+            "executable": "/usr/bin/dpkg",
+            "occurred_at": "2026-11-20T12:54:11.998957+00:00",
+            "parent_executable": "/usr/bin/apt-get"
+          },
+          {
+            "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+            "executable": "/usr/bin/apt-get",
+            "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+            "parent_executable": "/usr/bin/runc"
+          }
+        ],
+        "process_name": "dpkg",
+        "raw_executable": "/usr/bin/dpkg",
+        "raw_parent_executable": "/usr/bin/apt-get"
+      },
+      "evidence_id": "3386bca3-f41d-488f-8fcd-87fc11db7834",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:11.998957Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 12,
+      "source_id": "e8704c643d17293788e66d6111c710237f3a7f81abbc7bb6e3626c7ea5e50bc5",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "dpkg --print-foreign-architectures",
+        "executable": "/usr/bin/dpkg",
+        "parent_executable": "/usr/bin/apt-get",
+        "parent_name": "apt-get",
+        "process_chain": [
+          {
+            "event_id": "5e4e8e22228aa42551d94415aaa052896c32a64bc4d7922ed39a37ae4d282793",
+            "executable": "/usr/bin/dpkg",
+            "occurred_at": "2026-11-20T12:54:12.004071+00:00",
+            "parent_executable": "/usr/bin/apt-get"
+          },
+          {
+            "event_id": "f4d01cdb8ec2cd2d23625a706141425bdcdf9f9ff9279f2f1269f0febf0cfb18",
+            "executable": "/usr/bin/apt-get",
+            "occurred_at": "2026-11-20T12:54:04.968918+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+            "parent_executable": "/usr/bin/runc"
+          }
+        ],
+        "process_name": "dpkg",
+        "raw_executable": "/usr/bin/dpkg",
+        "raw_parent_executable": "/usr/bin/apt-get"
+      },
+      "evidence_id": "3a02879d-7d67-4f77-a77b-518165f8ce8d",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:12.004071Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 13,
+      "source_id": "5e4e8e22228aa42551d94415aaa052896c32a64bc4d7922ed39a37ae4d282793",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "apt-get install -y -qq nmap",
+        "executable": "/usr/bin/apt-get",
+        "parent_executable": "/usr/bin/dash",
+        "parent_name": "sh",
+        "process_chain": [
+          {
+            "event_id": "0c8bf5939bf7dd84b5394a8ba5948e33dc2337d21eceab11f15ac2a7018619fd",
+            "executable": "/usr/bin/apt-get",
+            "occurred_at": "2026-11-20T12:54:12.005331+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+            "parent_executable": "/usr/bin/runc"
+          }
+        ],
+        "process_name": "apt-get",
+        "raw_executable": "/usr/bin/apt-get",
+        "raw_parent_executable": "/usr/bin/dash"
+      },
+      "evidence_id": "4f6ef7cf-e94a-45b9-bcbe-80ee224ce325",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:12.005331Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 14,
+      "source_id": "0c8bf5939bf7dd84b5394a8ba5948e33dc2337d21eceab11f15ac2a7018619fd",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/apt-get executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "command_line": "dpkg --print-foreign-architectures",
+        "executable": "/usr/bin/dpkg",
+        "parent_executable": "/usr/bin/apt-get",
+        "parent_name": "apt-get",
+        "process_chain": [
+          {
+            "event_id": "9fcafed5017adc7c85b11782ffc6328ff478116b79a818fb3cc938803eb53ab7",
+            "executable": "/usr/bin/dpkg",
+            "occurred_at": "2026-11-20T12:54:12.007522+00:00",
+            "parent_executable": "/usr/bin/apt-get"
+          },
+          {
+            "event_id": "0c8bf5939bf7dd84b5394a8ba5948e33dc2337d21eceab11f15ac2a7018619fd",
+            "executable": "/usr/bin/apt-get",
+            "occurred_at": "2026-11-20T12:54:12.005331+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "010d41c787053ff7df7a6dda013838ccf7ab6d0a2c51b07b211ccf3af9cac8a6",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T12:54:04.967481+00:00",
+            "parent_executable": "/usr/bin/runc"
+          }
+        ],
+        "process_name": "dpkg",
+        "raw_executable": "/usr/bin/dpkg",
+        "raw_parent_executable": "/usr/bin/apt-get"
+      },
+      "evidence_id": "23071490-e60f-44fd-9114-2b9768aa8f53",
+      "evidence_type": "execution",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:12.007522Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 15,
+      "source_id": "9fcafed5017adc7c85b11782ffc6328ff478116b79a818fb3cc938803eb53ab7",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/dpkg executed."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "4fc51276-d2be-4cbd-b324-e5f041fdc5bd",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:12.087487Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 16,
+      "source_id": "f0aa05c6fd732acc611eb421d60aec3a5a0a43c552a5704eeb3d0f47109b8dca",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "40337023-72c0-4827-b43e-7315ce052a1d",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:12.087558Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 17,
+      "source_id": "bfd4976444587d8f313ec1a9f60c3a17123e75ec16d18e3bd3e36610100711ef",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_die",
+        "command": "catalina.sh run"
+      },
+      "evidence_id": "3a7838c5-5f93-448c-b475-a24fd0f2b9a3",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:12.115473Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 18,
+      "source_id": "9ea4bfc7b52d7a5020473a010b404ba96115f37acc0e5d7d3eeb01f3f6de2cb5",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_die",
+        "command": "catalina.sh run"
+      },
+      "evidence_id": "4bdd5d25-c2cd-4561-bb79-fd056b88337a",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:12.125613Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 19,
+      "source_id": "2563d31326d3481b491f5ad4af2160871c04afc9eb2018198274b72c26f9220d",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "a244137c-be43-47ba-a637-f2812ae466a4",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:22.117371Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 20,
+      "source_id": "0889253b514f24a28034a073ac4f572d5b36dacb0d2985050d517ff100bd044b",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "1f914673-9dd5-4fce-8414-6be598700406",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:22.117754Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 21,
+      "source_id": "661a49b9183d622bbd0f86361442da0f408af8c6d01082834ec42ea860467c6f",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_die",
+        "command": "catalina.sh run"
+      },
+      "evidence_id": "150e1ae6-1539-493f-bf0b-cded38a06eee",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:22.169007Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 22,
+      "source_id": "f40afc5e12f3dc5d71425e9c62b699ca2304784a512b9561860da16afde778f6",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "5006135d-f330-4eef-8486-caa59ff4c411",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:32.170020Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 23,
+      "source_id": "49195191893ffbc647d237a0a4ef1f2bc7e8b825fc1538fc18d1fa4c3f24ba71",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "a07876dd-6d85-4efa-96fd-557023156177",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:32.170432Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 24,
+      "source_id": "b529e6841a80d5f1c181b1aec8545b5d3d8ea4b8062a32399146183ff30246c5",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_die",
+        "command": "catalina.sh run"
+      },
+      "evidence_id": "d1f3c2b4-0e82-427b-9986-6c5c881b5082",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:32.219497Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 25,
+      "source_id": "11d8563d683235cf6b780d0d9190498629a10f9485415f70c0c9eba196211412",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "fa4e6af7-7093-4fb4-ad54-746650ea7588",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:42.220248Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 26,
+      "source_id": "b653a06e33584f775574b77c20bb8f2fafa10aae8aa0f46ed770a285d8e8c3c0",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "37b42440-f9b1-49aa-a584-32bd4b389eb4",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:42.220556Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 27,
+      "source_id": "7f4e740b5789d756c3f5d36419b0b73dfc8483442c29aac41e0bde5b1c407e66",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_die",
+        "command": "catalina.sh run"
+      },
+      "evidence_id": "c57290e2-e4a8-4aed-8ee4-d874ceed6039",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:42.245777Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 28,
+      "source_id": "a692a9a6004e15b492ec741f29e5d2050adb53d3090217596b046c83ae57814a",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "29473494-d1a0-4d71-8012-39540276c3be",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:52.246398Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 29,
+      "source_id": "4ab68b095039524c4f1db8d5fa45e1b3ec0ab57e6809165d2cd16c431571517c",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -qE \" [234][0-9][0-9] \"'"
+      },
+      "evidence_id": "4c69cfa7-5e3b-4404-9b1b-7fbf313d386b",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:52.246763Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 30,
+      "source_id": "9cd7d483215963c52cf6c3976ef6e0150e4f3d9ae104cb36b97b4d99f8c64cc4",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "action": "exec_die",
+        "command": "catalina.sh run"
+      },
+      "evidence_id": "adfa1aad-ea87-4a0a-b1e1-61374b4ab08d",
+      "evidence_type": "container-control",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:54:52.272207Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 31,
+      "source_id": "075835c9505b17f67a26f4614b394a7000d987c650e087ae4f160864794a040f",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T12:55:45.029512Z",
+      "details": {
+        "algorithm_version": "porygon.distance.v1",
+        "profile_id": "c3f8f6d0-5456-44b1-b621-57f494d4abef",
+        "profile_version": 1,
+        "score_band": "elevated",
+        "total_score": 0.297441550834
+      },
+      "evidence_id": "012b5dff-2941-456d-913f-47ce543bcb40",
+      "evidence_type": "behavioural_distance",
+      "incident_id": "b01b0224-7de7-4cf3-a292-311699262689",
+      "occurred_at": "2026-11-20T12:55:00Z",
+      "rule_id": null,
+      "sequence_no": 32,
+      "source_id": "558bbf9f-84ae-45e2-a76d-395562a13e9f",
+      "source_type": "anomaly_score",
+      "summary": "Observed behavioural distance was 0.297 (elevated)."
+    }
+  ]
+}
