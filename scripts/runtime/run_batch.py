@@ -28,7 +28,10 @@ from rt_common import RAW_ROOT, RUNTIME_ROOT, log_event, read_json, utc_now  # n
 
 HERE = Path(__file__).resolve().parent
 MIN_FREE_GB = 30
-STOP_FILE = RUNTIME_ROOT / "batch2-stop"
+STOP_FILE = RUNTIME_ROOT / "batch2-stop"  # replaced by "<batch>-stop" for the running batch in main()
+# Set PORYGON_RT_REQUIRE_MATCHER=1 to check the backend's detection matcher before every image
+# (matcher_guard.py); a failed check stops the queue from starting further images.
+REQUIRE_MATCHER = os.environ.get("PORYGON_RT_REQUIRE_MATCHER") == "1"
 
 
 def phase(key: str) -> str | None:
@@ -69,6 +72,8 @@ def main() -> int:
     if not args.images:
         args.images = BATCH_ORDER
     env = {**os.environ, "PORYGON_RT_BATCH": args.batch}
+    global STOP_FILE
+    STOP_FILE = RUNTIME_ROOT / f"{args.batch}-stop"
     reported_failures: set[str] = set()
     queue = [k for k in args.images if phase(k) not in ("complete", "failed")]
     running: dict[str, subprocess.Popen] = {}
@@ -104,6 +109,17 @@ def main() -> int:
                     break
                 if CONFLICTS.get(key, set()) & set(running):
                     continue
+                if REQUIRE_MATCHER:
+                    guard = subprocess.run([sys.executable, str(HERE / "matcher_guard.py"), "--batch", args.batch,
+                                            "--when", f"before:{key}"], capture_output=True, text=True)
+                    if guard.returncode != 0:
+                        STOP_FILE.write_text(f"{utc_now()} matcher check failed before {key}: "
+                                             f"{guard.stdout.strip()[-800:]}\n", encoding="utf-8")
+                        escalate(f"detection matcher check failed before {key}: {guard.stdout.strip()[-800:]}",
+                                 "docker compose exec -T backend python -c "
+                                 "\"import porygon_api.detection as d; print(d.MATCHER_REVISION)\"")
+                        stopped = True
+                        break
                 queue.remove(key)
                 handle = (logs_dir / f"{key}.log").open("a", encoding="utf-8")
                 running[key] = subprocess.Popen([sys.executable, "-u", str(HERE / "run_image.py"), key,

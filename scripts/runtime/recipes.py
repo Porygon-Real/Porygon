@@ -265,6 +265,78 @@ RECIPES: dict[str, dict[str, Any]] = {
                    "admin": ["mariadb-admin", "-uroot", f"-p{THROWAWAY_PASSWORD}", "status"],
                    "log": "docker_logs", "start_period": 90},
 
+    # ---------------------------------------------------------------- batch 3
+    # A second held-out set of 22 images, run through the identical protocol. The
+    # first eight are batch 2's unused reserves above (varnish ... mariadb-11).
+    "mongo-7": {"tag": "mongo:7", "port": 27017, "driver": "mongo",
+                "health": "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' | grep -q 1",
+                "admin": ["mongosh", "--quiet", "--eval", "JSON.stringify(db.serverStatus().connections)"],
+                "log": "docker_logs", "start_period": 60},
+    "postgres-15-alpine": {"tag": "postgres:15-alpine", "port": 5432, "driver": "postgres",
+                           "env": {"POSTGRES_USER": "postgres", "POSTGRES_PASSWORD": THROWAWAY_PASSWORD,
+                                   "POSTGRES_DB": "porygon_rt"},
+                           "health": "pg_isready -U postgres -d porygon_rt",
+                           "admin": ["psql", "-U", "postgres", "-d", "porygon_rt", "-tAc", "select version()"],
+                           "log": "docker_logs", "start_period": 60},
+    "nginx-alpine": {"tag": "nginx:alpine", "port": 80, "driver": "http", "health": wget_check(80),
+                     "admin": ["nginx", "-t"], "log": "docker_logs"},
+    "tomcat-9": {"tag": "tomcat:9-jdk17", "port": 8080, "driver": "http", "health": tcp_http_check(8080),
+                 "admin": ["catalina.sh", "version"], "log": "docker_logs", "start_period": 60},
+    "traefik-2": {"tag": "traefik:v2.11", "port": 8080, "driver": "http",
+                  "paths": ["/ping", "/api/overview", "/api/rawdata"],
+                  "cmd": ["--api.insecure=true", "--ping=true", "--entrypoints.web.address=:80"],
+                  "health": "traefik healthcheck --ping", "admin": ["traefik", "version"], "log": "docker_logs"},
+    "influxdb-1": {"tag": "influxdb:1.11", "port": 8086, "driver": "http", "paths": ["/ping", "/health"],
+                   "health": tcp_http_check(8086, "/ping"),
+                   "admin": ["influx", "-execute", "SHOW DATABASES"], "log": "docker_logs", "start_period": 60},
+    "temurin-21-alpine": {"tag": "eclipse-temurin:21-alpine", "port": 8000, "driver": "http",
+                          "cmd": ["jwebserver", "-b", "0.0.0.0", "-p", "8000", "-d", "/opt"],
+                          "health": wget_check(8000), "admin": ["java", "-version"], "log": "docker_logs"},
+    "golang-1.22-alpine": {"tag": "golang:1.22-alpine", "port": 8080, "driver": "http",
+                           "cmd": ["go", "run", "/src/main.go"],
+                           "env": {"GOTOOLCHAIN": "local", "GOFLAGS": "-mod=mod"}, "mount_go_source": True,
+                           "health": wget_check(8080), "admin": ["go", "version"], "log": "docker_logs",
+                           "start_period": 120},
+    "php82-cli": {"tag": "php:8.2-cli", "port": 8000, "driver": "http", "paths": ["/", "/index.php"],
+                  "cmd": ["bash", "-c", "mkdir -p /srv/www && echo '<?php echo date(\"c\"), \"\\n\";' > "
+                                        "/srv/www/index.php && exec php -S 0.0.0.0:8000 -t /srv/www"],
+                  "health": tcp_http_check(8000, "/index.php"), "admin": ["php", "-m"], "log": "docker_logs"},
+    "python-3.11-slim": {"tag": "python:3.11-slim", "port": 8000, "driver": "http",
+                         "cmd": ["python", "-m", "http.server", "8000"], "health": tcp_http_check(8000),
+                         "admin": ["python", "-m", "pip", "list"], "log": "docker_logs"},
+    "node-18-slim": {"tag": "node:18-bookworm-slim", "port": 3000, "driver": "http",
+                     "cmd": ["node", "-e", NODE_SERVER], "health": tcp_http_check(3000),
+                     "admin": ["npm", "ls", "-g", "--depth=0"], "log": "docker_logs"},
+    "ghost-5-alpine": {"tag": "ghost:5-alpine", "port": 2368, "driver": "http",
+                       "paths": ["/", "/ghost/api/admin/site/"],
+                       "env": {"NODE_ENV": "development", "url": "http://127.0.0.1:2368"},
+                       "health": "node -e \"require('http').get('http://127.0.0.1:2368/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\"",
+                       "admin": ["node", "--version"], "log": "docker_logs", "start_period": 120},
+    "ubi9-nodejs": {"tag": "registry.access.redhat.com/ubi9/nodejs-20", "port": 3000, "driver": "http",
+                    "cmd": ["node", "-e", NODE_SERVER], "health": curl_check(3000),
+                    "admin": ["npm", "--version"], "log": "docker_logs",
+                    "fixes": ["admin command: `npm ls -g --depth=0` exits 254 on this image (ENOENT for its "
+                              "configured global prefix /opt/app-root/src/.npm-global, which the image does not "
+                              "create); replaced with the image's own `npm --version`"]},
+    "ubi9-php": {"tag": "registry.access.redhat.com/ubi9/php-82", "port": 8080, "driver": "http",
+                 "paths": ["/", "/index.php"],
+                 "cmd": ["bash", "-c", "mkdir -p /tmp/www && echo '<?php echo date(\"c\"), \"\\n\";' > "
+                                       "/tmp/www/index.php && exec php -S 0.0.0.0:8080 -t /tmp/www"],
+                 "health": curl_check(8080, "/index.php"), "admin": ["php", "-m"], "log": "docker_logs"},
+
+    # Batch 3 reserves, used in this order when a primary cannot be run.
+    "solr": {"tag": "solr:9", "port": 8983, "driver": "http",
+             "paths": ["/solr/admin/info/system", "/solr/admin/cores"],
+             "health": tcp_http_check(8983, "/solr/admin/info/system"), "admin": ["solr", "status"],
+             "env": {"SOLR_HEAP": "384m"}, "log": "docker_logs", "start_period": 90},
+    "ubi9-ruby": {"tag": "registry.access.redhat.com/ubi9/ruby-33", "port": 4567, "driver": "http",
+                  "cmd": ["ruby", "-rsocket", "-e", RUBY_SERVER], "health": curl_check(4567),
+                  "admin": ["gem", "list", "--local"], "log": "docker_logs"},
+    "phpmyadmin": {"tag": "phpmyadmin:latest", "port": 80, "driver": "http", "paths": ["/", "/index.php"],
+                   "health": tcp_http_check(80), "admin": ["apachectl", "-t"], "log": "docker_logs"},
+    "matomo": {"tag": "matomo:5", "port": 80, "driver": "http", "paths": ["/", "/index.php"],
+               "health": tcp_http_check(80), "admin": ["apachectl", "-t"], "log": "docker_logs",
+               "start_period": 60},
 }
 
 PILOT = "redis"
@@ -291,3 +363,13 @@ BATCH2_RESERVES = [
 ]
 # The four images built on a GNU coreutils multicall binary (batch 1's mysql finding).
 BATCH2_COREUTILS = ["mysql-9", "ubi9-httpd", "ubi9-nginx", "ubi9-python"]
+
+# Batch 3 queue order (second held-out set), services and runtimes interleaved.
+BATCH3_ORDER = [
+    "redis-alpine", "nginx-alpine", "mariadb-11", "python-3.11-slim", "memcached-alpine", "ubi9-nodejs",
+    "postgres-15-alpine", "httpd-alpine", "traefik-2", "node-18-slim", "mongo-7", "vault",
+    "php82-cli", "influxdb-1", "ubi9-php", "rabbitmq-3-mgmt", "temurin-21-alpine", "adminer",
+    "varnish", "golang-1.22-alpine", "tomcat-9", "ghost-5-alpine",
+]
+BATCH3_RESERVES = ["solr", "ubi9-ruby", "phpmyadmin", "matomo"]
+BATCH3_COREUTILS = ["ubi9-nodejs", "ubi9-php"]

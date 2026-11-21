@@ -44,6 +44,20 @@ BATCH2_RESERVE_TAGS = [
     "hashicorp/vault:latest", "rabbitmq:3-management-alpine", "adminer:latest", "mariadb:11",
 ]
 
+# Batch 3 (second held-out set): 22 primary tags, then its reserves. The first eight
+# primaries were batch 2's unused reserves and may already be present locally.
+BATCH3_TAGS = [
+    "varnish:7", "memcached:1.6-alpine", "httpd:2.4-alpine", "redis:7.4-alpine",
+    "hashicorp/vault:latest", "rabbitmq:3-management-alpine", "adminer:latest", "mariadb:11",
+    "mongo:7", "postgres:15-alpine", "nginx:alpine", "tomcat:9-jdk17", "traefik:v2.11",
+    "influxdb:1.11", "eclipse-temurin:21-alpine", "golang:1.22-alpine", "php:8.2-cli",
+    "python:3.11-slim", "node:18-bookworm-slim", "ghost:5-alpine",
+    "registry.access.redhat.com/ubi9/nodejs-20", "registry.access.redhat.com/ubi9/php-82",
+]
+BATCH3_RESERVE_TAGS = [
+    "solr:9", "registry.access.redhat.com/ubi9/ruby-33", "phpmyadmin:latest", "matomo:5",
+]
+
 WAITS = [30, 60, 120, 240, 300]  # seconds before attempts 2..5
 
 
@@ -97,12 +111,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only", nargs="*", help="limit to these tags")
     parser.add_argument("--batch2", action="store_true", help="the batch 2 tags and their reserves")
+    parser.add_argument("--batch3", action="store_true", help="the batch 3 tags and their reserves")
     parser.add_argument("--out", help="record file (default: prefetch.json, or prefetch-batchN.json with --batchN)")
     args = parser.parse_args()
-    tags = args.only or (BATCH2_TAGS + BATCH2_RESERVE_TAGS if args.batch2 else TAGS)
+    tags = args.only or (BATCH2_TAGS + BATCH2_RESERVE_TAGS if args.batch2
+                         else BATCH3_TAGS + BATCH3_RESERVE_TAGS if args.batch3 else TAGS)
     global BATCH, OUT
     if args.batch2:
         BATCH, OUT = "batch2", OUT_BATCH2
+    if args.batch3:
+        BATCH, OUT = "batch3", RUNTIME_ROOT / "prefetch-batch3.json"
     if args.out:
         OUT = Path(args.out)
 

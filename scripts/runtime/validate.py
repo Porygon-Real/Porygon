@@ -14,6 +14,7 @@ Exit code 1 lists every failed check. Counts are reported per batch.
 from __future__ import annotations
 
 import csv
+import json
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
@@ -70,6 +71,30 @@ def check_timing(rows: list[dict[str, str]]) -> list[str]:
     return problems
 
 
+def check_matcher(rows: list[dict[str, str]]) -> list[str]:
+    """For a batch with a matcher-check record (batch 3 onwards): every image of that batch was
+    preceded by a passing check, the pre-flight and the final check passed, and every check saw
+    the same backend image."""
+    problems: list[str] = []
+    for batch in sorted({r.get("batch") or "batch1" for r in rows}):
+        path = RUNTIME_ROOT / f"{batch}-matcher-checks.jsonl"
+        if not path.is_file():
+            continue
+        checks = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        passed = {c["when"] for c in checks if c.get("ok")}
+        for when in ("preflight", "end"):
+            if when not in passed:
+                problems.append(f"{batch}: no passing {when} matcher check")
+        for key in sorted({r["image_key"] for r in rows if (r.get("batch") or "batch1") == batch}):
+            if f"before:{key}" not in passed:
+                problems.append(f"{batch} {key}: no passing matcher check before the image started")
+        if failed := [c for c in checks if not c.get("ok")]:
+            problems.append(f"{batch}: {len(failed)} failed matcher check(s), first: {failed[0].get('problems')}")
+        if len({c.get("backend_image_id") for c in checks}) > 1:
+            problems.append(f"{batch}: the backend image changed between matcher checks")
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
     csv.field_size_limit(10**9)
@@ -98,6 +123,7 @@ def main() -> int:
             if count != int(r["process_event_count"]):
                 problems.append(f"{tag}: score saw {r['process_event_count']} events, database now has {count}")
     problems += check_timing(rows)
+    problems += check_matcher(rows)
     manifest = read_json(RUNTIME_ROOT / "manifest.json", {}) or {}
     for name, digest in manifest.get("files", {}).items():
         path = RUNTIME_ROOT / name
