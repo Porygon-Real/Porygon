@@ -4,8 +4,8 @@ SHELL := /bin/bash
 
 init:
 	@test -f .env || (cp .env.example .env && \
-		python3 -c 'from functools import reduce; import os, secrets; from pathlib import Path; p=Path(".env"); replacements={"replace-with-a-long-local-development-password":secrets.token_urlsafe(32),"replace-with-at-least-32-random-characters":secrets.token_urlsafe(48),"replace-with-a-different-32-character-random-token":secrets.token_urlsafe(48),"replace-with-docker-socket-gid":str(os.stat("/var/run/docker.sock").st_gid)}; p.write_text(reduce(lambda value, item: value.replace(*item), replacements.items(), p.read_text(encoding="utf-8")), encoding="utf-8")' && \
-		chmod 0600 .env && echo "Created .env with separate local credentials and the Docker socket GID.")
+		python3 -c 'from functools import reduce; import os, secrets, sys; from pathlib import Path; p=Path(".env"); socket_gid=0 if sys.platform == "darwin" else os.stat("/var/run/docker.sock").st_gid; replacements={"replace-with-a-long-local-development-password":secrets.token_urlsafe(32),"replace-with-at-least-32-random-characters":secrets.token_urlsafe(48),"replace-with-a-different-32-character-random-token":secrets.token_urlsafe(48),"replace-with-docker-socket-gid":str(socket_gid)}; p.write_text(reduce(lambda value, item: value.replace(*item), replacements.items(), p.read_text(encoding="utf-8")), encoding="utf-8")' && \
+		chmod 0600 .env && echo "Created .env with separate local credentials and the Docker socket group ID.")
 
 config:
 	docker compose config --quiet
