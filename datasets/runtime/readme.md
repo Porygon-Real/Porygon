@@ -168,6 +168,86 @@ All are logged in `run-log.jsonl`.
 
   The rotation code itself is unchanged.
 
+## Batch 2 (held-out images)
+
+Batch 2 is a held-out test set of 22 further images, collected 2026-11-20 to 2026-11-21 under the
+**same protocol and with no change to Porygon**: 30 min learning + 30 × 60 s test
+windows = 60 min per image. Its purpose is to show whether batch 1's results hold
+on images Porygon had never seen. Batch 2 monitored
+22.0 hours in total (660 test windows), measured from the
+recorded timestamps; the whole dataset now holds
+44.0 monitored hours.
+Every table carries a `batch` column (`batch1`/`batch2`); batch 1's rows are
+unchanged apart from that column.
+
+### Images
+
+- **Services and servers (14):** caddy (`caddy:2`, complete), consul (`hashicorp/consul:latest`, complete), couchdb (`couchdb:3`, complete), gitea (`gitea/gitea:latest`, complete), grafana (`grafana/grafana:latest`, complete), influxdb (`influxdb:2`, complete), mosquitto (`eclipse-mosquitto:2`, complete), nats (`nats:alpine`, complete), nginx (`nginx:1.27`, complete), php83 (`php:8.3-apache`, complete), postgres-16 (`postgres:16`, complete), prometheus (`prom/prometheus:latest`, complete), registry (`registry:2`, complete), valkey (`valkey/valkey:8`, complete).
+- **GNU coreutils-single images (4), the batch 1 mysql finding re-tested:** mysql-9 (`mysql:9`, complete), ubi9-httpd (`registry.access.redhat.com/ubi9/httpd-24`, complete), ubi9-nginx (`registry.access.redhat.com/ubi9/nginx-124`, complete), ubi9-python (`registry.access.redhat.com/ubi9/python-312`, complete).
+- **Runtimes running a small server (4):** node-20-alpine (`node:20-alpine`, complete), perl (`perl:5.40`, complete), python-3.12-alpine (`python:3.12-alpine`, complete), ruby-3.3-alpine (`ruby:3.3-alpine`, complete).
+
+  The exact start commands, digests and recipes are in `images.csv`.
+
+### Substitutions
+
+None: every one of the 22 primary images was pulled as a native arm64 build and ran.
+
+### Files added by batch 2
+
+| File | Contents |
+|---|---|
+| `substitutions.csv` | Which primary image was replaced by which reserve, and why |
+| `batch2-preflight.json` | Free disk, Docker usage, service health, Falco liveness and the rotation limit before batch 2 started |
+| `batch2-plan.json` | Which images batch 2 selected, which it rejected and why |
+| `prefetch-batch2.json`, `prefetch-batch2.log` | The arm64 download for batch 2, with digests |
+| `batch2-sensor-gaps.json` | Written only if the watchdog detects a Falco sensor gap; this run had none, so the file is absent |
+| `archive/batch1-2026-11-21/` | Batch 1's tables and checksums as they were before batch 2, used to prove batch 1 did not change |
+
+Scripts added: `scripts/runtime/run_batch2.sh` (the whole unattended run),
+`plan_batch2.py` (substitutions), `watchdog_batch2.py` (the Falco watchdog),
+`preflight_batch2.py`, `check_recipe.py` and `verify_batch1_unchanged.py`.
+Make targets: `runtime-batch2`, `runtime-check-recipe IMAGE=<key>`, `runtime-verify-batch1`.
+
+## Results: batch 1 against batch 2
+
+| Verdict | Batch | Images | Windows | TP | FP | TN | FN | Recall | Precision | FPR | Hard-neg FPR |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Incident | batch1 | 22 | 660 | 225 | 62 | 334 | 39 | 0.852 | 0.784 | 0.157 | 0.470 |
+| Incident | batch2 | 22 | 660 | 206 | 54 | 342 | 58 | 0.780 | 0.792 | 0.136 | 0.409 |
+| Incident | combined | 44 | 1320 | 431 | 116 | 676 | 97 | 0.816 | 0.788 | 0.146 | 0.439 |
+| Score band | batch1 | 22 | 660 | 108 | 9 | 387 | 156 | 0.409 | 0.923 | 0.023 | 0.045 |
+| Score band | batch2 | 22 | 660 | 70 | 3 | 393 | 194 | 0.265 | 0.959 | 0.008 | 0.000 |
+| Score band | combined | 44 | 1320 | 178 | 12 | 780 | 350 | 0.337 | 0.937 | 0.015 | n/a |
+
+Per image, per scenario, per kind and per rule figures for both batches, and the
+`per_batch` block, are in `summary.json`.
+
+## Coreutils images (batch 2)
+
+Batch 1 found that mysql's GNU coreutils multicall binary hid 10 of its 12
+attacks, because Porygon resolves applet names only for busybox and toybox.
+Batch 2 re-tests that on four images built the same way. The data decides:
+
+| Image | Tag | Abnormal recall | Multicall events | `coreutils` in the baseline | Falco executable for the attack processes |
+|---|---|---:|---:|---|---|
+| mysql-9 | `mysql:9` | 0.167 | 379 | yes | `/usr/bin/bash` 520, `/usr/bin/coreutils` 379, `/usr/bin/mysqladmin` 361 |
+| ubi9-httpd | `registry.access.redhat.com/ubi9/httpd-24` | 0.167 | 370 | yes | `/usr/bin/bash` 522, `/usr/bin/coreutils` 370, `/usr/bin/curl` 359 |
+| ubi9-nginx | `registry.access.redhat.com/ubi9/nginx-124` | 0.833 | 295 | no | `/usr/bin/bash` 519, `/usr/bin/curl` 359, `/usr/bin/coreutils` 295 |
+| ubi9-python | `registry.access.redhat.com/ubi9/python-312` | 0.250 | 298 | yes | `/usr/bin/bash` 516, `/usr/bin/curl` 358, `/usr/bin/coreutils` 298 |
+
+- `mysql-9`: 10 of 12 abnormal windows not flagged (RT-AB-DROPPED-SCRIPT, RT-AB-LOW-SLOW, RT-AB-NC-CONNECT, RT-AB-READ-SHADOW, RT-AB-RENAMED-BINARY, RT-AB-ROOT-EXEC, RT-AB-SHELL-RECON, SCN-FLOOD, SCN-LOG4SHELL-SIM, SCN-RUNC-ESCAPE-SIM)
+- `ubi9-httpd`: 10 of 12 abnormal windows not flagged (RT-AB-DROPPED-SCRIPT, RT-AB-EGRESS, RT-AB-LOW-SLOW, RT-AB-NC-CONNECT, RT-AB-READ-SHADOW, RT-AB-RENAMED-BINARY, RT-AB-SHELL-RECON, SCN-FLOOD, SCN-LOG4SHELL-SIM, SCN-RUNC-ESCAPE-SIM)
+- `ubi9-nginx`: 2 of 12 abnormal windows not flagged (RT-AB-EGRESS, RT-AB-NC-CONNECT)
+- `ubi9-python`: 9 of 12 abnormal windows not flagged (RT-AB-DROPPED-SCRIPT, RT-AB-LOW-SLOW, RT-AB-NC-CONNECT, RT-AB-READ-SHADOW, RT-AB-RENAMED-BINARY, RT-AB-SHELL-RECON, SCN-FLOOD, SCN-LOG4SHELL-SIM, SCN-RUNC-ESCAPE-SIM)
+
+The baseline column is what decides the outcome, not the image family. In `mysql-9`, `ubi9-httpd`, `ubi9-python` the multicall binary was already in the baseline's observed executables, so every applet an attack ran resolved to a binary POR-DET-004 had seen before and the rule stayed silent. In `ubi9-nginx` the learning phase never executed it, so the first applet the attacks ran made `/usr/bin/coreutils` itself a previously unseen executable and the rule fired normally. The gap is therefore not 'coreutils images are invisible' but 'an executable that enters the baseline takes every applet reachable through it with it'.
+
+## Incidents during collection (batch 2)
+
+Automatic fixes recorded in `run-log.jsonl` (batch 2 lines), by step: `drivers` 1, `export` 1, `plan` 16, `prefetch` 1, `watchdog` 3.
+
+The sensor watchdog ran throughout and found no gap: every liveness check saw Porygon store the event from a real `docker exec` in the watchdog's own throwaway container, so no run was invalidated.
+
 ## Limits
 
 - One host, one run per image, and 30 test windows per image. There are no
@@ -189,3 +269,14 @@ All are logged in `run-log.jsonl`.
 - The redis pilot and the first 12 images ran before the sensor gap. The other
   9 ran after it, with a raised rotation limit. Porygon's code, rules and
   thresholds were otherwise identical throughout.
+- Batch 2 adds 22 held-out images under the identical protocol, so the
+  combined figures cover 44 images and 1,320 windows on the same host. The
+  two batches were collected on different days; Porygon's code, rules and
+  thresholds were identical for both.
+- Batch 2's images were never used to choose or tune anything in Porygon,
+  which is what makes them held out. They were chosen to fill batch 1's
+  gaps (coreutils-single images, busybox/Alpine images, new service types),
+  so batch 2 is deliberately not a random sample of container images.
+- CouchDB ships no working `weatherreport`, so its `RT-HN-ADMIN` command is the
+  documented `_node/_local/_system` admin call made with the image's own `curl`
+  rather than a service CLI (recorded in its recipe's `fixes`).
