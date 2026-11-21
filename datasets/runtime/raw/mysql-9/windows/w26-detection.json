@@ -1,0 +1,1299 @@
+{
+  "incident": {
+    "acknowledged_at": null,
+    "acknowledged_by": null,
+    "anomaly_score": 0.213814788936,
+    "closed_at": null,
+    "closed_by": null,
+    "closure_note": null,
+    "confidence_level": "high",
+    "confidence_score": 0.916666666667,
+    "container_ids": [
+      "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799"
+    ],
+    "created_at": "2026-11-20T23:30:45.041048Z",
+    "detection_run_id": "2837bc92-118a-405d-b3f8-953f84ecb2c3",
+    "findings": [
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "curl -s -m 5 http://203.0.113.1/",
+          "executable": "/usr/bin/curl",
+          "parent_executable": "/usr/bin/bash",
+          "parent_name": "sh",
+          "process_chain": [
+            {
+              "event_id": "19c1d260fc586dccee2f7c1dfd20bd0cf76e0fb6d2e89bf2f47520d8b20860b2",
+              "executable": "/usr/bin/curl",
+              "occurred_at": "2026-11-20T23:29:04.260877+00:00",
+              "parent_executable": "/usr/bin/bash"
+            },
+            {
+              "event_id": "cff970061816d88a8bc2229650c77256473459dc181e25199a4a96003beeece7",
+              "executable": "/usr/bin/bash",
+              "occurred_at": "2026-11-20T23:29:04.259414+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "curl",
+          "raw_executable": "/usr/bin/curl",
+          "raw_parent_executable": "/usr/bin/bash"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T23:29:04.260877+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "19c1d260fc586dccee2f7c1dfd20bd0cf76e0fb6d2e89bf2f47520d8b20860b2",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/curl executed."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c if command -v wget >/dev/null 2>&1; then wget -q -T 5 -O- http://203.0.113.1/; else curl -s -m 5 http://203.0.113.1/; fi"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:05.040947+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "63f8970bb7babbacfa68fd1ace89993beaf84cf412c203321fad049a5196fd24",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c if command -v wget >/dev/null 2>&1; then wget -q -T 5 -O- http://203.0.113.1/; else curl -s -m 5 http://203.0.113.1/; fi"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:05.043847+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "5768c091293e16555cf5db96ab353467e76d76c833234b877b30b959b0e9068a",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "mysqld"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:05.089605+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "09a794121c3603dfe1b00adc7235833c51b0200af6e46f6a1d5c71c13a2c8dc0",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:07.256138+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "8024bacaa08a5ba9f6096f63151c4df7f8efdb0d2cc5cea491d0f2ba35faceb5",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:07.256227+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "cdbb87b6e6655cc971f653afe279ba08727d96c87f6682a69af455471bad05af",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "mysqld"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:07.276997+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "1ca563320deccb2dcd2e42b6a36da38200beb1ad8c659f395ff8f9fad6c066a6",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:17.280204+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "9bc8ae38e32ff1828cb92d6c596076767d186acabaa8a3d0cd29fc9f92161f9f",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:17.280519+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "3dc813a57f92a913ea036dd46a5579dbd7ee1684e6c5bcba081213bd2252c04c",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "mysqld"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:17.334026+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "4f1de72d3addd603d5e3cfbb1cc8f56f0c3fb42993b93792884a4d1f96535ff8",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:27.337814+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "cbf89aa54d3d169645967fb33b1a3bd6300dc2a5da2a2904b51b7450bf9cf345",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:27.338473+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "bdc8e9dffe4c2a13c34bc2be440bc3e8688cbcbceb8242353b8f0a024694d056",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "mysqld"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:27.397201+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "4c68cf09c9ce2ea2523e5656a448c6f7a2d6f06d930c9e5d1cac47cf7ef83845",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:37.399979+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "69fc1057e67085c54749a822d2827913dc73278f342690c063fc3e7acc52d68a",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:37.400380+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "08764a733c813a776ebb459c9c5aa0ab86d7dadff625f8a87d880c2d3928cfc2",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "mysqld"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:37.449728+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "3534a111c2d007f709f237650c230b5e0bdf03606ec35e462e3dd9dacda1d3fe",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:47.452573+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "0d18a251a995a9190ef21bf81f4932accf6602b28a2c8baf6fc8bab509651897",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:47.452943+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "0349386a1e4f5d4c9d0aeb54e427caf7d65ef4a23212145a4e6250866114185f",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "mysqld"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:47.519053+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "b6922cd0bb513cab14f73bdabc48bfe20fbab678f2e436ebfba17cb4701ceafe",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:57.521421+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "a4394a85056fe2bcdd7aba1eb003e65d56492dbbef6805f93a21a94de0c0705e",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:57.521503+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "c73a89de43bea5238c4564ea3734a609945a43e0fd867175f2db3aa6f1095f03",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "mysqld"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T23:29:57.561880+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "01d7f48ac79ee4c933bce386b54819442fd453929620ed03f814ec23fd19476f",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      }
+    ],
+    "first_seen_at": "2026-11-20T23:29:04.260877Z",
+    "image_digest": "mysql@sha256:df90258da46f6e7ff8574ff84f17618aba0765cac749928299c69fd4e7cb8ad8",
+    "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+    "last_seen_at": "2026-11-20T23:29:57.561880Z",
+    "score_id": "f58c9e29-6212-44f1-a7cb-5d8567375858",
+    "severity_level": "medium",
+    "severity_score": 0.490835176128,
+    "status": "open",
+    "summary": "1 incident-eligible rule match(es) correlated for mysql@sha256:df90258da46f6e7ff8574ff84f17618aba0765cac749928299c69fd4e7cb8ad8.",
+    "title": "Previously Unseen Non-Shell Executable in mysql",
+    "updated_at": "2026-11-20T23:30:45.041048Z"
+  },
+  "run": {
+    "allowlist_set_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "applied_allowlist_ids": [],
+    "created_at": "2026-11-20T23:30:45.041048Z",
+    "custom_ruleset_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "image_digest": "mysql@sha256:df90258da46f6e7ff8574ff84f17618aba0765cac749928299c69fd4e7cb8ad8",
+    "incident_created": true,
+    "matches_count": 22,
+    "result": {
+      "anomaly_score": 0.213814788936,
+      "confidence_level": "high",
+      "confidence_score": 0.916666666667,
+      "custom_ruleset_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "incident_eligible": true,
+      "matches": [
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "curl -s -m 5 http://203.0.113.1/",
+            "executable": "/usr/bin/curl",
+            "parent_executable": "/usr/bin/bash",
+            "parent_name": "sh",
+            "process_chain": [
+              {
+                "event_id": "19c1d260fc586dccee2f7c1dfd20bd0cf76e0fb6d2e89bf2f47520d8b20860b2",
+                "executable": "/usr/bin/curl",
+                "occurred_at": "2026-11-20T23:29:04.260877+00:00",
+                "parent_executable": "/usr/bin/bash"
+              },
+              {
+                "event_id": "cff970061816d88a8bc2229650c77256473459dc181e25199a4a96003beeece7",
+                "executable": "/usr/bin/bash",
+                "occurred_at": "2026-11-20T23:29:04.259414+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "curl",
+            "raw_executable": "/usr/bin/curl",
+            "raw_parent_executable": "/usr/bin/bash"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T23:29:04.260877+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "19c1d260fc586dccee2f7c1dfd20bd0cf76e0fb6d2e89bf2f47520d8b20860b2",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/curl executed."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c if command -v wget >/dev/null 2>&1; then wget -q -T 5 -O- http://203.0.113.1/; else curl -s -m 5 http://203.0.113.1/; fi"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:05.040947+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "63f8970bb7babbacfa68fd1ace89993beaf84cf412c203321fad049a5196fd24",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c if command -v wget >/dev/null 2>&1; then wget -q -T 5 -O- http://203.0.113.1/; else curl -s -m 5 http://203.0.113.1/; fi"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:05.043847+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "5768c091293e16555cf5db96ab353467e76d76c833234b877b30b959b0e9068a",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "mysqld"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:05.089605+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "09a794121c3603dfe1b00adc7235833c51b0200af6e46f6a1d5c71c13a2c8dc0",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:07.256138+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "8024bacaa08a5ba9f6096f63151c4df7f8efdb0d2cc5cea491d0f2ba35faceb5",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:07.256227+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "cdbb87b6e6655cc971f653afe279ba08727d96c87f6682a69af455471bad05af",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "mysqld"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:07.276997+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "1ca563320deccb2dcd2e42b6a36da38200beb1ad8c659f395ff8f9fad6c066a6",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:17.280204+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "9bc8ae38e32ff1828cb92d6c596076767d186acabaa8a3d0cd29fc9f92161f9f",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:17.280519+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "3dc813a57f92a913ea036dd46a5579dbd7ee1684e6c5bcba081213bd2252c04c",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "mysqld"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:17.334026+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "4f1de72d3addd603d5e3cfbb1cc8f56f0c3fb42993b93792884a4d1f96535ff8",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:27.337814+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "cbf89aa54d3d169645967fb33b1a3bd6300dc2a5da2a2904b51b7450bf9cf345",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:27.338473+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "bdc8e9dffe4c2a13c34bc2be440bc3e8688cbcbceb8242353b8f0a024694d056",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "mysqld"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:27.397201+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "4c68cf09c9ce2ea2523e5656a448c6f7a2d6f06d930c9e5d1cac47cf7ef83845",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:37.399979+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "69fc1057e67085c54749a822d2827913dc73278f342690c063fc3e7acc52d68a",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:37.400380+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "08764a733c813a776ebb459c9c5aa0ab86d7dadff625f8a87d880c2d3928cfc2",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "mysqld"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:37.449728+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "3534a111c2d007f709f237650c230b5e0bdf03606ec35e462e3dd9dacda1d3fe",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:47.452573+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "0d18a251a995a9190ef21bf81f4932accf6602b28a2c8baf6fc8bab509651897",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:47.452943+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "0349386a1e4f5d4c9d0aeb54e427caf7d65ef4a23212145a4e6250866114185f",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "mysqld"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:47.519053+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "b6922cd0bb513cab14f73bdabc48bfe20fbab678f2e436ebfba17cb4701ceafe",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:57.521421+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "a4394a85056fe2bcdd7aba1eb003e65d56492dbbef6805f93a21a94de0c0705e",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:57.521503+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "c73a89de43bea5238c4564ea3734a609945a43e0fd867175f2db3aa6f1095f03",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "9d6dd013621001500ddebe693cece21386cc2a5a2065f8309fd980938e14a799",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "mysqld"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T23:29:57.561880+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "01d7f48ac79ee4c933bce386b54819442fd453929620ed03f814ec23fd19476f",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        }
+      ],
+      "metrics": {
+        "additional_unseen_executables": 0,
+        "correlation_window_seconds": 120,
+        "eligible_matches": 1,
+        "informational_matches": 21,
+        "process_events": 14,
+        "runtime_events": 21,
+        "source_types": [
+          "process_event",
+          "runtime_event"
+        ],
+        "suppressed_matches": 0
+      },
+      "rule_errors": [],
+      "ruleset_hash": "dfb4e9343108adb77b1a42d72438bc55b4aad3e267770fed9c9440522a8cbbf2",
+      "ruleset_version": "porygon.detection.v1",
+      "severity_level": "medium",
+      "severity_score": 0.490835176128,
+      "status": "incident_created",
+      "summary": "1 incident-eligible rule match(es) correlated for mysql@sha256:df90258da46f6e7ff8574ff84f17618aba0765cac749928299c69fd4e7cb8ad8.",
+      "suppressed_matches": []
+    },
+    "ruleset_hash": "dfb4e9343108adb77b1a42d72438bc55b4aad3e267770fed9c9440522a8cbbf2",
+    "ruleset_version": "porygon.detection.v1",
+    "run_id": "2837bc92-118a-405d-b3f8-953f84ecb2c3",
+    "run_key": "433cf5c20617b8879e5455c4b1b280b42ed4969ab31f34dfe0b4c2040eca7adf",
+    "score_id": "f58c9e29-6212-44f1-a7cb-5d8567375858",
+    "status": "incident_created",
+    "window_end": "2026-11-20T23:30:00Z",
+    "window_start": "2026-11-20T23:29:00Z"
+  },
+  "timeline": [
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "command_line": "curl -s -m 5 http://203.0.113.1/",
+        "executable": "/usr/bin/curl",
+        "parent_executable": "/usr/bin/bash",
+        "parent_name": "sh",
+        "process_chain": [
+          {
+            "event_id": "19c1d260fc586dccee2f7c1dfd20bd0cf76e0fb6d2e89bf2f47520d8b20860b2",
+            "executable": "/usr/bin/curl",
+            "occurred_at": "2026-11-20T23:29:04.260877+00:00",
+            "parent_executable": "/usr/bin/bash"
+          },
+          {
+            "event_id": "cff970061816d88a8bc2229650c77256473459dc181e25199a4a96003beeece7",
+            "executable": "/usr/bin/bash",
+            "occurred_at": "2026-11-20T23:29:04.259414+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "curl",
+        "raw_executable": "/usr/bin/curl",
+        "raw_parent_executable": "/usr/bin/bash"
+      },
+      "evidence_id": "281eeec1-b178-4920-9cbe-747cc88bad03",
+      "evidence_type": "execution",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:04.260877Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 1,
+      "source_id": "19c1d260fc586dccee2f7c1dfd20bd0cf76e0fb6d2e89bf2f47520d8b20860b2",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/curl executed."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c if command -v wget >/dev/null 2>&1; then wget -q -T 5 -O- http://203.0.113.1/; else curl -s -m 5 http://203.0.113.1/; fi"
+      },
+      "evidence_id": "ef5b512c-eede-4a29-9206-f15f6c8c0cf8",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:05.040947Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 2,
+      "source_id": "63f8970bb7babbacfa68fd1ace89993beaf84cf412c203321fad049a5196fd24",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c if command -v wget >/dev/null 2>&1; then wget -q -T 5 -O- http://203.0.113.1/; else curl -s -m 5 http://203.0.113.1/; fi"
+      },
+      "evidence_id": "f14f0f17-41bb-4794-ac95-493ec6247f08",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:05.043847Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 3,
+      "source_id": "5768c091293e16555cf5db96ab353467e76d76c833234b877b30b959b0e9068a",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_die",
+        "command": "mysqld"
+      },
+      "evidence_id": "c0a452d8-8baf-420d-99af-e8ceac90a10a",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:05.089605Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 4,
+      "source_id": "09a794121c3603dfe1b00adc7235833c51b0200af6e46f6a1d5c71c13a2c8dc0",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "016712e9-eaa8-42aa-86e1-77d78f4a775a",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:07.256138Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 5,
+      "source_id": "8024bacaa08a5ba9f6096f63151c4df7f8efdb0d2cc5cea491d0f2ba35faceb5",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "b318b4ea-ba71-40f9-84c9-b756e0a5bf9c",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:07.256227Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 6,
+      "source_id": "cdbb87b6e6655cc971f653afe279ba08727d96c87f6682a69af455471bad05af",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_die",
+        "command": "mysqld"
+      },
+      "evidence_id": "482a91f9-a1f0-4456-b449-fdb67f88e9e5",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:07.276997Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 7,
+      "source_id": "1ca563320deccb2dcd2e42b6a36da38200beb1ad8c659f395ff8f9fad6c066a6",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "e7bb0032-dc47-4afa-877e-65a3f37a22ec",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:17.280204Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 8,
+      "source_id": "9bc8ae38e32ff1828cb92d6c596076767d186acabaa8a3d0cd29fc9f92161f9f",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "1aef42cc-9bfd-45f4-b707-e13bdf8b1638",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:17.280519Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 9,
+      "source_id": "3dc813a57f92a913ea036dd46a5579dbd7ee1684e6c5bcba081213bd2252c04c",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_die",
+        "command": "mysqld"
+      },
+      "evidence_id": "de5fd5dc-20ff-4e99-8503-68cbf3d1fd13",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:17.334026Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 10,
+      "source_id": "4f1de72d3addd603d5e3cfbb1cc8f56f0c3fb42993b93792884a4d1f96535ff8",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "b8bd2e4e-35d9-49b9-b454-c3c71e0990c3",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:27.337814Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 11,
+      "source_id": "cbf89aa54d3d169645967fb33b1a3bd6300dc2a5da2a2904b51b7450bf9cf345",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "ac532561-b6d2-42ea-8cca-d5789142faa5",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:27.338473Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 12,
+      "source_id": "bdc8e9dffe4c2a13c34bc2be440bc3e8688cbcbceb8242353b8f0a024694d056",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_die",
+        "command": "mysqld"
+      },
+      "evidence_id": "fc916983-3ba4-4249-af21-aa72aec8db27",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:27.397201Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 13,
+      "source_id": "4c68cf09c9ce2ea2523e5656a448c6f7a2d6f06d930c9e5d1cac47cf7ef83845",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "0b2a0ceb-8ae1-4504-809f-2b2535a3c6d1",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:37.399979Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 14,
+      "source_id": "69fc1057e67085c54749a822d2827913dc73278f342690c063fc3e7acc52d68a",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "5864f056-662e-473c-8ff4-38241953951c",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:37.400380Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 15,
+      "source_id": "08764a733c813a776ebb459c9c5aa0ab86d7dadff625f8a87d880c2d3928cfc2",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_die",
+        "command": "mysqld"
+      },
+      "evidence_id": "aed890b5-3939-4809-85c5-827d8cbd13a8",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:37.449728Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 16,
+      "source_id": "3534a111c2d007f709f237650c230b5e0bdf03606ec35e462e3dd9dacda1d3fe",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "62d41c9b-72aa-42e9-8cd3-662887de6fea",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:47.452573Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 17,
+      "source_id": "0d18a251a995a9190ef21bf81f4932accf6602b28a2c8baf6fc8bab509651897",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "9f306d4a-6f9e-4041-9e8f-356311d4fccf",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:47.452943Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 18,
+      "source_id": "0349386a1e4f5d4c9d0aeb54e427caf7d65ef4a23212145a4e6250866114185f",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_die",
+        "command": "mysqld"
+      },
+      "evidence_id": "4ec62bc6-d102-43cf-9763-3e8a1b123a5c",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:47.519053Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 19,
+      "source_id": "b6922cd0bb513cab14f73bdabc48bfe20fbab678f2e436ebfba17cb4701ceafe",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "4c991576-cbf5-494e-ac9d-bea2a7fa592c",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:57.521421Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 20,
+      "source_id": "a4394a85056fe2bcdd7aba1eb003e65d56492dbbef6805f93a21a94de0c0705e",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c mysqladmin ping -h 127.0.0.1 -uroot -pporygon-runtime-throwaway-pw"
+      },
+      "evidence_id": "dec14d04-dead-4cdc-b50e-4fb4165d9c8f",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:57.521503Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 21,
+      "source_id": "c73a89de43bea5238c4564ea3734a609945a43e0fd867175f2db3aa6f1095f03",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "action": "exec_die",
+        "command": "mysqld"
+      },
+      "evidence_id": "444095ac-5b9c-48b8-aedb-e5c13d86eab9",
+      "evidence_type": "container-control",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:29:57.561880Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 22,
+      "source_id": "01d7f48ac79ee4c933bce386b54819442fd453929620ed03f814ec23fd19476f",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T23:30:45.041048Z",
+      "details": {
+        "algorithm_version": "porygon.distance.v1",
+        "profile_id": "6dc5ca1e-df4a-4170-ba71-e0cfc6257d59",
+        "profile_version": 1,
+        "score_band": "baseline_like",
+        "total_score": 0.213814788936
+      },
+      "evidence_id": "18de8ff7-6ffe-48a4-a518-61ed71fa124e",
+      "evidence_type": "behavioural_distance",
+      "incident_id": "a8b4c949-7e35-4e0b-a123-c1ee394803a7",
+      "occurred_at": "2026-11-20T23:30:00Z",
+      "rule_id": null,
+      "sequence_no": 23,
+      "source_id": "f58c9e29-6212-44f1-a7cb-5d8567375858",
+      "source_type": "anomaly_score",
+      "summary": "Observed behavioural distance was 0.214 (baseline_like)."
+    }
+  ]
+}

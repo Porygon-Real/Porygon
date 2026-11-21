@@ -1,0 +1,1802 @@
+{
+  "incident": {
+    "acknowledged_at": null,
+    "acknowledged_by": null,
+    "anomaly_score": 0.14505304237,
+    "closed_at": null,
+    "closed_by": null,
+    "closure_note": null,
+    "confidence_level": "high",
+    "confidence_score": 0.916666666667,
+    "container_ids": [
+      "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d"
+    ],
+    "created_at": "2026-11-20T10:52:45.048072Z",
+    "detection_run_id": "1de49413-0d86-4e90-b6ac-d46fb8beec06",
+    "findings": [
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:01.278719+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "d2e4aa4eadfa3d3116d0e246e81ea53c015849bc1c09d75aac0f701f020338ae",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:01.279143+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "61b413e267f4a896b49ab7cccbec565b8c9d613e5abc3c4f14f4dbdf7effa6f1",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "memcached"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:01.339663+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "4fbf19d8b06546c8f976fadbb2546247debb9d0b4358f3d6aef14cfa84a54fbf",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "privilege",
+        "confidence_weight": 0.9,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "A UID 0 process executed although UID 0 was absent from the baseline.",
+        "details": {
+          "executable": "/usr/bin/dash",
+          "parent_event_id": null,
+          "process_chain": [
+            {
+              "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "sh",
+          "raw_executable": "/usr/bin/dash",
+          "user_uid": 0
+        },
+        "incident_eligible": true,
+        "name": "Novel Root Process",
+        "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+        "rule_id": "POR-DET-003",
+        "severity_weight": 0.78,
+        "source_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+        "source_type": "process_event",
+        "summary": "UID 0 process /usr/bin/dash was absent from the baseline user set."
+      },
+      {
+        "category": "privilege",
+        "confidence_weight": 0.9,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "A UID 0 process executed although UID 0 was absent from the baseline.",
+        "details": {
+          "executable": "/usr/bin/id",
+          "parent_event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+          "process_chain": [
+            {
+              "event_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+              "executable": "/usr/bin/id",
+              "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "id",
+          "raw_executable": "/usr/bin/id",
+          "user_uid": 0
+        },
+        "incident_eligible": true,
+        "name": "Novel Root Process",
+        "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+        "rule_id": "POR-DET-003",
+        "severity_weight": 0.78,
+        "source_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+        "source_type": "process_event",
+        "summary": "UID 0 process /usr/bin/id was absent from the baseline user set."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "id",
+          "executable": "/usr/bin/id",
+          "parent_executable": "/usr/bin/dash",
+          "parent_name": "sh",
+          "process_chain": [
+            {
+              "event_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+              "executable": "/usr/bin/id",
+              "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "id",
+          "raw_executable": "/usr/bin/id",
+          "raw_parent_executable": "/usr/bin/dash"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/id executed."
+      },
+      {
+        "category": "privilege",
+        "confidence_weight": 0.9,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "A UID 0 process executed although UID 0 was absent from the baseline.",
+        "details": {
+          "executable": "/usr/bin/ls",
+          "parent_event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+          "process_chain": [
+            {
+              "event_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+              "executable": "/usr/bin/ls",
+              "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "ls",
+          "raw_executable": "/usr/bin/ls",
+          "user_uid": 0
+        },
+        "incident_eligible": true,
+        "name": "Novel Root Process",
+        "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+        "rule_id": "POR-DET-003",
+        "severity_weight": 0.78,
+        "source_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+        "source_type": "process_event",
+        "summary": "UID 0 process /usr/bin/ls was absent from the baseline user set."
+      },
+      {
+        "category": "execution",
+        "confidence_weight": 0.8,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+        "details": {
+          "command_line": "ls -la /root",
+          "executable": "/usr/bin/ls",
+          "parent_executable": "/usr/bin/dash",
+          "parent_name": "sh",
+          "process_chain": [
+            {
+              "event_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+              "executable": "/usr/bin/ls",
+              "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "ls",
+          "raw_executable": "/usr/bin/ls",
+          "raw_parent_executable": "/usr/bin/dash"
+        },
+        "incident_eligible": true,
+        "name": "Previously Unseen Non-Shell Executable",
+        "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+        "rule_id": "POR-DET-004",
+        "severity_weight": 0.64,
+        "source_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+        "source_type": "process_event",
+        "summary": "Previously unseen non-shell executable /usr/bin/ls executed."
+      },
+      {
+        "category": "privilege",
+        "confidence_weight": 0.9,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "A UID 0 process executed although UID 0 was absent from the baseline.",
+        "details": {
+          "executable": "/usr/bin/head",
+          "parent_event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+          "process_chain": [
+            {
+              "event_id": "2f27c8dfee50783229d4eceaa2ca8f7e373cb61cc4e630782505b1bd639bae3d",
+              "executable": "/usr/bin/head",
+              "occurred_at": "2026-11-20T10:51:04.991922+00:00",
+              "parent_executable": "/usr/bin/dash"
+            },
+            {
+              "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+              "executable": "/usr/bin/dash",
+              "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+              "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+            }
+          ],
+          "process_name": "head",
+          "raw_executable": "/usr/bin/head",
+          "user_uid": 0
+        },
+        "incident_eligible": true,
+        "name": "Novel Root Process",
+        "occurred_at": "2026-11-20T10:51:04.991922+00:00",
+        "rule_id": "POR-DET-003",
+        "severity_weight": 0.78,
+        "source_id": "2f27c8dfee50783229d4eceaa2ca8f7e373cb61cc4e630782505b1bd639bae3d",
+        "source_type": "process_event",
+        "summary": "UID 0 process /usr/bin/head was absent from the baseline user set."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c id; ls -la /root; head -n 5 /proc/1/status"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:05.041240+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "ac20c6a7496861a8c5b84f2fcd6e0dc82cc149f5bb3346eaac0a43393bcfe329",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c id; ls -la /root; head -n 5 /proc/1/status"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:05.044255+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "8caf7db81c589ffe78e1e1ebfd33b6fe6062f41181a288cdaac0104524ccd2b5",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "memcached"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:05.081790+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "e34f6abd414c60674f3f0a5b24ec524820ac8891d8da52aa6927bbfef1bc4bb7",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:11.340519+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "8cbe1e592cf0a6cbc8d64f26833cf80e58272236eaafbe9ace71109360f5df51",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:11.340967+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "c1e3d243a763e5688859d4f11e524515b2c279777bf27aea3cecfd66df424f1b",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "memcached"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:11.393217+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "dcc5f05b856549bf7a6e31d2a3ecf61de3b7f78917bdb3d5f0c26a3f55a45d93",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:21.394500+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "ded659144fa7c8e6e960187405be1e80964d6dcd06900425a72e8c8dd5fe3154",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:21.394613+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "cd259d217fa63a9e4fc2cde210c9cea955ca750bfa8efb08d01c5ec5baf7084b",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "memcached"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:21.417511+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "83b61913523c476de03a2930a8f9933da928c102f3e7b346a78120169072cb24",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:31.418010+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "b84ed7f3f022bb10a4a69420deb51b000ac156a5aadc5ee7516655873a7e716c",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:31.418171+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "10e4794581acae09360982e9bb3affb68d309a3783842ee2ac5cfa2bb6e45833",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "memcached"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:31.451108+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "aa1602db9fae475eac60273d3cc3e00fb47c9769960bd88fc283960cf7bc82a7",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:41.451910+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "55fb17cac367a04ac6095e5f94ebefb1a61710ecd26de39c23ead4e2d796131d",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:41.452702+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "686fa660bcddb0a81d0a6d1c665c967d0f28e3d9e36dc8680f08dd7c5bb596d7",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "memcached"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:41.496104+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "57f9b5de722320d3cece341b5da9e3f11c30507b998c58e4eb197ea34a4ca0e6",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_create",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:51.499668+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "e70422d0686ab57a27bf37d8dac62301a95426f0a36154b58784641ea86c224b",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_create occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_start",
+          "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:51.500056+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "252f7a7e7ec820b03991edc147387cf447600fb3d148820b54b944f6a40a32a1",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_start occurred."
+      },
+      {
+        "category": "container-control",
+        "confidence_weight": 0.95,
+        "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+        "description": "Docker exec activity occurred during the observation window.",
+        "details": {
+          "action": "exec_die",
+          "command": "memcached"
+        },
+        "incident_eligible": false,
+        "name": "Docker Exec Activity",
+        "occurred_at": "2026-11-20T10:51:51.547631+00:00",
+        "rule_id": "POR-DET-006",
+        "severity_weight": 0.35,
+        "source_id": "7d8f7afa52c21427ac565547fc62e4822fe314d426e7cdb214a6fcf80a604f37",
+        "source_type": "runtime_event",
+        "summary": "Docker container action exec_die occurred."
+      }
+    ],
+    "first_seen_at": "2026-11-20T10:51:01.278719Z",
+    "image_digest": "memcached@sha256:a395a1bcf5e0e2b0fa4a0142e12b4e24a2320ba4b7c6ffa8655a1a86e8f29dee",
+    "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+    "last_seen_at": "2026-11-20T10:51:51.547631Z",
+    "score_id": "ea529960-59be-4c3f-97e6-f47eaf5daa58",
+    "severity_level": "high",
+    "severity_score": 0.677768564829,
+    "status": "open",
+    "summary": "6 incident-eligible rule match(es) correlated for memcached@sha256:a395a1bcf5e0e2b0fa4a0142e12b4e24a2320ba4b7c6ffa8655a1a86e8f29dee.",
+    "title": "Novel Root Process in memcached",
+    "updated_at": "2026-11-20T10:52:45.048072Z"
+  },
+  "run": {
+    "allowlist_set_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "applied_allowlist_ids": [],
+    "created_at": "2026-11-20T10:52:45.048072Z",
+    "custom_ruleset_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "image_digest": "memcached@sha256:a395a1bcf5e0e2b0fa4a0142e12b4e24a2320ba4b7c6ffa8655a1a86e8f29dee",
+    "incident_created": true,
+    "matches_count": 27,
+    "result": {
+      "anomaly_score": 0.14505304237,
+      "confidence_level": "high",
+      "confidence_score": 0.916666666667,
+      "custom_ruleset_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "incident_eligible": true,
+      "matches": [
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:01.278719+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "d2e4aa4eadfa3d3116d0e246e81ea53c015849bc1c09d75aac0f701f020338ae",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:01.279143+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "61b413e267f4a896b49ab7cccbec565b8c9d613e5abc3c4f14f4dbdf7effa6f1",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "memcached"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:01.339663+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "4fbf19d8b06546c8f976fadbb2546247debb9d0b4358f3d6aef14cfa84a54fbf",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "privilege",
+          "confidence_weight": 0.9,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "A UID 0 process executed although UID 0 was absent from the baseline.",
+          "details": {
+            "executable": "/usr/bin/dash",
+            "parent_event_id": null,
+            "process_chain": [
+              {
+                "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "sh",
+            "raw_executable": "/usr/bin/dash",
+            "user_uid": 0
+          },
+          "incident_eligible": true,
+          "name": "Novel Root Process",
+          "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+          "rule_id": "POR-DET-003",
+          "severity_weight": 0.78,
+          "source_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+          "source_type": "process_event",
+          "summary": "UID 0 process /usr/bin/dash was absent from the baseline user set."
+        },
+        {
+          "category": "privilege",
+          "confidence_weight": 0.9,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "A UID 0 process executed although UID 0 was absent from the baseline.",
+          "details": {
+            "executable": "/usr/bin/id",
+            "parent_event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+            "process_chain": [
+              {
+                "event_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+                "executable": "/usr/bin/id",
+                "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "id",
+            "raw_executable": "/usr/bin/id",
+            "user_uid": 0
+          },
+          "incident_eligible": true,
+          "name": "Novel Root Process",
+          "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+          "rule_id": "POR-DET-003",
+          "severity_weight": 0.78,
+          "source_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+          "source_type": "process_event",
+          "summary": "UID 0 process /usr/bin/id was absent from the baseline user set."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "id",
+            "executable": "/usr/bin/id",
+            "parent_executable": "/usr/bin/dash",
+            "parent_name": "sh",
+            "process_chain": [
+              {
+                "event_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+                "executable": "/usr/bin/id",
+                "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "id",
+            "raw_executable": "/usr/bin/id",
+            "raw_parent_executable": "/usr/bin/dash"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/id executed."
+        },
+        {
+          "category": "privilege",
+          "confidence_weight": 0.9,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "A UID 0 process executed although UID 0 was absent from the baseline.",
+          "details": {
+            "executable": "/usr/bin/ls",
+            "parent_event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+            "process_chain": [
+              {
+                "event_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+                "executable": "/usr/bin/ls",
+                "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "ls",
+            "raw_executable": "/usr/bin/ls",
+            "user_uid": 0
+          },
+          "incident_eligible": true,
+          "name": "Novel Root Process",
+          "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+          "rule_id": "POR-DET-003",
+          "severity_weight": 0.78,
+          "source_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+          "source_type": "process_event",
+          "summary": "UID 0 process /usr/bin/ls was absent from the baseline user set."
+        },
+        {
+          "category": "execution",
+          "confidence_weight": 0.8,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "A non-shell executable absent from the digest baseline executed, regardless of name.",
+          "details": {
+            "command_line": "ls -la /root",
+            "executable": "/usr/bin/ls",
+            "parent_executable": "/usr/bin/dash",
+            "parent_name": "sh",
+            "process_chain": [
+              {
+                "event_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+                "executable": "/usr/bin/ls",
+                "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "ls",
+            "raw_executable": "/usr/bin/ls",
+            "raw_parent_executable": "/usr/bin/dash"
+          },
+          "incident_eligible": true,
+          "name": "Previously Unseen Non-Shell Executable",
+          "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+          "rule_id": "POR-DET-004",
+          "severity_weight": 0.64,
+          "source_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+          "source_type": "process_event",
+          "summary": "Previously unseen non-shell executable /usr/bin/ls executed."
+        },
+        {
+          "category": "privilege",
+          "confidence_weight": 0.9,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "A UID 0 process executed although UID 0 was absent from the baseline.",
+          "details": {
+            "executable": "/usr/bin/head",
+            "parent_event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+            "process_chain": [
+              {
+                "event_id": "2f27c8dfee50783229d4eceaa2ca8f7e373cb61cc4e630782505b1bd639bae3d",
+                "executable": "/usr/bin/head",
+                "occurred_at": "2026-11-20T10:51:04.991922+00:00",
+                "parent_executable": "/usr/bin/dash"
+              },
+              {
+                "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+                "executable": "/usr/bin/dash",
+                "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+                "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+              }
+            ],
+            "process_name": "head",
+            "raw_executable": "/usr/bin/head",
+            "user_uid": 0
+          },
+          "incident_eligible": true,
+          "name": "Novel Root Process",
+          "occurred_at": "2026-11-20T10:51:04.991922+00:00",
+          "rule_id": "POR-DET-003",
+          "severity_weight": 0.78,
+          "source_id": "2f27c8dfee50783229d4eceaa2ca8f7e373cb61cc4e630782505b1bd639bae3d",
+          "source_type": "process_event",
+          "summary": "UID 0 process /usr/bin/head was absent from the baseline user set."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c id; ls -la /root; head -n 5 /proc/1/status"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:05.041240+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "ac20c6a7496861a8c5b84f2fcd6e0dc82cc149f5bb3346eaac0a43393bcfe329",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c id; ls -la /root; head -n 5 /proc/1/status"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:05.044255+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "8caf7db81c589ffe78e1e1ebfd33b6fe6062f41181a288cdaac0104524ccd2b5",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "memcached"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:05.081790+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "e34f6abd414c60674f3f0a5b24ec524820ac8891d8da52aa6927bbfef1bc4bb7",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:11.340519+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "8cbe1e592cf0a6cbc8d64f26833cf80e58272236eaafbe9ace71109360f5df51",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:11.340967+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "c1e3d243a763e5688859d4f11e524515b2c279777bf27aea3cecfd66df424f1b",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "memcached"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:11.393217+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "dcc5f05b856549bf7a6e31d2a3ecf61de3b7f78917bdb3d5f0c26a3f55a45d93",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:21.394500+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "ded659144fa7c8e6e960187405be1e80964d6dcd06900425a72e8c8dd5fe3154",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:21.394613+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "cd259d217fa63a9e4fc2cde210c9cea955ca750bfa8efb08d01c5ec5baf7084b",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "memcached"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:21.417511+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "83b61913523c476de03a2930a8f9933da928c102f3e7b346a78120169072cb24",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:31.418010+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "b84ed7f3f022bb10a4a69420deb51b000ac156a5aadc5ee7516655873a7e716c",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:31.418171+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "10e4794581acae09360982e9bb3affb68d309a3783842ee2ac5cfa2bb6e45833",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "memcached"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:31.451108+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "aa1602db9fae475eac60273d3cc3e00fb47c9769960bd88fc283960cf7bc82a7",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:41.451910+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "55fb17cac367a04ac6095e5f94ebefb1a61710ecd26de39c23ead4e2d796131d",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:41.452702+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "686fa660bcddb0a81d0a6d1c665c967d0f28e3d9e36dc8680f08dd7c5bb596d7",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "memcached"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:41.496104+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "57f9b5de722320d3cece341b5da9e3f11c30507b998c58e4eb197ea34a4ca0e6",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_create",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:51.499668+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "e70422d0686ab57a27bf37d8dac62301a95426f0a36154b58784641ea86c224b",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_create occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_start",
+            "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:51.500056+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "252f7a7e7ec820b03991edc147387cf447600fb3d148820b54b944f6a40a32a1",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_start occurred."
+        },
+        {
+          "category": "container-control",
+          "confidence_weight": 0.95,
+          "container_id": "10cc7f732aba75f0a67f65bf18202c377e99728711a345c8826105d0f836b76d",
+          "description": "Docker exec activity occurred during the observation window.",
+          "details": {
+            "action": "exec_die",
+            "command": "memcached"
+          },
+          "incident_eligible": false,
+          "name": "Docker Exec Activity",
+          "occurred_at": "2026-11-20T10:51:51.547631+00:00",
+          "rule_id": "POR-DET-006",
+          "severity_weight": 0.35,
+          "source_id": "7d8f7afa52c21427ac565547fc62e4822fe314d426e7cdb214a6fcf80a604f37",
+          "source_type": "runtime_event",
+          "summary": "Docker container action exec_die occurred."
+        }
+      ],
+      "metrics": {
+        "additional_unseen_executables": 0,
+        "correlation_window_seconds": 120,
+        "eligible_matches": 6,
+        "informational_matches": 21,
+        "process_events": 28,
+        "runtime_events": 21,
+        "source_types": [
+          "process_event",
+          "runtime_event"
+        ],
+        "suppressed_matches": 0
+      },
+      "rule_errors": [],
+      "ruleset_hash": "dfb4e9343108adb77b1a42d72438bc55b4aad3e267770fed9c9440522a8cbbf2",
+      "ruleset_version": "porygon.detection.v1",
+      "severity_level": "high",
+      "severity_score": 0.677768564829,
+      "status": "incident_created",
+      "summary": "6 incident-eligible rule match(es) correlated for memcached@sha256:a395a1bcf5e0e2b0fa4a0142e12b4e24a2320ba4b7c6ffa8655a1a86e8f29dee.",
+      "suppressed_matches": []
+    },
+    "ruleset_hash": "dfb4e9343108adb77b1a42d72438bc55b4aad3e267770fed9c9440522a8cbbf2",
+    "ruleset_version": "porygon.detection.v1",
+    "run_id": "1de49413-0d86-4e90-b6ac-d46fb8beec06",
+    "run_key": "58b98b66fc72085bae9f59370fb846b88c8e5f0a9726a36abdacfb1b5b079532",
+    "score_id": "ea529960-59be-4c3f-97e6-f47eaf5daa58",
+    "status": "incident_created",
+    "window_end": "2026-11-20T10:52:00Z",
+    "window_start": "2026-11-20T10:51:00Z"
+  },
+  "timeline": [
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "1c57443b-598f-4483-931f-3c6616aab613",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:01.278719Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 1,
+      "source_id": "d2e4aa4eadfa3d3116d0e246e81ea53c015849bc1c09d75aac0f701f020338ae",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "aa2a6882-f904-406b-83d1-86e759781f54",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:01.279143Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 2,
+      "source_id": "61b413e267f4a896b49ab7cccbec565b8c9d613e5abc3c4f14f4dbdf7effa6f1",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_die",
+        "command": "memcached"
+      },
+      "evidence_id": "33be41f1-905d-44d7-841c-286a291476e3",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:01.339663Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 3,
+      "source_id": "4fbf19d8b06546c8f976fadbb2546247debb9d0b4358f3d6aef14cfa84a54fbf",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "executable": "/usr/bin/dash",
+        "parent_event_id": null,
+        "process_chain": [
+          {
+            "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "sh",
+        "raw_executable": "/usr/bin/dash",
+        "user_uid": 0
+      },
+      "evidence_id": "2c3cdeef-de40-4d6d-95fe-e6bbbadf4b62",
+      "evidence_type": "privilege",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:04.989347Z",
+      "rule_id": "POR-DET-003",
+      "sequence_no": 4,
+      "source_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+      "source_type": "process_event",
+      "summary": "UID 0 process /usr/bin/dash was absent from the baseline user set."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "executable": "/usr/bin/id",
+        "parent_event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+        "process_chain": [
+          {
+            "event_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+            "executable": "/usr/bin/id",
+            "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "id",
+        "raw_executable": "/usr/bin/id",
+        "user_uid": 0
+      },
+      "evidence_id": "ea88b9c9-f327-4a42-b21c-cd9868b8f636",
+      "evidence_type": "privilege",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:04.990151Z",
+      "rule_id": "POR-DET-003",
+      "sequence_no": 5,
+      "source_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+      "source_type": "process_event",
+      "summary": "UID 0 process /usr/bin/id was absent from the baseline user set."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "command_line": "id",
+        "executable": "/usr/bin/id",
+        "parent_executable": "/usr/bin/dash",
+        "parent_name": "sh",
+        "process_chain": [
+          {
+            "event_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+            "executable": "/usr/bin/id",
+            "occurred_at": "2026-11-20T10:51:04.990151+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "id",
+        "raw_executable": "/usr/bin/id",
+        "raw_parent_executable": "/usr/bin/dash"
+      },
+      "evidence_id": "93793ff4-9a05-4e9b-a4a1-2904e383058d",
+      "evidence_type": "execution",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:04.990151Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 6,
+      "source_id": "c36525dcea1419f346f4a6a7a53f12380af3ca9d0027b5e398253f88af49ecd6",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/id executed."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "executable": "/usr/bin/ls",
+        "parent_event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+        "process_chain": [
+          {
+            "event_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+            "executable": "/usr/bin/ls",
+            "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "ls",
+        "raw_executable": "/usr/bin/ls",
+        "user_uid": 0
+      },
+      "evidence_id": "fb889fc3-19a6-440c-8160-0d1d783948cd",
+      "evidence_type": "privilege",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:04.990845Z",
+      "rule_id": "POR-DET-003",
+      "sequence_no": 7,
+      "source_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+      "source_type": "process_event",
+      "summary": "UID 0 process /usr/bin/ls was absent from the baseline user set."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "command_line": "ls -la /root",
+        "executable": "/usr/bin/ls",
+        "parent_executable": "/usr/bin/dash",
+        "parent_name": "sh",
+        "process_chain": [
+          {
+            "event_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+            "executable": "/usr/bin/ls",
+            "occurred_at": "2026-11-20T10:51:04.990845+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "ls",
+        "raw_executable": "/usr/bin/ls",
+        "raw_parent_executable": "/usr/bin/dash"
+      },
+      "evidence_id": "1fc0294c-86fd-4d2c-80d3-57c679a344ec",
+      "evidence_type": "execution",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:04.990845Z",
+      "rule_id": "POR-DET-004",
+      "sequence_no": 8,
+      "source_id": "ef4f51edb90e62f63a0d4ab543cbd1d45452cc4231bc531635d29d0f62ed7fac",
+      "source_type": "process_event",
+      "summary": "Previously unseen non-shell executable /usr/bin/ls executed."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "executable": "/usr/bin/head",
+        "parent_event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+        "process_chain": [
+          {
+            "event_id": "2f27c8dfee50783229d4eceaa2ca8f7e373cb61cc4e630782505b1bd639bae3d",
+            "executable": "/usr/bin/head",
+            "occurred_at": "2026-11-20T10:51:04.991922+00:00",
+            "parent_executable": "/usr/bin/dash"
+          },
+          {
+            "event_id": "bbbc6e3335246025297e29c17f27661a3a077a2cd7eb1fd0954d927a0495ff7e",
+            "executable": "/usr/bin/dash",
+            "occurred_at": "2026-11-20T10:51:04.989347+00:00",
+            "parent_executable": "/usr/bin/containerd-shim-runc-v2"
+          }
+        ],
+        "process_name": "head",
+        "raw_executable": "/usr/bin/head",
+        "user_uid": 0
+      },
+      "evidence_id": "33d86b86-20a8-49da-b256-79afa9436076",
+      "evidence_type": "privilege",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:04.991922Z",
+      "rule_id": "POR-DET-003",
+      "sequence_no": 9,
+      "source_id": "2f27c8dfee50783229d4eceaa2ca8f7e373cb61cc4e630782505b1bd639bae3d",
+      "source_type": "process_event",
+      "summary": "UID 0 process /usr/bin/head was absent from the baseline user set."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c id; ls -la /root; head -n 5 /proc/1/status"
+      },
+      "evidence_id": "e679869b-c903-4598-ac85-238a47a4ce38",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:05.041240Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 10,
+      "source_id": "ac20c6a7496861a8c5b84f2fcd6e0dc82cc149f5bb3346eaac0a43393bcfe329",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c id; ls -la /root; head -n 5 /proc/1/status"
+      },
+      "evidence_id": "37b58afd-f2c1-419d-9a62-06de79016df9",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:05.044255Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 11,
+      "source_id": "8caf7db81c589ffe78e1e1ebfd33b6fe6062f41181a288cdaac0104524ccd2b5",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_die",
+        "command": "memcached"
+      },
+      "evidence_id": "774b796b-14b2-460d-af3b-881d45074d57",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:05.081790Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 12,
+      "source_id": "e34f6abd414c60674f3f0a5b24ec524820ac8891d8da52aa6927bbfef1bc4bb7",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "1baf3bf1-f615-4781-a8ef-350451f98640",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:11.340519Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 13,
+      "source_id": "8cbe1e592cf0a6cbc8d64f26833cf80e58272236eaafbe9ace71109360f5df51",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "1679f04b-dd73-419e-b9aa-5513a3345d96",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:11.340967Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 14,
+      "source_id": "c1e3d243a763e5688859d4f11e524515b2c279777bf27aea3cecfd66df424f1b",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_die",
+        "command": "memcached"
+      },
+      "evidence_id": "bdeebe75-c2e0-46c7-8545-bd90e4d610fb",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:11.393217Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 15,
+      "source_id": "dcc5f05b856549bf7a6e31d2a3ecf61de3b7f78917bdb3d5f0c26a3f55a45d93",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "d4a823b8-f833-484a-a9c6-4faea479466f",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:21.394500Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 16,
+      "source_id": "ded659144fa7c8e6e960187405be1e80964d6dcd06900425a72e8c8dd5fe3154",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "f3768a1a-8584-4c3d-94ea-f64ab4818dc7",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:21.394613Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 17,
+      "source_id": "cd259d217fa63a9e4fc2cde210c9cea955ca750bfa8efb08d01c5ec5baf7084b",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_die",
+        "command": "memcached"
+      },
+      "evidence_id": "e59c9d84-a8d3-4635-b210-6926ff2c215d",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:21.417511Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 18,
+      "source_id": "83b61913523c476de03a2930a8f9933da928c102f3e7b346a78120169072cb24",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "2d7764f7-b272-4813-af56-58d9a89d2a72",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:31.418010Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 19,
+      "source_id": "b84ed7f3f022bb10a4a69420deb51b000ac156a5aadc5ee7516655873a7e716c",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "85d28138-7a6c-4ee2-8bcc-7279acffb410",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:31.418171Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 20,
+      "source_id": "10e4794581acae09360982e9bb3affb68d309a3783842ee2ac5cfa2bb6e45833",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_die",
+        "command": "memcached"
+      },
+      "evidence_id": "c509be71-02a1-4f8b-ae05-fbd01abb68c9",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:31.451108Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 21,
+      "source_id": "aa1602db9fae475eac60273d3cc3e00fb47c9769960bd88fc283960cf7bc82a7",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "6f97e93a-1cbe-48aa-978a-07c26b800451",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:41.451910Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 22,
+      "source_id": "55fb17cac367a04ac6095e5f94ebefb1a61710ecd26de39c23ead4e2d796131d",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "c9f7f856-bc6d-417d-abaa-7331790acc29",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:41.452702Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 23,
+      "source_id": "686fa660bcddb0a81d0a6d1c665c967d0f28e3d9e36dc8680f08dd7c5bb596d7",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_die",
+        "command": "memcached"
+      },
+      "evidence_id": "053ebd15-4dd6-448d-a060-36edd90dfa2a",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:41.496104Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 24,
+      "source_id": "57f9b5de722320d3cece341b5da9e3f11c30507b998c58e4eb197ea34a4ca0e6",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_create",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "8c36d98c-25b8-4915-ba77-73ec7decd6d1",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:51.499668Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 25,
+      "source_id": "e70422d0686ab57a27bf37d8dac62301a95426f0a36154b58784641ea86c224b",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_create occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_start",
+        "command": "/bin/sh -c bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211 && printf \"version\\r\\n\" >&3 && head -c 7 <&3 | grep -q VERSION'"
+      },
+      "evidence_id": "0b748d28-16b1-45b4-894d-716f60547e01",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:51.500056Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 26,
+      "source_id": "252f7a7e7ec820b03991edc147387cf447600fb3d148820b54b944f6a40a32a1",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_start occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "action": "exec_die",
+        "command": "memcached"
+      },
+      "evidence_id": "bea04306-b787-4d82-9153-d8a711079a28",
+      "evidence_type": "container-control",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:51:51.547631Z",
+      "rule_id": "POR-DET-006",
+      "sequence_no": 27,
+      "source_id": "7d8f7afa52c21427ac565547fc62e4822fe314d426e7cdb214a6fcf80a604f37",
+      "source_type": "runtime_event",
+      "summary": "Docker container action exec_die occurred."
+    },
+    {
+      "created_at": "2026-11-20T10:52:45.048072Z",
+      "details": {
+        "algorithm_version": "porygon.distance.v1",
+        "profile_id": "26da9485-82c8-490e-ab02-a4a3fc0e7546",
+        "profile_version": 1,
+        "score_band": "baseline_like",
+        "total_score": 0.14505304237
+      },
+      "evidence_id": "44270f85-6d65-4f2e-a54a-6facc3494022",
+      "evidence_type": "behavioural_distance",
+      "incident_id": "472c5b5e-ca25-457d-b666-707e42e7b88d",
+      "occurred_at": "2026-11-20T10:52:00Z",
+      "rule_id": null,
+      "sequence_no": 28,
+      "source_id": "ea529960-59be-4c3f-97e6-f47eaf5daa58",
+      "source_type": "anomaly_score",
+      "summary": "Observed behavioural distance was 0.145 (baseline_like)."
+    }
+  ]
+}

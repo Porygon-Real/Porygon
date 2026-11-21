@@ -1,0 +1,525 @@
+test -x .venv/bin/python || python3 -m venv .venv
+.venv/bin/python -c 'import pymysql, pymongo, pika, pg8000' 2>/dev/null || \
+		.venv/bin/pip install pymysql pymongo pika pg8000 paho-mqtt
+docker compose up -d --build --wait postgres backend gateway collector telemetry falco falco-events-init
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.56kB done
+#1 DONE 0.0s
+
+#2 [collector internal] load build definition from Dockerfile
+#2 transferring dockerfile: 633B done
+#2 DONE 0.0s
+
+#3 [backend internal] load build definition from Dockerfile
+#3 transferring dockerfile: 628B done
+#3 DONE 0.0s
+
+#4 [telemetry internal] load build definition from Dockerfile
+#4 transferring dockerfile: 667B done
+#4 DONE 0.0s
+
+#5 [telemetry internal] load metadata for docker.io/library/python:3.13.13-slim-bookworm
+#5 ...
+
+#6 [auth] library/python:pull token for registry-1.docker.io
+#6 DONE 0.0s
+
+#5 [telemetry internal] load metadata for docker.io/library/python:3.13.13-slim-bookworm
+#5 DONE 2.1s
+
+#7 [collector internal] load .dockerignore
+#7 transferring context: 2B done
+#7 DONE 0.0s
+
+#8 [backend internal] load .dockerignore
+#8 transferring context: 2B done
+#8 DONE 0.0s
+
+#9 [telemetry internal] load .dockerignore
+#9 transferring context: 2B done
+#9 DONE 0.0s
+
+#10 [telemetry 1/7] FROM docker.io/library/python:3.13.13-slim-bookworm@sha256:355bfa66770995d7e9a0da4b3473b44d0cb451f6b56f5615ad9c39e3c4eca03f
+#10 DONE 0.0s
+
+#11 [collector internal] load build context
+#11 transferring context: 755B done
+#11 DONE 0.0s
+
+#12 [telemetry internal] load build context
+#12 transferring context: 736B done
+#12 DONE 0.0s
+
+#13 [backend internal] load build context
+#13 transferring context: 3.81kB done
+#13 DONE 0.0s
+
+#14 [collector 5/7] COPY src ./src
+#14 CACHED
+
+#15 [collector 4/7] COPY pyproject.toml ./
+#15 CACHED
+
+#16 [collector 6/7] COPY tests ./tests
+#16 CACHED
+
+#17 [collector 3/7] RUN groupadd --gid 10002 porygon     && useradd --uid 10002 --gid porygon --create-home --shell /usr/sbin/nologin porygon
+#17 CACHED
+
+#18 [collector 7/7] RUN mkdir -p /var/lib/porygon     && pip install --no-cache-dir ".[test]"     && chown -R porygon:porygon /app /var/lib/porygon
+#18 CACHED
+
+#19 [backend  7/10] COPY alembic ./alembic
+#19 CACHED
+
+#20 [backend  3/10] RUN groupadd --gid 10001 porygon     && useradd --uid 10001 --gid porygon --create-home --shell /usr/sbin/nologin porygon
+#20 CACHED
+
+#21 [backend  4/10] COPY pyproject.toml ./
+#21 CACHED
+
+#22 [backend  9/10] COPY tests ./tests
+#22 CACHED
+
+#23 [backend  5/10] COPY src ./src
+#23 CACHED
+
+#24 [backend  8/10] COPY entrypoint.sh ./entrypoint.sh
+#24 CACHED
+
+#25 [backend  6/10] COPY alembic.ini ./
+#25 CACHED
+
+#26 [backend 10/10] RUN pip install --no-cache-dir ".[test]"     && chmod 0555 /app/entrypoint.sh     && chown -R porygon:porygon /app
+#26 CACHED
+
+#27 [telemetry 2/7] WORKDIR /app
+#27 CACHED
+
+#28 [telemetry 5/7] COPY src ./src
+#28 CACHED
+
+#29 [telemetry 3/7] RUN groupadd --gid 10003 porygon     && useradd --uid 10003 --gid porygon --create-home --shell /usr/sbin/nologin porygon
+#29 CACHED
+
+#30 [telemetry 6/7] COPY tests ./tests
+#30 CACHED
+
+#31 [telemetry 4/7] COPY pyproject.toml ./
+#31 CACHED
+
+#32 [telemetry 7/7] RUN mkdir -p /var/lib/porygon /var/log/porygon     && pip install --no-cache-dir ".[test]"     && chown -R porygon:porygon /app /var/lib/porygon /var/log/porygon
+#32 CACHED
+
+#33 [backend] exporting to image
+#33 exporting layers done
+#33 writing image sha256:83b4854da6ddaa0eba5fa90d625fb55c0340d2ea8f8a8a8e78bbe5222893509b done
+#33 naming to docker.io/library/porygon-backend done
+#33 DONE 0.0s
+
+#34 [telemetry] exporting to image
+#34 exporting layers done
+#34 writing image sha256:9abfefeb3a1eb2713fa163e1e17bbfb1796736751e16f72f49cf8e974169ef94 done
+#34 naming to docker.io/library/porygon-telemetry done
+#34 DONE 0.0s
+
+#35 [collector] exporting to image
+#35 exporting layers done
+#35 writing image sha256:2d5977898b00d3151c978da537e8d86573cf3b727a87ca6ac890dcbb791f0d34 done
+#35 naming to docker.io/library/porygon-collector done
+#35 DONE 0.0s
+
+#36 [telemetry] resolving provenance for metadata file
+#36 DONE 0.0s
+
+#37 [collector] resolving provenance for metadata file
+#37 DONE 0.0s
+
+#38 [backend] resolving provenance for metadata file
+#38 DONE 0.0s
+ porygon-collector  Built
+ porygon-telemetry  Built
+ porygon-backend  Built
+ Container porygon-postgres-1  Running
+ Container porygon-falco-1  Running
+ Container porygon-backend-1  Running
+ Container porygon-telemetry-1  Running
+ Container porygon-gateway-1  Running
+ Container porygon-collector-1  Recreate
+ Container porygon-collector-1  Recreated
+ Container porygon-postgres-1  Waiting
+ Container porygon-falco-events-init-1  Starting
+ Container porygon-falco-events-init-1  Started
+ Container porygon-falco-events-init-1  Waiting
+ Container porygon-postgres-1  Healthy
+ Container porygon-backend-1  Waiting
+ Container porygon-backend-1  Waiting
+ Container porygon-backend-1  Waiting
+ Container porygon-falco-events-init-1  Waiting
+ Container porygon-falco-events-init-1  Exited
+ Container porygon-falco-events-init-1  Exited
+ Container porygon-backend-1  Healthy
+ Container porygon-backend-1  Healthy
+ Container porygon-backend-1  Healthy
+ Container porygon-collector-1  Starting
+ Container porygon-collector-1  Started
+ Container porygon-postgres-1  Waiting
+ Container porygon-backend-1  Waiting
+ Container porygon-gateway-1  Waiting
+ Container porygon-telemetry-1  Waiting
+ Container porygon-falco-1  Waiting
+ Container porygon-collector-1  Waiting
+ Container porygon-falco-events-init-1  Waiting
+ Container porygon-falco-events-init-1  Exited
+ Container porygon-gateway-1  Healthy
+ Container porygon-falco-1  Healthy
+ Container porygon-backend-1  Healthy
+ Container porygon-postgres-1  Healthy
+ Container porygon-telemetry-1  Healthy
+ Container porygon-collector-1  Healthy
+test -x .venv/bin/python || python3 -m venv .venv
+.venv/bin/python -c 'import pymysql, pymongo, pika, pg8000' 2>/dev/null || \
+		.venv/bin/pip install pymysql pymongo pika pg8000 paho-mqtt
+docker compose up -d --build --wait postgres backend gateway collector telemetry falco falco-events-init
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.56kB done
+#1 DONE 0.0s
+
+#2 [backend internal] load build definition from Dockerfile
+#2 transferring dockerfile: 628B done
+#2 DONE 0.0s
+
+#3 [collector internal] load build definition from Dockerfile
+#3 transferring dockerfile: 633B done
+#3 DONE 0.0s
+
+#4 [telemetry internal] load build definition from Dockerfile
+#4 transferring dockerfile: 667B done
+#4 DONE 0.0s
+
+#5 [telemetry internal] load metadata for docker.io/library/python:3.13.13-slim-bookworm
+#5 DONE 0.5s
+
+#6 [telemetry internal] load .dockerignore
+#6 transferring context: 2B done
+#6 DONE 0.0s
+
+#7 [backend internal] load .dockerignore
+#7 transferring context: 2B done
+#7 DONE 0.0s
+
+#8 [collector internal] load .dockerignore
+#8 transferring context: 2B done
+#8 DONE 0.0s
+
+#9 [collector 1/7] FROM docker.io/library/python:3.13.13-slim-bookworm@sha256:355bfa66770995d7e9a0da4b3473b44d0cb451f6b56f5615ad9c39e3c4eca03f
+#9 DONE 0.0s
+
+#10 [telemetry internal] load build context
+#10 transferring context: 736B done
+#10 DONE 0.0s
+
+#11 [backend internal] load build context
+#11 transferring context: 3.81kB done
+#11 DONE 0.0s
+
+#12 [collector internal] load build context
+#12 transferring context: 755B done
+#12 DONE 0.0s
+
+#13 [backend  5/10] COPY src ./src
+#13 CACHED
+
+#14 [backend  6/10] COPY alembic.ini ./
+#14 CACHED
+
+#15 [backend  4/10] COPY pyproject.toml ./
+#15 CACHED
+
+#16 [backend  3/10] RUN groupadd --gid 10001 porygon     && useradd --uid 10001 --gid porygon --create-home --shell /usr/sbin/nologin porygon
+#16 CACHED
+
+#17 [backend  7/10] COPY alembic ./alembic
+#17 CACHED
+
+#18 [backend  8/10] COPY entrypoint.sh ./entrypoint.sh
+#18 CACHED
+
+#19 [backend  9/10] COPY tests ./tests
+#19 CACHED
+
+#20 [backend 10/10] RUN pip install --no-cache-dir ".[test]"     && chmod 0555 /app/entrypoint.sh     && chown -R porygon:porygon /app
+#20 CACHED
+
+#21 [telemetry 3/7] RUN groupadd --gid 10003 porygon     && useradd --uid 10003 --gid porygon --create-home --shell /usr/sbin/nologin porygon
+#21 CACHED
+
+#22 [telemetry 4/7] COPY pyproject.toml ./
+#22 CACHED
+
+#23 [telemetry 5/7] COPY src ./src
+#23 CACHED
+
+#24 [telemetry 6/7] COPY tests ./tests
+#24 CACHED
+
+#25 [telemetry 7/7] RUN mkdir -p /var/lib/porygon /var/log/porygon     && pip install --no-cache-dir ".[test]"     && chown -R porygon:porygon /app /var/lib/porygon /var/log/porygon
+#25 CACHED
+
+#26 [collector 5/7] COPY src ./src
+#26 CACHED
+
+#27 [collector 4/7] COPY pyproject.toml ./
+#27 CACHED
+
+#28 [collector 3/7] RUN groupadd --gid 10002 porygon     && useradd --uid 10002 --gid porygon --create-home --shell /usr/sbin/nologin porygon
+#28 CACHED
+
+#29 [collector 6/7] COPY tests ./tests
+#29 CACHED
+
+#30 [backend 2/7] WORKDIR /app
+#30 CACHED
+
+#31 [collector 7/7] RUN mkdir -p /var/lib/porygon     && pip install --no-cache-dir ".[test]"     && chown -R porygon:porygon /app /var/lib/porygon
+#31 CACHED
+
+#32 [backend] exporting to image
+#32 exporting layers done
+#32 writing image sha256:83b4854da6ddaa0eba5fa90d625fb55c0340d2ea8f8a8a8e78bbe5222893509b done
+#32 naming to docker.io/library/porygon-backend done
+#32 DONE 0.0s
+
+#33 [telemetry] exporting to image
+#33 exporting layers done
+#33 writing image sha256:9abfefeb3a1eb2713fa163e1e17bbfb1796736751e16f72f49cf8e974169ef94 done
+#33 naming to docker.io/library/porygon-telemetry done
+#33 DONE 0.0s
+
+#34 [collector] exporting to image
+#34 exporting layers done
+#34 writing image sha256:2d5977898b00d3151c978da537e8d86573cf3b727a87ca6ac890dcbb791f0d34 0.0s done
+#34 naming to docker.io/library/porygon-collector done
+#34 DONE 0.0s
+
+#35 [telemetry] resolving provenance for metadata file
+#35 DONE 0.0s
+
+#36 [collector] resolving provenance for metadata file
+#36 DONE 0.0s
+
+#37 [backend] resolving provenance for metadata file
+#37 DONE 0.0s
+ porygon-backend  Built
+ porygon-collector  Built
+ porygon-telemetry  Built
+ Container porygon-postgres-1  Running
+ Container porygon-falco-1  Running
+ Container porygon-backend-1  Running
+ Container porygon-collector-1  Running
+ Container porygon-gateway-1  Running
+ Container porygon-telemetry-1  Running
+ Container porygon-falco-events-init-1  Starting
+ Container porygon-postgres-1  Waiting
+ Container porygon-falco-events-init-1  Started
+ Container porygon-falco-events-init-1  Waiting
+ Container porygon-postgres-1  Healthy
+ Container porygon-backend-1  Waiting
+ Container porygon-backend-1  Waiting
+ Container porygon-falco-events-init-1  Waiting
+ Container porygon-backend-1  Waiting
+ Container porygon-falco-events-init-1  Exited
+ Container porygon-falco-events-init-1  Exited
+ Container porygon-backend-1  Healthy
+ Container porygon-backend-1  Healthy
+ Container porygon-backend-1  Healthy
+ Container porygon-falco-1  Waiting
+ Container porygon-gateway-1  Waiting
+ Container porygon-backend-1  Waiting
+ Container porygon-postgres-1  Waiting
+ Container porygon-falco-events-init-1  Waiting
+ Container porygon-telemetry-1  Waiting
+ Container porygon-collector-1  Waiting
+ Container porygon-backend-1  Healthy
+ Container porygon-falco-1  Healthy
+ Container porygon-gateway-1  Healthy
+ Container porygon-collector-1  Healthy
+ Container porygon-falco-events-init-1  Exited
+ Container porygon-postgres-1  Healthy
+ Container porygon-telemetry-1  Healthy
+test -x .venv/bin/python || python3 -m venv .venv
+.venv/bin/python -c 'import pymysql, pymongo, pika, pg8000' 2>/dev/null || \
+		.venv/bin/pip install pymysql pymongo pika pg8000 paho-mqtt
+docker compose up -d --build --wait postgres backend gateway collector telemetry falco falco-events-init
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.56kB done
+#1 DONE 0.0s
+
+#2 [collector internal] load build definition from Dockerfile
+#2 transferring dockerfile: 633B done
+#2 DONE 0.0s
+
+#3 [backend internal] load build definition from Dockerfile
+#3 transferring dockerfile: 628B done
+#3 DONE 0.0s
+
+#4 [telemetry internal] load build definition from Dockerfile
+#4 transferring dockerfile: 667B done
+#4 DONE 0.0s
+
+#5 [telemetry internal] load metadata for docker.io/library/python:3.13.13-slim-bookworm
+#5 ...
+
+#6 [auth] library/python:pull token for registry-1.docker.io
+#6 DONE 0.0s
+
+#5 [telemetry internal] load metadata for docker.io/library/python:3.13.13-slim-bookworm
+#5 DONE 1.9s
+
+#7 [backend internal] load .dockerignore
+#7 transferring context: 2B done
+#7 DONE 0.0s
+
+#8 [collector internal] load .dockerignore
+#8 transferring context: 2B done
+#8 DONE 0.0s
+
+#9 [telemetry internal] load .dockerignore
+#9 transferring context: 2B done
+#9 DONE 0.0s
+
+#10 [telemetry  1/10] FROM docker.io/library/python:3.13.13-slim-bookworm@sha256:355bfa66770995d7e9a0da4b3473b44d0cb451f6b56f5615ad9c39e3c4eca03f
+#10 DONE 0.0s
+
+#11 [backend internal] load build context
+#11 transferring context: 3.81kB done
+#11 DONE 0.0s
+
+#12 [collector internal] load build context
+#12 transferring context: 755B done
+#12 DONE 0.0s
+
+#13 [telemetry internal] load build context
+#13 transferring context: 736B done
+#13 DONE 0.0s
+
+#14 [collector 3/7] RUN groupadd --gid 10002 porygon     && useradd --uid 10002 --gid porygon --create-home --shell /usr/sbin/nologin porygon
+#14 CACHED
+
+#15 [collector 5/7] COPY src ./src
+#15 CACHED
+
+#16 [collector 4/7] COPY pyproject.toml ./
+#16 CACHED
+
+#17 [collector 6/7] COPY tests ./tests
+#17 CACHED
+
+#18 [collector 7/7] RUN mkdir -p /var/lib/porygon     && pip install --no-cache-dir ".[test]"     && chown -R porygon:porygon /app /var/lib/porygon
+#18 CACHED
+
+#19 [backend  9/10] COPY tests ./tests
+#19 CACHED
+
+#20 [backend  6/10] COPY alembic.ini ./
+#20 CACHED
+
+#21 [backend  3/10] RUN groupadd --gid 10001 porygon     && useradd --uid 10001 --gid porygon --create-home --shell /usr/sbin/nologin porygon
+#21 CACHED
+
+#22 [backend  4/10] COPY pyproject.toml ./
+#22 CACHED
+
+#23 [backend  8/10] COPY entrypoint.sh ./entrypoint.sh
+#23 CACHED
+
+#24 [backend  7/10] COPY alembic ./alembic
+#24 CACHED
+
+#25 [backend  5/10] COPY src ./src
+#25 CACHED
+
+#26 [backend 10/10] RUN pip install --no-cache-dir ".[test]"     && chmod 0555 /app/entrypoint.sh     && chown -R porygon:porygon /app
+#26 CACHED
+
+#27 [telemetry  2/10] WORKDIR /app
+#27 CACHED
+
+#28 [telemetry 4/7] COPY pyproject.toml ./
+#28 CACHED
+
+#29 [telemetry 5/7] COPY src ./src
+#29 CACHED
+
+#30 [telemetry 3/7] RUN groupadd --gid 10003 porygon     && useradd --uid 10003 --gid porygon --create-home --shell /usr/sbin/nologin porygon
+#30 CACHED
+
+#31 [telemetry 6/7] COPY tests ./tests
+#31 CACHED
+
+#32 [telemetry 7/7] RUN mkdir -p /var/lib/porygon /var/log/porygon     && pip install --no-cache-dir ".[test]"     && chown -R porygon:porygon /app /var/lib/porygon /var/log/porygon
+#32 CACHED
+
+#33 [backend] exporting to image
+#33 exporting layers done
+#33 writing image sha256:83b4854da6ddaa0eba5fa90d625fb55c0340d2ea8f8a8a8e78bbe5222893509b done
+#33 naming to docker.io/library/porygon-backend done
+#33 DONE 0.0s
+
+#34 [telemetry] exporting to image
+#34 exporting layers done
+#34 writing image sha256:9abfefeb3a1eb2713fa163e1e17bbfb1796736751e16f72f49cf8e974169ef94 done
+#34 naming to docker.io/library/porygon-telemetry done
+#34 DONE 0.0s
+
+#35 [collector] exporting to image
+#35 exporting layers done
+#35 writing image sha256:2d5977898b00d3151c978da537e8d86573cf3b727a87ca6ac890dcbb791f0d34 0.0s done
+#35 naming to docker.io/library/porygon-collector done
+#35 DONE 0.0s
+
+#36 [backend] resolving provenance for metadata file
+#36 DONE 0.0s
+
+#37 [telemetry] resolving provenance for metadata file
+#37 DONE 0.0s
+
+#38 [collector] resolving provenance for metadata file
+#38 DONE 0.0s
+ porygon-backend  Built
+ porygon-collector  Built
+ porygon-telemetry  Built
+ Container porygon-postgres-1  Running
+ Container porygon-falco-1  Running
+ Container porygon-backend-1  Running
+ Container porygon-gateway-1  Running
+ Container porygon-collector-1  Running
+ Container porygon-telemetry-1  Running
+ Container porygon-postgres-1  Waiting
+ Container porygon-falco-events-init-1  Starting
+ Container porygon-falco-events-init-1  Started
+ Container porygon-falco-events-init-1  Waiting
+ Container porygon-postgres-1  Healthy
+ Container porygon-backend-1  Waiting
+ Container porygon-falco-events-init-1  Waiting
+ Container porygon-backend-1  Waiting
+ Container porygon-backend-1  Waiting
+ Container porygon-falco-events-init-1  Exited
+ Container porygon-falco-events-init-1  Exited
+ Container porygon-backend-1  Healthy
+ Container porygon-backend-1  Healthy
+ Container porygon-backend-1  Healthy
+ Container porygon-gateway-1  Waiting
+ Container porygon-falco-events-init-1  Waiting
+ Container porygon-collector-1  Waiting
+ Container porygon-backend-1  Waiting
+ Container porygon-postgres-1  Waiting
+ Container porygon-telemetry-1  Waiting
+ Container porygon-falco-1  Waiting
+ Container porygon-falco-events-init-1  Exited
+ Container porygon-backend-1  Healthy
+ Container porygon-collector-1  Healthy
+ Container porygon-postgres-1  Healthy
+ Container porygon-falco-1  Healthy
+ Container porygon-gateway-1  Healthy
+ Container porygon-telemetry-1  Healthy

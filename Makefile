@@ -1,11 +1,11 @@
 SHELL := /bin/bash
 
-.PHONY: init config build up down reset logs ps test verify verify-static verify-unit verify-live-safe verify-scanner-live verify-experiment-live verify-response-live experiment-smoke experiment-replay experiment-pilot experiment-validate experiment-confirmatory study review-package review-status review-apply
+.PHONY: init config build up down reset logs ps test verify verify-static verify-unit verify-live-safe verify-scanner-live verify-experiment-live verify-response-live experiment-smoke experiment-replay experiment-pilot experiment-validate experiment-confirmatory study review-package review-status review-apply runtime-cleanup runtime-prefetch runtime-venv runtime-up runtime-image runtime-all runtime-build runtime-batch2 runtime-check-recipe runtime-verify-batch1
 
 init:
 	@test -f .env || (cp .env.example .env && \
-		python3 -c 'from functools import reduce; import os, secrets; from pathlib import Path; p=Path(".env"); replacements={"replace-with-a-long-local-development-password":secrets.token_urlsafe(32),"replace-with-at-least-32-random-characters":secrets.token_urlsafe(48),"replace-with-a-different-32-character-random-token":secrets.token_urlsafe(48),"replace-with-docker-socket-gid":str(os.stat("/var/run/docker.sock").st_gid)}; p.write_text(reduce(lambda value, item: value.replace(*item), replacements.items(), p.read_text(encoding="utf-8")), encoding="utf-8")' && \
-		chmod 0600 .env && echo "Created .env with separate local credentials and the Docker socket GID.")
+		python3 -c 'from functools import reduce; import os, secrets, sys; from pathlib import Path; p=Path(".env"); socket_gid=0 if sys.platform == "darwin" else os.stat("/var/run/docker.sock").st_gid; replacements={"replace-with-a-long-local-development-password":secrets.token_urlsafe(32),"replace-with-at-least-32-random-characters":secrets.token_urlsafe(48),"replace-with-a-different-32-character-random-token":secrets.token_urlsafe(48),"replace-with-docker-socket-gid":str(socket_gid)}; p.write_text(reduce(lambda value, item: value.replace(*item), replacements.items(), p.read_text(encoding="utf-8")), encoding="utf-8")' && \
+		chmod 0600 .env && echo "Created .env with separate local credentials and the Docker socket group ID.")
 
 config:
 	docker compose config --quiet
@@ -88,3 +88,49 @@ experiment-validate:
 
 experiment-confirmatory:
 	python3 -m experiments.run confirmatory --protocol "$(or $(PROTOCOL),docs/research/research-protocol.md)"
+
+# Runtime monitoring dataset (see scripts/runtime/). Native arm64 images, each run live
+# for one hour through Falco -> Porygon. The responder service stays off.
+RUNTIME_SERVICES := postgres backend gateway collector telemetry falco falco-events-init
+
+runtime-cleanup:
+	python3 scripts/runtime/cleanup_amd64.py
+
+runtime-prefetch:
+	python3 scripts/runtime/prefetch_arm64.py
+
+# pg8000 drives postgres and paho-mqtt is kept available alongside the stdlib MQTT driver.
+runtime-venv:
+	test -x .venv/bin/python || python3 -m venv .venv
+	.venv/bin/python -c 'import pymysql, pymongo, pika, pg8000' 2>/dev/null || \
+		.venv/bin/pip install pymysql pymongo pika pg8000 paho-mqtt
+
+runtime-up: runtime-venv
+	docker compose up -d --build --wait $(RUNTIME_SERVICES)
+
+runtime-image: runtime-up
+	@test -n "$(IMAGE)" || (echo "IMAGE is required, e.g. make runtime-image IMAGE=redis" >&2; exit 2)
+	caffeinate -i .venv/bin/python scripts/runtime/run_image.py $(IMAGE)
+
+runtime-all: runtime-up
+	caffeinate -i .venv/bin/python scripts/runtime/run_batch.py
+
+runtime-build:
+	python3 scripts/runtime/export.py
+	python3 scripts/runtime/validate.py
+
+# Batch 2 (held-out images): the whole unattended collection, detached so it
+# survives the shell that starts it. Progress: datasets/runtime/logs/batch2-run.log.
+runtime-batch2: runtime-up
+	mkdir -p datasets/runtime/logs
+	nohup caffeinate -i -s scripts/runtime/run_batch2.sh > datasets/runtime/logs/batch2-run.log 2>&1 &
+	@echo "batch 2 started; follow datasets/runtime/logs/batch2-run.log"
+
+# Check a recipe (start, healthcheck, driver, admin, logs, restart) without collecting data.
+runtime-check-recipe:
+	@test -n "$(IMAGE)" || (echo "IMAGE is required, e.g. make runtime-check-recipe IMAGE=nginx" >&2; exit 2)
+	.venv/bin/python scripts/runtime/check_recipe.py $(IMAGE)
+
+# Confirm batch 1's rows and figures are identical to the pre-batch-2 snapshot.
+runtime-verify-batch1:
+	.venv/bin/python scripts/runtime/verify_batch1_unchanged.py
