@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: init config build up down reset logs ps test verify verify-static verify-unit verify-live-safe verify-scanner-live verify-experiment-live verify-response-live experiment-smoke experiment-replay experiment-pilot experiment-validate experiment-confirmatory study review-package review-status review-apply
+.PHONY: init config build up down reset logs ps test verify verify-static verify-unit verify-live-safe verify-scanner-live verify-experiment-live verify-response-live experiment-smoke experiment-replay experiment-pilot experiment-validate experiment-confirmatory study review-package review-status review-apply runtime-cleanup runtime-prefetch runtime-venv runtime-up runtime-image runtime-all runtime-build
 
 init:
 	@test -f .env || (cp .env.example .env && \
@@ -88,3 +88,33 @@ experiment-validate:
 
 experiment-confirmatory:
 	python3 -m experiments.run confirmatory --protocol "$(or $(PROTOCOL),docs/research/research-protocol.md)"
+
+# Runtime monitoring dataset (see scripts/runtime/). Native arm64 images, each run live
+# for one hour through Falco -> Porygon. The responder service stays off.
+RUNTIME_SERVICES := postgres backend gateway collector telemetry falco falco-events-init
+
+runtime-cleanup:
+	python3 scripts/runtime/cleanup_amd64.py
+
+runtime-prefetch:
+	python3 scripts/runtime/prefetch_arm64.py
+
+# pg8000 drives postgres and paho-mqtt is kept available alongside the stdlib MQTT driver.
+runtime-venv:
+	test -x .venv/bin/python || python3 -m venv .venv
+	.venv/bin/python -c 'import pymysql, pymongo, pika, pg8000' 2>/dev/null || \
+		.venv/bin/pip install pymysql pymongo pika pg8000 paho-mqtt
+
+runtime-up: runtime-venv
+	docker compose up -d --build --wait $(RUNTIME_SERVICES)
+
+runtime-image: runtime-up
+	@test -n "$(IMAGE)" || (echo "IMAGE is required, e.g. make runtime-image IMAGE=redis" >&2; exit 2)
+	caffeinate -i .venv/bin/python scripts/runtime/run_image.py $(IMAGE)
+
+runtime-all: runtime-up
+	caffeinate -i .venv/bin/python scripts/runtime/run_batch.py
+
+runtime-build:
+	python3 scripts/runtime/export.py
+	python3 scripts/runtime/validate.py
