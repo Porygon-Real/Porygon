@@ -248,6 +248,71 @@ Automatic fixes recorded in `run-log.jsonl` (batch 2 lines), by step: `drivers` 
 
 The sensor watchdog ran throughout and found no gap: every liveness check saw Porygon store the event from a real `docker exec` in the watchdog's own throwaway container, so no run was invalidated.
 
+## Batch 3 (second held-out set)
+
+Batch 3 is a second held-out set of 22 images, collected 2026-11-21 under the
+**same protocol, with the same Porygon (detection matcher v5)**: 30 min learning +
+30 × 60 s test windows = 60 min per image. No batch 3 image has the same digest
+as any batch 1 or batch 2 image. Batch 3 monitored 22.0 hours
+(660 test windows), measured from the recorded timestamps; the whole
+dataset now holds 66.0 monitored hours. Every table's `batch` column now
+takes `batch1`, `batch2` or `batch3`; the batch 1 and batch 2 rows are unchanged.
+
+### Images
+
+adminer (`adminer:latest`, complete), ghost-5-alpine (`ghost:5-alpine`, complete), golang-1.22-alpine (`golang:1.22-alpine`, complete), httpd-alpine (`httpd:2.4-alpine`, complete), influxdb-1 (`influxdb:1.11`, complete), mariadb-11 (`mariadb:11`, complete), memcached-alpine (`memcached:1.6-alpine`, complete), mongo-7 (`mongo:7`, complete), nginx-alpine (`nginx:alpine`, complete), node-18-slim (`node:18-bookworm-slim`, complete), php82-cli (`php:8.2-cli`, complete), postgres-15-alpine (`postgres:15-alpine`, complete), python-3.11-slim (`python:3.11-slim`, complete), rabbitmq-3-mgmt (`rabbitmq:3-management-alpine`, complete), redis-alpine (`redis:7.4-alpine`, complete), temurin-21-alpine (`eclipse-temurin:21-alpine`, complete), tomcat-9 (`tomcat:9-jdk17`, complete), traefik-2 (`traefik:v2.11`, complete), ubi9-nodejs (`registry.access.redhat.com/ubi9/nodejs-20`, complete), ubi9-php (`registry.access.redhat.com/ubi9/php-82`, complete), varnish (`varnish:7`, complete), vault (`hashicorp/vault:latest`, complete).
+
+The exact start commands, digests and recipes are in `images.csv`.
+
+### Same Porygon as batches 1 and 2
+
+24 checks (pre-flight, before every image, and at the end) read the matcher revision from the running backend container: 24 of 24 passed. Revisions seen: `porygon.detection.matcher.v5`; backend image IDs seen: `sha256:83b4854da6dd`. Every check is in `batch3-matcher-checks.jsonl`.
+
+### Substitutions
+
+None: every one of the 22 primary images ran.
+
+### Files added by batch 3
+
+| File | Contents |
+|---|---|
+| `batch3-preflight.json` | Free disk, Docker usage, service health and Falco liveness before batch 3 |
+| `batch3-matcher-checks.jsonl` | The detection matcher revision and backend image, checked before every image |
+| `batch3-plan.json` | Which images batch 3 selected or rejected, and why |
+| `prefetch-batch3.json`, `prefetch-batch3.log` | The arm64 download for batch 3, with digests |
+| `archive/batch1-2-2026-11-21/` | Batches 1 and 2's tables and checksums before batch 3, used to prove they did not change |
+
+## Results: all three batches
+
+| Verdict | Batch | Images | Windows | TP | FP | TN | FN | Recall | Precision | FPR | Hard-neg FPR |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Incident | batch1 | 22 | 660 | 225 | 62 | 334 | 39 | 0.852 | 0.784 | 0.157 | 0.470 |
+| Incident | batch2 | 22 | 660 | 206 | 54 | 342 | 58 | 0.780 | 0.792 | 0.136 | 0.409 |
+| Incident | batch3 | 22 | 660 | 229 | 58 | 338 | 35 | 0.867 | 0.798 | 0.146 | 0.439 |
+| Incident | **combined** | 66 | 1980 | 660 | 174 | 1014 | 132 | 0.833 | 0.791 | 0.146 | 0.439 |
+| Score band | batch1 | 22 | 660 | 108 | 9 | 387 | 156 | 0.409 | 0.923 | 0.023 | 0.045 |
+| Score band | batch2 | 22 | 660 | 70 | 3 | 393 | 194 | 0.265 | 0.959 | 0.008 | 0.000 |
+| Score band | batch3 | 22 | 660 | 62 | 4 | 392 | 202 | 0.235 | 0.939 | 0.010 | 0.015 |
+| Score band | **combined** | 66 | 1980 | 240 | 16 | 1172 | 552 | 0.303 | 0.938 | 0.013 | n/a |
+
+## Coreutils images (batch 3)
+
+| Image | Tag | Abnormal recall | `coreutils` events | `coreutils` in the baseline |
+|---|---|---:|---:|---|
+| ubi9-nodejs | `registry.access.redhat.com/ubi9/nodejs-20` | 0.833 | 295 | no |
+| ubi9-php | `registry.access.redhat.com/ubi9/php-82` | 0.250 | 298 | yes |
+
+- `ubi9-nodejs`: 2 of 12 abnormal windows not flagged (RT-AB-EGRESS, RT-AB-NC-CONNECT)
+- `ubi9-php`: 9 of 12 abnormal windows not flagged (RT-AB-DROPPED-SCRIPT, RT-AB-LOW-SLOW, RT-AB-NC-CONNECT, RT-AB-READ-SHADOW, RT-AB-RENAMED-BINARY, RT-AB-SHELL-RECON, SCN-FLOOD, SCN-LOG4SHELL-SIM, SCN-RUNC-ESCAPE-SIM)
+
+These are observed results under matcher v5, the same matcher as batches 1 and 2. They are not a test of any later matcher.
+
+## Incidents during collection (batch 3)
+
+Automatic fixes and events recorded in `run-log.jsonl` (batch 3 lines), by step: `recipe` 1, `smoke-test` 1, `watchdog` 1.
+
+The sensor watchdog ran throughout and found no gap, so no batch 3 run was invalidated.
+
 ## Limits
 
 - One host, one run per image, and 30 test windows per image. There are no
@@ -280,3 +345,6 @@ The sensor watchdog ran throughout and found no gap: every liveness check saw Po
 - CouchDB ships no working `weatherreport`, so its `RT-HN-ADMIN` command is the
   documented `_node/_local/_system` admin call made with the image's own `curl`
   rather than a service CLI (recorded in its recipe's `fixes`).
+- Batch 3 adds 22 more held-out images under the identical protocol and the same
+  detection matcher (v5), checked before every image. Like batch 2, its images were
+  chosen to widen coverage, not sampled at random.
