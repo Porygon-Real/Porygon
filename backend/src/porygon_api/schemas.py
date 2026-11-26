@@ -3,7 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
+
+from porygon_api.vulnerability import is_local_image_identity
 
 from porygon_api.calibrated_provenance import MIN_CALIBRATION_RUNS, validate_run_split
 from porygon_api.rule_expression import (
@@ -25,6 +35,7 @@ class RetentionRunOut(BaseModel):
     cutoff: datetime
     process_exec_events_deleted: int
     runtime_events_deleted: int
+    kernel_runtime_events_deleted: int = 0
     dry_run: bool
 
 
@@ -45,6 +56,8 @@ class HeartbeatIn(BaseModel):
 
 class HeartbeatOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+    docker_host_id: str
 
     service_name: str
     instance_id: str
@@ -103,6 +116,14 @@ class RuntimeEventOut(RuntimeEventIn):
 class ProcessExecEventIn(BaseModel):
     event_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     sensor_instance_id: str = Field(min_length=1, max_length=128)
+    exec_return_value: int | None = Field(default=None,ge=-9223372036854775808,le=9223372036854775807)
+    event_direction: Literal['<','>'] | None = None
+    sensor_epoch: str | None = Field(default=None,min_length=1,max_length=128)
+    process_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    parent_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    pid_namespace_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    exe_from_memfd: bool | None = None
+    exe_writable: bool | None = None
     sensor_hostname: str | None = Field(default=None, max_length=255)
     source: Literal["falco"]
     rule_name: str = Field(min_length=1, max_length=255)
@@ -110,7 +131,7 @@ class ProcessExecEventIn(BaseModel):
     occurred_at: datetime
     time_nano: int = Field(ge=0)
     event_number: int | None = Field(default=None, ge=0)
-    event_type: str = Field(min_length=1, max_length=64)
+    event_type: Literal["execve", "execveat"]
 
     reported_docker_host_id: str | None = Field(default=None, max_length=128)
     reported_container_id: str | None = Field(default=None, max_length=128)
@@ -166,6 +187,14 @@ class ProcessExecEventOut(BaseModel):
 
     event_id: str
     sensor_instance_id: str
+    exec_return_value: int | None = Field(default=None,ge=-9223372036854775808,le=9223372036854775807)
+    event_direction: Literal['<','>'] | None = None
+    sensor_epoch: str | None = Field(default=None,min_length=1,max_length=128)
+    process_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    parent_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    pid_namespace_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    exe_from_memfd: bool | None = None
+    exe_writable: bool | None = None
     sensor_hostname: str | None
     source: str
     rule_name: str
@@ -221,6 +250,113 @@ class ProcessEventSummary(BaseModel):
     by_process_name: dict[str, int]
 
 
+class KernelRuntimeEventIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sensor_instance_id: str = Field(min_length=1, max_length=128)
+    sensor_epoch: str | None = Field(default=None,min_length=1,max_length=128)
+    process_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    parent_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    pid_namespace_start_ns: int | None = Field(default=None,gt=0,le=9223372036854775807)
+    exe_from_memfd: bool | None = None
+    exe_writable: bool | None = None
+    sensor_hostname: str | None = Field(default=None, max_length=255)
+    source: Literal["falco"] = "falco"
+    rule_name: str = Field(min_length=1, max_length=255)
+    priority: str = Field(min_length=1, max_length=32)
+    occurred_at: datetime
+    time_nano: int = Field(ge=0)
+    event_number: int | None = Field(default=None, ge=0)
+    event_type: Literal[
+        "connect",
+        "memfd_create",
+        "open",
+        "openat",
+        "openat2",
+        "write",
+        "writev",
+        "pwrite",
+        "pwritev",
+    ]
+    runtime_action: Literal["net_outbound", "memfd_create", "file_write_open", "file_write"]
+    return_value: int
+    reported_docker_host_id: str | None = Field(default=None, max_length=128)
+    reported_container_id: str = Field(pattern=r"^[0-9a-f]{12,64}$")
+    process_pid: int = Field(ge=0)
+    process_name: str | None = Field(default=None, max_length=255)
+    executable: str | None = None
+    command_line: str | None = None
+    user_uid: int | None = Field(default=None, ge=0)
+    remote_address: str | None = Field(default=None, max_length=45)
+    remote_port: int | None = Field(default=None, ge=1, le=65535)
+    local_address: str | None = Field(default=None, max_length=45)
+    local_port: int | None = Field(default=None, ge=0, le=65535)
+    file_path: str | None = None
+    memory_name: str | None = None
+    output_fields: dict[str, Any] = Field(default_factory=dict)
+    raw_event: dict[str, Any]
+
+    @field_validator("occurred_at")
+    @classmethod
+    def timezone_required(cls, value):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Kernel timestamps require a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_syscall(self):
+        from ipaddress import ip_address
+
+        expected = {
+            "net_outbound": {"connect"},
+            "memfd_create": {"memfd_create"},
+            "file_write_open": {"open", "openat", "openat2"},
+            "file_write": {"write", "writev", "pwrite", "pwritev"},
+        }
+        if self.event_type not in expected[self.runtime_action]:
+            raise ValueError("Kernel action does not match its syscall")
+        if self.return_value < 0 and not (
+            self.runtime_action == "net_outbound" and self.return_value == -115
+        ):
+            raise ValueError("Unsupported failed syscall outcome")
+        if self.runtime_action == "net_outbound":
+            remote = ip_address(self.remote_address or "")
+            if (
+                remote.is_loopback
+                or remote.is_unspecified
+                or (
+                    getattr(remote, "ipv4_mapped", None) is not None
+                    and remote.ipv4_mapped.is_loopback
+                )
+                or self.remote_port is None
+            ):
+                raise ValueError("Outbound telemetry requires a non-loopback peer and port")
+            self.remote_address = str(remote)
+            if self.local_address is not None:
+                self.local_address = str(ip_address(self.local_address))
+        if self.runtime_action in {"file_write_open", "file_write"} and not self.file_path:
+            raise ValueError("File activity requires an observed path")
+        if self.runtime_action == "file_write" and self.return_value <= 0:
+            raise ValueError("File write evidence requires positive written bytes")
+        return self
+
+
+class KernelRuntimeEventOut(KernelRuntimeEventIn):
+    model_config = ConfigDict(from_attributes=True)
+    docker_host_id: str | None
+    container_id: str | None
+    container_name: str | None
+    image_id: str | None
+    image_ref: str | None
+    image_digest: str | None
+    correlation_status: Literal["resolved", "unresolved", "ambiguous"]
+    received_at: datetime
+
+
+class KernelRuntimeBatchIn(BaseModel):
+    events: list[KernelRuntimeEventIn] = Field(min_length=1, max_length=250)
+
+
 class ImageIdentityOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -268,6 +404,7 @@ class SystemInfo(BaseModel):
     registered_services: int
     runtime_events: int
     process_exec_events: int
+    kernel_runtime_events: int = 0
     known_containers: int
     known_images: int
     behavior_profiles: int
@@ -294,6 +431,13 @@ class SystemInfo(BaseModel):
 
 
 class BehaviorProfileBuildIn(BaseModel):
+    feature_schema_version: Literal[
+        "porygon.behaviour.v1",
+        "porygon.behaviour.command-lineage",
+        "porygon.behaviour.support-aware",
+    ] = (
+        "porygon.behaviour.v1"
+    )
     image_digest: str = Field(
         min_length=72,
         max_length=255,
@@ -473,10 +617,19 @@ class CalibratedRarityScoreOut(BaseModel):
 
 
 class AnomalyScoreComputeIn(BaseModel):
+    algorithm_version: (
+        Literal[
+            "porygon.distance.v1",
+            "porygon.distance.command-lineage",
+            "porygon.distance.support-aware",
+            "porygon.distance.rare-execution",
+        ]
+        | None
+    ) = None
     image_digest: str = Field(
         min_length=72,
         max_length=255,
-        pattern=r"^[^\s@]+@sha256:[0-9a-f]{64}$",
+        pattern=r"^(?:[^\s@]+@sha256:|local:sha256:)[0-9a-f]{64}$",
     )
     window_start: datetime
     profile_id: str | None = Field(default=None, min_length=36, max_length=36)
@@ -544,6 +697,10 @@ class DetectionRunOut(BaseModel):
         "no_findings",
         "findings_only",
         "incident_created",
+        "incident_updated",
+        "budget_exhausted",
+        "rule_evidence_incomplete",
+        "rule_error",
     ]
     matches_count: int
     incident_created: bool
@@ -552,6 +709,7 @@ class DetectionRunOut(BaseModel):
 
 
 class IncidentOut(BaseModel):
+    latest_detection_run_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
 
     incident_id: str
@@ -560,7 +718,7 @@ class IncidentOut(BaseModel):
     image_digest: str
     title: str
     status: Literal["open", "acknowledged", "resolved", "dismissed"]
-    anomaly_score: float
+    anomaly_score: float | None
     severity_score: float
     severity_level: Literal["low", "medium", "high", "critical"]
     confidence_score: float
@@ -751,11 +909,13 @@ class CustomDetectionRuleEnableIn(BaseModel):
 
 
 class ResponseRecommendationOut(BaseModel):
+    evidence_run_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
 
     recommendation_id: str
     recommendation_key: str
     incident_id: str
+    target_docker_host_id: str | None = None
     target_container_id: str | None
     policy_version: str
     policy_hash: str
@@ -792,6 +952,7 @@ class ResponseExecutionOut(BaseModel):
     execution_id: str
     recommendation_id: str
     incident_id: str
+    target_docker_host_id: str | None = None
     target_container_id: str | None
     action_type: Literal["observe_only", "pause_container", "stop_container"]
     status: Literal[
@@ -834,6 +995,8 @@ class ResponseClaimOut(BaseModel):
 
 
 class ResponseExecutionCompleteIn(BaseModel):
+    operation: Literal["execute", "rollback"] | None = None
+    operation_started_at: datetime | None = None
     executor_instance_id: str = Field(min_length=1, max_length=128)
     success: bool
     pre_state: dict[str, Any] = Field(default_factory=dict)
@@ -877,16 +1040,57 @@ class ResponseAuditEventOut(BaseModel):
 
 
 class ImageScanCreateIn(BaseModel):
-    image_digest: str = Field(min_length=72, max_length=255, pattern=r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+    image_identity: str = Field(
+        validation_alias=AliasChoices("image_identity", "image_digest"),
+        min_length=72,
+        max_length=255,
+        pattern=r"^(?:[^\s@]+@sha256:[0-9a-f]{64}|local:sha256:[0-9a-f]{64})$",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_conflicting_identity_aliases(cls, value):
+        if (
+            isinstance(value, dict)
+            and "image_identity" in value
+            and "image_digest" in value
+            and value["image_identity"] != value["image_digest"]
+        ):
+            raise ValueError("image_identity and legacy image_digest must agree")
+        return value
+
+    @property
+    def image_digest(self) -> str:
+        """Legacy request alias; local identities are not registry manifests."""
+        return self.image_identity
+
     requested_by: str = Field(min_length=1, max_length=128)
     docker_host_id: str | None = Field(default=None, max_length=128)
-    scan_reference: str = Field(default="initial", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    scan_reference: str = Field(
+        default="initial", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
+    )
     note: str | None = Field(default=None, max_length=4000)
     scanner_name: Literal["trivy"] = "trivy"
     scanner_version: str = Field(default="0.72.0", pattern=r"^\d+\.\d+\.\d+$", max_length=32)
 
 
-class ImageScanOut(BaseModel):
+class ImageIdentityFields(BaseModel):
+    image_digest: str
+
+    @computed_field
+    @property
+    def image_identity(self) -> str:
+        return self.image_digest
+
+    @computed_field
+    @property
+    def identity_kind(self) -> Literal["local_image_id", "repository_digest"]:
+        return (
+            "local_image_id" if is_local_image_identity(self.image_digest) else "repository_digest"
+        )
+
+
+class ImageScanOut(ImageIdentityFields):
     model_config = ConfigDict(from_attributes=True)
 
     scan_id: str
@@ -913,6 +1117,7 @@ class ImageScanOut(BaseModel):
 
 
 class ImageScanClaimIn(BaseModel):
+    docker_host_id: str | None = Field(default=None, min_length=1, max_length=128)
     scanner_instance_id: str = Field(min_length=1, max_length=128)
     scanner_name: Literal["trivy"] = "trivy"
     scanner_version: str = Field(pattern=r"^\d+\.\d+\.\d+$", max_length=32)
@@ -967,7 +1172,7 @@ class ImageScanFailIn(BaseModel):
     scanner_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class SbomArtifactSummaryOut(BaseModel):
+class SbomArtifactSummaryOut(ImageIdentityFields):
     model_config = ConfigDict(from_attributes=True)
 
     artifact_id: str
@@ -985,7 +1190,7 @@ class SbomArtifactOut(SbomArtifactSummaryOut):
     document: dict[str, Any]
 
 
-class VulnerabilityReportArtifactSummaryOut(BaseModel):
+class VulnerabilityReportArtifactSummaryOut(ImageIdentityFields):
     model_config = ConfigDict(from_attributes=True)
 
     artifact_id: str
@@ -1022,7 +1227,7 @@ class VulnerabilityIntelOut(BaseModel):
     fetched_at: datetime
 
 
-class VulnerabilityFindingOut(BaseModel):
+class VulnerabilityFindingOut(ImageIdentityFields):
     model_config = ConfigDict(from_attributes=True)
 
     finding_id: str
@@ -1107,6 +1312,19 @@ class MLFeatureContributionOut(BaseModel):
     explanation: str
 
 
+class MLModelMetadataOut(BaseModel):
+    model_config = ConfigDict(frozen=True, from_attributes=True)
+
+    model_kind: str
+    training_status: str
+    calibration_status: str
+    explanation_method: str
+    explanation_output_space: str
+    feature_contract: str
+    input_document_schema: str
+    model_artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class MLThreatClassificationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -1116,6 +1334,7 @@ class MLThreatClassificationOut(BaseModel):
         "privilege_escalation",
         "shell_escape",
         "suspicious_tooling",
+        "insufficient_data",
     ]
     confidence: float = Field(ge=0.0, le=1.0)
     risk_level: Literal["clean", "low", "medium", "high", "critical"]
@@ -1125,6 +1344,11 @@ class MLThreatClassificationOut(BaseModel):
     summary: str
     model_version: str
     classified_at: datetime
+    model_metadata: MLModelMetadataOut
+    explanation_base_values: dict[str, float]
+    raw_output_values: dict[str, float]
+    full_feature_contributions: dict[str, dict[str, float]]
+    model_variant: Literal["baseline", "no_baseline"] = "baseline"
 
 
 class MLClassifyEventsIn(BaseModel):
@@ -1147,4 +1371,4 @@ class MLModelInfoOut(BaseModel):
     features: list[str]
     num_trees: int
     explainability_method: str
-
+    model_metadata: MLModelMetadataOut

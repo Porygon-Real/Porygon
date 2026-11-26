@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Porygon: Codex Engineering Plans & Architectural Roadmap</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23111111'/%3E%3Cpath d='M8 6h16v20H8z' fill='%23F9F9F7'/%3E%3Cpath d='M11 10h10M11 14h10M11 18h6' stroke='%23111111' stroke-width='2'/%3E%3C/svg%3E">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper: '#F9F9F7',
+            ink: '#111111',
+            divider: '#E5E5E0',
+            editorial: '#CC0000',
+            neutral: {
+              100: '#F5F5F5',
+              200: '#E5E5E5',
+              300: '#D4D4D4',
+              400: '#A3A3A3',
+              500: '#737373',
+              600: '#525252',
+              700: '#404040',
+            }
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', '"Times New Roman"', 'serif'],
+            body: ['"Lora"', 'Georgia', 'serif'],
+            sans: ['"Inter"', '-apple-system', 'sans-serif'],
+            mono: ['"JetBrains Mono"', '"Courier New"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Newsprint Stylesheet -->
+  <link rel="stylesheet" href="style.css?v=2.5">
+
+  <!-- Core Libraries -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+
+  <style>
+    /* Strict Zero Border Radius Policy */
+    *, *::before, *::after {
+      border-radius: 0px !important;
+    }
+    .markdown-body h1 { font-family: var(--font-display); font-size: 1.75rem; font-weight: 900; margin-top: 1rem; margin-bottom: 0.75rem; border-bottom: 2px solid #111111; padding-bottom: 0.35rem; }
+    .markdown-body h2 { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.5rem; border-bottom: 1px solid #111111; padding-bottom: 0.25rem; }
+    .markdown-body h3 { font-family: var(--font-ui); font-size: 1.1rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+    .markdown-body p { font-family: var(--font-body); font-size: 0.95rem; line-height: 1.6; margin-bottom: 0.85rem; color: #262626; }
+    .markdown-body ul, .markdown-body ol { margin-left: 1.5rem; margin-bottom: 1rem; list-style-type: square; }
+    .markdown-body li { font-family: var(--font-body); font-size: 0.9rem; line-height: 1.55; margin-bottom: 0.35rem; }
+    .markdown-body code { font-family: var(--font-mono); font-size: 0.825rem; background-color: #EFEFEA; padding: 0.15rem 0.35rem; border: 1px solid #D5D5CE; }
+    .markdown-body pre { background-color: #111111; color: #F9F9F7; padding: 1rem; overflow-x: auto; margin-bottom: 1rem; border: 1px solid #111111; }
+    .markdown-body pre code { background-color: transparent; color: inherit; border: none; padding: 0; }
+    .markdown-body blockquote { border-left: 3px solid #CC0000; padding-left: 1rem; margin-left: 0; margin-bottom: 1rem; font-style: italic; color: #525252; background-color: #F3F3EF; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+    .markdown-body table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.85rem; font-family: var(--font-ui); }
+    .markdown-body th { border: 1px solid #111111; padding: 0.5rem 0.75rem; background-color: #111111; color: #FFFFFF; font-weight: 700; text-align: left; }
+    .markdown-body td { border: 1px solid #D5D5CE; padding: 0.5rem 0.75rem; background-color: #FFFFFF; }
+  </style>
+</head>
+<body x-data="plansApp()" x-init="init()" class="bg-[#F9F9F7] text-[#111111] antialiased min-h-screen selection:bg-[#111111] selection:text-[#F9F9F7]">
+
+  <!-- TOAST NOTIFICATIONS -->
+  <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="pointer-events-auto border-2 border-[#111111] bg-white p-3 text-[12px] font-mono hard-shadow flex items-start gap-2"
+           :class="t.type==='danger' ? 'border-[#CC0000] text-[#CC0000]' : 'text-[#111111]'">
+        <span class="font-bold uppercase text-[10px]" x-text="t.type==='danger' ? '[ALERT]' : '[INFO]'"></span>
+        <span class="flex-1" x-text="t.message"></span>
+      </div>
+    </template>
+  </div>
+
+  <!-- TOP UTILITY BAR -->
+  <div class="border-b border-[#111111] bg-white px-4 sm:px-8 py-2">
+    <div class="max-w-[1400px] mx-auto flex flex-wrap items-center justify-between gap-4 text-xs font-mono">
+      <div class="flex items-center gap-3">
+        <span class="font-bold uppercase tracking-wider text-[#CC0000]">[ROADMAP LEDGER]</span>
+        <span class="text-neutral-500">Autonomous Codex Architectural Plans &amp; Causal Evidence Index</span>
+      </div>
+      <div class="flex items-center gap-4 text-neutral-600">
+        <span>BASELINE COMMIT: <strong class="text-[#111111]" x-text="stats.planned_at_commit || 'b04aaea'">b04aaea</strong></span>
+        <span>STATUS: <strong class="text-[#111111]">LOCAL ACCEPTED &amp; ACTIVE</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN CONTAINER -->
+  <div class="max-w-[1400px] mx-auto px-4 sm:px-8 py-6">
+
+    <!-- MASTHEAD HEADER -->
+    <header class="border-b-2 border-[#111111] pb-6 mb-8">
+      <div class="flex flex-wrap items-center justify-between gap-6 pb-4 border-b border-[#111111]">
+        <!-- Brand -->
+        <a href="home.html" class="flex items-center gap-3 text-[#111111] hover:opacity-80 transition-opacity">
+          <div class="bg-[#111111] text-[#F9F9F7] w-9 h-9 flex items-center justify-center font-serif font-black text-xl">P</div>
+          <div>
+            <div class="font-serif font-black text-3xl tracking-tight text-[#111111] leading-none">PORYGON</div>
+            <div class="font-mono text-[10px] tracking-widest uppercase text-neutral-500 mt-1">Autonomous Systems Architecture</div>
+          </div>
+        </a>
+
+        <!-- Global Navigation -->
+        <nav class="flex items-center border border-[#111111] bg-white divide-x divide-[#111111] text-xs font-sans font-bold uppercase tracking-wider">
+          <a href="home.html" class="px-3.5 py-2 hover:bg-neutral-100 text-[#111111] transition-colors">Home</a>
+          <a href="index.html#overview" class="px-3.5 py-2 hover:bg-neutral-100 text-[#111111] transition-colors">Console</a>
+          <a href="index.html#telemetry" class="px-3.5 py-2 hover:bg-neutral-100 text-[#111111] transition-colors">Live Telemetry</a>
+          <a href="index.html#ml" class="px-3.5 py-2 hover:bg-neutral-100 text-[#111111] transition-colors">Scoring &amp; ML</a>
+          <a href="docs.html" class="px-3.5 py-2 hover:bg-neutral-100 text-[#111111] transition-colors">Docs</a>
+          <a href="plans.html" class="px-3.5 py-2 bg-[#111111] text-white transition-colors flex items-center gap-1.5">
+            <i class="ph ph-kanban"></i>
+            <span>Plans</span>
+            <span class="border border-current px-1 text-[10px] font-mono" x-text="stats.total_plans || 9">9</span>
+          </a>
+          <a href="index.html#simulator" class="px-3.5 py-2 hover:bg-neutral-100 text-[#CC0000] font-bold transition-colors">Attack Lab</a>
+        </nav>
+      </div>
+
+      <!-- Masthead Headline -->
+      <div class="mt-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <div class="font-mono text-xs uppercase tracking-widest text-neutral-500 mb-1">AUDIT EVIDENCE &amp; CODEX ROADMAP LEDGER</div>
+          <h1 class="font-serif font-black text-3xl sm:text-4xl text-[#111111] tracking-tight leading-tight m-0">
+            Codex Engineering Plans &amp; Research Pathway
+          </h1>
+          <p class="font-body text-sm sm:text-base text-neutral-600 mt-2 max-w-3xl leading-relaxed m-0">
+            Complete inventory of nine self-contained engineering plans authored during autonomous OpenAI Codex sessions.
+            Enforces deployment-scoped service trust, unattended stream detection, verifiable causal ancestry, and empirical 2027 study reproducibility.
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button @click="recheckHashes()" id="btn-recheck-hashes"
+                  class="btn-news-secondary px-3 py-2 text-xs font-mono uppercase tracking-wider flex items-center gap-2"
+                  :disabled="loadingRecheck">
+            <i class="ph" :class="loadingRecheck ? 'ph-spinner animate-spin' : 'ph-arrows-clockwise'"></i>
+            <span x-text="loadingRecheck ? 'Verifying Hashes...' : 'Recheck Evidence Drift'">Recheck Evidence Drift</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI Executive Metrics Strip -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6">
+        <div class="border border-[#111111] bg-white p-3 hard-shadow-sm">
+          <div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">Numbered Plans</div>
+          <div class="font-serif font-bold text-2xl text-[#111111] mt-1" x-text="stats.total_plans || 9">9</div>
+          <div class="font-mono text-[10px] text-neutral-600 mt-1">Plans 001 through 009</div>
+        </div>
+
+        <div class="border border-[#111111] bg-white p-3 hard-shadow-sm">
+          <div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">Accepted / Done</div>
+          <div class="font-serif font-bold text-2xl text-[#111111] mt-1" x-text="stats.done_plans || 3">3</div>
+          <div class="font-mono text-[10px] text-emerald-700 mt-1">Verified local gates</div>
+        </div>
+
+        <div class="border border-[#111111] bg-white p-3 hard-shadow-sm">
+          <div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">In Progress</div>
+          <div class="font-serif font-bold text-2xl text-[#111111] mt-1" x-text="stats.in_progress_plans || 6">6</div>
+          <div class="font-mono text-[10px] text-amber-700 mt-1">Source batch executing</div>
+        </div>
+
+        <div class="border border-[#111111] bg-white p-3 hard-shadow-sm">
+          <div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">Vetted Findings</div>
+          <div class="font-serif font-bold text-2xl text-[#CC0000] mt-1" x-text="stats.total_findings || 8">8</div>
+          <div class="font-mono text-[10px] text-neutral-600 mt-1">Audited leverage matrix</div>
+        </div>
+
+        <div class="border border-[#111111] bg-white p-3 hard-shadow-sm">
+          <div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">Tracked Files</div>
+          <div class="font-serif font-bold text-2xl text-[#111111] mt-1" x-text="stats.total_tracked_evidence_files || 16">16</div>
+          <div class="font-mono text-[10px] text-neutral-600 mt-1">Core engine files</div>
+        </div>
+
+        <div class="border border-[#111111] bg-white p-3 hard-shadow-sm">
+          <div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">Matching Hashes</div>
+          <div class="font-serif font-bold text-2xl text-[#111111] mt-1" x-text="(stats.matching_evidence_files || 7) + ' / ' + (stats.total_tracked_evidence_files || 16)">7 / 16</div>
+          <div class="font-mono text-[10px] text-neutral-600 mt-1">9 Expected drift files</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- TAB NAVIGATION BAR -->
+    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-[#111111] pb-3 mb-6">
+      <div class="flex items-center border border-[#111111] bg-white divide-x divide-[#111111] text-xs font-mono font-bold uppercase tracking-wider">
+        <button @click="activeSubTab='plans'" id="tab-plans"
+                :class="activeSubTab==='plans' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
+                class="px-4 py-2 transition-colors flex items-center gap-2">
+          <i class="ph ph-files"></i>
+          <span>Plans (001–009)</span>
+          <span class="border border-current px-1 text-[10px]" x-text="plans.length">9</span>
+        </button>
+        <button @click="activeSubTab='findings'" id="tab-findings"
+                :class="activeSubTab==='findings' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
+                class="px-4 py-2 transition-colors flex items-center gap-2">
+          <i class="ph ph-shield-checkered"></i>
+          <span>Vetted Findings</span>
+          <span class="border border-current px-1 text-[10px]" x-text="findings.length">8</span>
+        </button>
+        <button @click="activeSubTab='evidence'" id="tab-evidence"
+                :class="activeSubTab==='evidence' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
+                class="px-4 py-2 transition-colors flex items-center gap-2">
+          <i class="ph ph-fingerprint"></i>
+          <span>Evidence Hash Monitor</span>
+          <span class="border border-current px-1 text-[10px]" x-text="evidence.length">16</span>
+        </button>
+        <button @click="activeSubTab='reviews'" id="tab-reviews"
+                :class="activeSubTab==='reviews' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
+                class="px-4 py-2 transition-colors flex items-center gap-2">
+          <i class="ph ph-clipboard-text"></i>
+          <span>Review Gates</span>
+          <span class="border border-current px-1 text-[10px]" x-text="reviews.length">5</span>
+        </button>
+        <button @click="activeSubTab='roadmap'" id="tab-roadmap"
+                :class="activeSubTab==='roadmap' ? 'bg-[#111111] text-white' : 'hover:bg-neutral-100 text-[#111111]'"
+                class="px-4 py-2 transition-colors flex items-center gap-2">
+          <i class="ph ph-git-fork"></i>
+          <span>Architecture &amp; Timeline</span>
+        </button>
+      </div>
+
+      <!-- Quick Search Input -->
+      <div class="relative w-full sm:w-72">
+        <input type="text" x-model="searchQuery" placeholder="Filter plans, files, findings..."
+               class="input-news font-mono text-xs w-full pl-8 pr-3 py-1.5 border border-[#111111] bg-white">
+        <i class="ph ph-magnifying-glass absolute left-2.5 top-2.5 text-neutral-500 text-xs"></i>
+      </div>
+    </div>
+
+    <!-- ======================================================================
+         TAB 1: NUMBERED PLANS (001 - 009)
+         ====================================================================== -->
+    <section x-show="activeSubTab==='plans'" class="space-y-6">
+      
+      <!-- Filters Strip -->
+      <div class="flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+        <div class="flex items-center gap-2">
+          <span class="text-neutral-500 uppercase tracking-wider">Status:</span>
+          <button @click="statusFilter='ALL'" :class="statusFilter==='ALL' ? 'bg-[#111111] text-white font-bold' : 'border border-[#111111] bg-white'" class="px-2.5 py-1">ALL (<span x-text="plans.length"></span>)</button>
+          <button @click="statusFilter='DONE'" :class="statusFilter==='DONE' ? 'bg-[#111111] text-white font-bold' : 'border border-[#111111] bg-white'" class="px-2.5 py-1">ACCEPTED / DONE</button>
+          <button @click="statusFilter='IN PROGRESS'" :class="statusFilter==='IN PROGRESS' ? 'bg-[#111111] text-white font-bold' : 'border border-[#111111] bg-white'" class="px-2.5 py-1">IN PROGRESS</button>
+        </div>
+        <div class="text-neutral-500">
+          Showing <strong class="text-[#111111]" x-text="filteredPlans.length"></strong> of <strong class="text-[#111111]" x-text="plans.length"></strong> plans
+        </div>
+      </div>
+
+      <!-- Plan Cards Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <template x-for="p in filteredPlans" :key="p.id">
+          <div class="border-2 border-[#111111] bg-white p-5 hard-shadow flex flex-col justify-between hover:border-[#CC0000] transition-colors">
+            <div>
+              <!-- Header: ID + Status + Category -->
+              <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E5E5E0]">
+                <div class="flex items-center gap-2">
+                  <span class="bg-[#111111] text-white px-2 py-0.5 font-mono font-bold text-xs uppercase" x-text="'PLAN ' + p.id"></span>
+                  <span class="border border-[#111111] px-1.5 py-0.5 font-mono text-[10px] uppercase font-bold" x-text="p.priority"></span>
+                  <span class="text-neutral-500 font-mono text-[11px]" x-text="p.category"></span>
+                </div>
+                <span class="px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider"
+                      :class="p.status_category==='DONE' || p.status_category==='LOCAL ACCEPTED' ? 'bg-emerald-100 text-emerald-900 border border-emerald-800' : 'bg-amber-100 text-amber-900 border border-amber-800'"
+                      x-text="p.status_category">
+                </span>
+              </div>
+
+              <!-- Title -->
+              <h2 class="font-serif font-black text-xl text-[#111111] mt-3 leading-snug" x-text="p.title"></h2>
+
+              <!-- Status Details -->
+              <div class="mt-2 text-xs font-mono text-neutral-600 bg-[#F9F9F7] p-2 border border-[#E5E5E0]">
+                <span class="font-bold text-[#111111]">STATUS:</span> <span x-text="p.status"></span>
+              </div>
+
+              <!-- Summary / Rationale -->
+              <p class="font-body text-xs text-neutral-700 mt-3 line-clamp-3 leading-relaxed" x-text="p.summary"></p>
+
+              <!-- Metadata Table -->
+              <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-[#E5E5E0] text-[11px] font-mono">
+                <div>
+                  <span class="text-neutral-500">EFFORT:</span>
+                  <span class="font-bold text-[#111111]" x-text="p.effort"></span>
+                </div>
+                <div>
+                  <span class="text-neutral-500">RISK:</span>
+                  <span class="font-bold text-[#111111]" x-text="p.risk"></span>
+                </div>
+                <div class="col-span-2">
+                  <span class="text-neutral-500">DEPENDS ON:</span>
+                  <span class="font-bold text-[#111111]" x-text="p.depends_on"></span>
+                </div>
+              </div>
+
+              <!-- Key Code Coordinates -->
+              <template x-if="p.coordinates && p.coordinates.length > 0">
+                <div class="mt-3 pt-2">
+                  <div class="font-mono text-[10px] uppercase text-neutral-500 mb-1">Verified File Coordinates:</div>
+                  <div class="flex flex-wrap gap-1">
+                    <template x-for="c in p.coordinates.slice(0, 4)" :key="c">
+                      <span class="font-mono text-[10px] bg-[#EFEFEA] border border-[#D5D5CE] px-1.5 py-0.5 text-[#111111]" x-text="c"></span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Footer Action -->
+            <div class="mt-5 pt-3 border-t-2 border-[#111111] flex items-center justify-between">
+              <span class="font-mono text-[11px] text-neutral-500" x-text="p.filename"></span>
+              <button @click="openPlanModal(p)" :id="'btn-inspect-plan-' + p.id"
+                      class="btn-news-primary px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <i class="ph ph-article"></i>
+                <span>Inspect Specification</span>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         TAB 2: VETTED FINDINGS MATRIX
+         ====================================================================== -->
+    <section x-show="activeSubTab==='findings'" class="space-y-6">
+      <div class="border border-[#111111] bg-white p-4">
+        <div class="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-[#111111]">
+          <div>
+            <h2 class="font-serif font-bold text-xl text-[#111111] m-0">Vetted Architectural &amp; Correctness Findings</h2>
+            <p class="font-body text-xs text-neutral-600 mt-1 m-0">
+              Ranked by leverage (Impact / Effort × Confidence). Extracted from codebase audit against commit <code class="font-mono">b04aaea</code>.
+            </p>
+          </div>
+          <div class="flex items-center gap-2 text-xs font-mono">
+            <span class="text-neutral-500">FILTER:</span>
+            <button @click="findingCategory='ALL'" :class="findingCategory==='ALL' ? 'bg-[#111111] text-white' : 'border border-[#111111]'" class="px-2 py-0.5">ALL</button>
+            <button @click="findingCategory='Security'" :class="findingCategory==='Security' ? 'bg-[#111111] text-white' : 'border border-[#111111]'" class="px-2 py-0.5">Security</button>
+            <button @click="findingCategory='Correctness'" :class="findingCategory==='Correctness' ? 'bg-[#111111] text-white' : 'border border-[#111111]'" class="px-2 py-0.5">Correctness</button>
+            <button @click="findingCategory='Operations'" :class="findingCategory==='Operations' ? 'bg-[#111111] text-white' : 'border border-[#111111]'" class="px-2 py-0.5">Operations</button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-left border-collapse text-xs font-sans">
+            <thead>
+              <tr class="bg-[#111111] text-white font-mono uppercase text-[11px]">
+                <th class="p-2 border border-[#111111]">ID</th>
+                <th class="p-2 border border-[#111111]">Finding Description</th>
+                <th class="p-2 border border-[#111111]">Category</th>
+                <th class="p-2 border border-[#111111]">Impact &amp; Risk</th>
+                <th class="p-2 border border-[#111111]">Effort</th>
+                <th class="p-2 border border-[#111111]">Verified Source Coordinates</th>
+                <th class="p-2 border border-[#111111]">Plan</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#E5E5E0] font-mono text-[11px]">
+              <template x-for="f in filteredFindings" :key="f.id">
+                <tr class="hover:bg-[#F9F9F7]">
+                  <td class="p-2 border border-[#E5E5E0] font-bold text-[#CC0000]" x-text="f.id"></td>
+                  <td class="p-2 border border-[#E5E5E0] font-body text-xs text-neutral-800 leading-relaxed font-normal" x-text="f.finding"></td>
+                  <td class="p-2 border border-[#E5E5E0]">
+                    <span class="border border-[#111111] px-1 py-0.5 text-[10px] uppercase font-bold" x-text="f.category"></span>
+                  </td>
+                  <td class="p-2 border border-[#E5E5E0] text-neutral-700" x-text="f.impact"></td>
+                  <td class="p-2 border border-[#E5E5E0] text-neutral-700" x-text="f.effort"></td>
+                  <td class="p-2 border border-[#E5E5E0] text-neutral-800 font-bold max-w-xs truncate" x-text="f.evidence" :title="f.evidence"></td>
+                  <td class="p-2 border border-[#E5E5E0]">
+                    <button @click="navigateToPlan(f.plan)" class="bg-[#111111] text-white px-2 py-0.5 text-[10px] font-bold uppercase hover:bg-[#CC0000] transition-colors" x-text="'PLAN ' + f.plan"></button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         TAB 3: EVIDENCE DRIFT & SHA-256 HASH MONITOR
+         ====================================================================== -->
+    <section x-show="activeSubTab==='evidence'" class="space-y-6">
+      <div class="border border-[#111111] bg-white p-5">
+        <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[#111111]">
+          <div>
+            <h2 class="font-serif font-bold text-xl text-[#111111] m-0">Evidence Hash &amp; Code Drift Verifier</h2>
+            <p class="font-body text-xs text-neutral-600 mt-1 m-0">
+              Evaluates 16 core engine source files against SHA-256 hashes recorded at commit <code class="font-mono font-bold" x-text="stats.planned_at_commit">b04aaea</code> in <code class="font-mono">plans/evidence-index.json</code>.
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="font-mono text-xs text-neutral-500">
+              MATCH: <strong class="text-emerald-700" x-text="stats.matching_evidence_files">7</strong> | 
+              DRIFTED: <strong class="text-amber-700" x-text="stats.drifted_evidence_files">9</strong>
+            </span>
+            <button @click="recheckHashes()" class="btn-news-primary px-3 py-1.5 text-xs font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <i class="ph ph-arrows-clockwise"></i>
+              <span>Recalculate Checksums</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Evidence Table -->
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-left border-collapse font-mono text-xs">
+            <thead>
+              <tr class="bg-[#111111] text-white uppercase text-[11px]">
+                <th class="p-2 border border-[#111111]">File Path</th>
+                <th class="p-2 border border-[#111111]">Status</th>
+                <th class="p-2 border border-[#111111]">Expected SHA-256 (Planned)</th>
+                <th class="p-2 border border-[#111111]">Current Live SHA-256</th>
+                <th class="p-2 border border-[#111111]">Bound Plans</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#E5E5E0] text-[11px]">
+              <template x-for="item in evidence" :key="item.path">
+                <tr class="hover:bg-[#F9F9F7]">
+                  <td class="p-2 border border-[#E5E5E0] font-bold text-[#111111]" x-text="item.path"></td>
+                  <td class="p-2 border border-[#E5E5E0]">
+                    <span class="px-2 py-0.5 font-bold uppercase text-[10px]"
+                          :class="item.status==='MATCH' ? 'bg-emerald-100 text-emerald-900 border border-emerald-800' : 'bg-amber-100 text-amber-900 border border-amber-800'"
+                          x-text="item.status">
+                    </span>
+                  </td>
+                  <td class="p-2 border border-[#E5E5E0] text-neutral-600 truncate max-w-xs" x-text="item.expected_sha256" :title="item.expected_sha256"></td>
+                  <td class="p-2 border border-[#E5E5E0] text-neutral-800 truncate max-w-xs" x-text="item.current_sha256" :title="item.current_sha256"></td>
+                  <td class="p-2 border border-[#E5E5E0]">
+                    <div class="flex gap-1">
+                      <template x-for="pl in item.plans" :key="pl">
+                        <span class="bg-[#111111] text-white px-1.5 py-0.2 text-[9px] uppercase font-bold" x-text="'P' + pl"></span>
+                      </template>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         TAB 4: REVIEW GATES & DOSSIERS
+         ====================================================================== -->
+    <section x-show="activeSubTab==='reviews'" class="space-y-6">
+      <div class="border border-[#111111] bg-white p-5">
+        <h2 class="font-serif font-bold text-xl text-[#111111] m-0">Formal Review Gates &amp; Acceptance Logs</h2>
+        <p class="font-body text-xs text-neutral-600 mt-1 mb-4">
+          Recorded audit reviews for the local foundation, enrolled service identities, continuous canary runs, 455k-row recovery drills, and SBOM releases.
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <template x-for="r in reviews" :key="r.id">
+            <div class="border-2 border-[#111111] p-4 bg-[#F9F9F7] flex flex-col justify-between hard-shadow-sm hover:border-[#CC0000] transition-colors">
+              <div>
+                <div class="flex items-center justify-between pb-2 border-b border-[#E5E5E0]">
+                  <span class="bg-[#111111] text-white px-2 py-0.5 font-mono text-[10px] uppercase font-bold" x-text="r.id"></span>
+                  <span class="font-mono text-[10px] text-neutral-500" x-text="r.filename"></span>
+                </div>
+                <h3 class="font-serif font-bold text-lg text-[#111111] mt-2" x-text="r.title"></h3>
+                <p class="font-body text-xs text-neutral-700 mt-2 line-clamp-3 leading-relaxed" x-text="r.summary"></p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-[#E5E5E0] flex justify-end">
+                <button @click="openReviewModal(r)" class="btn-news-secondary px-3 py-1 text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1">
+                  <i class="ph ph-book-open"></i>
+                  <span>Read Dossier</span>
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         TAB 5: ARCHITECTURE & ROADMAP TIMELINE
+         ====================================================================== -->
+    <section x-show="activeSubTab==='roadmap'" class="space-y-6">
+      <div class="border border-[#111111] bg-white p-6">
+        <h2 class="font-serif font-bold text-2xl text-[#111111] m-0">Architecture Pipeline &amp; Milestone Timeline</h2>
+        <p class="font-body text-sm text-neutral-600 mt-1 max-w-3xl leading-relaxed">
+          How Codex engineering plans assemble into a self-hosted, authenticated container security platform with continuous stream detection and reproducible journal evidence.
+        </p>
+
+        <!-- Pipeline Diagram -->
+        <div class="border-2 border-[#111111] bg-[#111111] text-[#F9F9F7] p-4 mt-6 overflow-x-auto font-mono text-xs leading-relaxed">
+          <div class="text-[#CC0000] font-bold mb-2">// PORYGON END-TO-END CODEX ARCHITECTURE PIPELINE</div>
+<pre class="m-0 text-[#F9F9F7]">
+[Falco Sensor Adapter]  ─────────► [Telemetry Durable Outbox]  ──────┐
+                                                                     ├─► [Authenticated Host Ingest] (Plan 001)
+[Docker Engine Stream]  ─────────► [Collector Durable Outbox]  ──────┘          │
+                                                                                ▼
+[Immutable Image Profiles] ──────► [Bounded Assessment Worker] (Plan 002) ◄── [PostgreSQL Relational Store]
+                                        │                                       │
+                                        ├─► [Causal Evidence Engine] (Plan 003) ◄┘
+                                        │          │
+                                        │          ├─► [Transactional Outbox] (Plan 004) ──► [Alert Destinations]
+                                        │          │
+                                        │          └─► [Operator Approval Gate] ──► [Host-Bound Responder]
+                                        │
+                                        └─► [Confirmatory Study Runner] (Plan 005) ──► [2027 Journal Tables]
+</pre>
+        </div>
+
+        <!-- Milestones Table -->
+        <div class="mt-8">
+          <h3 class="font-serif font-bold text-lg text-[#111111] mb-3">Calendar Milestones &amp; Acceptance Gates</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse font-sans text-xs">
+              <thead>
+                <tr class="bg-[#111111] text-white font-mono uppercase text-[11px]">
+                  <th class="p-2.5 border border-[#111111]">Window</th>
+                  <th class="p-2.5 border border-[#111111]">Primary Objective</th>
+                  <th class="p-2.5 border border-[#111111]">Governing Plans</th>
+                  <th class="p-2.5 border border-[#111111]">Machine-Checkable Exit Evidence</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#E5E5E0] font-mono text-[11px]">
+                <tr class="hover:bg-[#F9F9F7]">
+                  <td class="p-2.5 border border-[#E5E5E0] font-bold text-[#CC0000]">Nov – Dec 2026</td>
+                  <td class="p-2.5 border border-[#E5E5E0] font-body text-xs font-normal">Service trust, unattended continuous detection, and profile enrollment</td>
+                  <td class="p-2.5 border border-[#E5E5E0] font-bold">Plan 001 &amp; 002</td>
+                  <td class="p-2.5 border border-[#E5E5E0]">476 test passes, permission matrix, unattended canary incident without manual compute/detect calls</td>
+                </tr>
+                <tr class="hover:bg-[#F9F9F7]">
+                  <td class="p-2.5 border border-[#E5E5E0] font-bold text-[#CC0000]">Jan – Mar 2027</td>
+                  <td class="p-2.5 border border-[#E5E5E0] font-body text-xs font-normal">Causal process lineage, rule workbench, delivery outbox &amp; recovery proof</td>
+                  <td class="p-2.5 border border-[#E5E5E0] font-bold">Plan 003, 004, 007, 008, 009</td>
+                  <td class="p-2.5 border border-[#E5E5E0]">455,165-row disaster recovery drill, bounded outbox drains, rule workbench preview/staging integrity</td>
+                </tr>
+                <tr class="hover:bg-[#F9F9F7]">
+                  <td class="p-2.5 border border-[#E5E5E0] font-bold text-[#CC0000]">Apr – Jun 2027</td>
+                  <td class="p-2.5 border border-[#E5E5E0] font-body text-xs font-normal">Prospective study execution, independent pilot lock, sample size verification</td>
+                  <td class="p-2.5 border border-[#E5E5E0] font-bold">Plan 005 &amp; 006</td>
+                  <td class="p-2.5 border border-[#E5E5E0]">Pre-collection protocol hashes, confirmatory runner execution, split-safe analysis without post-hoc redesign</td>
+                </tr>
+                <tr class="hover:bg-[#F9F9F7]">
+                  <td class="p-2.5 border border-[#E5E5E0] font-bold text-[#CC0000]">Late 2027</td>
+                  <td class="p-2.5 border border-[#E5E5E0] font-body text-xs font-normal">Reproducible scientific publication &amp; offline artifact release</td>
+                  <td class="p-2.5 border border-[#E5E5E0] font-bold">Master Pathway</td>
+                  <td class="p-2.5 border border-[#E5E5E0]">Claim-to-result audit map, offline reproducible tables, verified SHA-256 release manifests</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ======================================================================
+       FULL-SCREEN PLAN & REVIEW READER MODAL
+       ====================================================================== -->
+  <div x-show="modal.show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 sm:p-6"
+       style="display:none" @keydown.escape.window="modal.show=false">
+    <div class="border-2 border-[#111111] bg-white w-full max-w-4xl max-h-[90vh] flex flex-col hard-shadow"
+         @click.away="modal.show=false">
+      
+      <!-- Modal Header -->
+      <div class="bg-[#111111] text-white p-4 flex items-center justify-between border-b-2 border-[#111111]">
+        <div class="flex items-center gap-3">
+          <span class="bg-[#CC0000] text-white px-2 py-0.5 font-mono text-xs font-bold uppercase" x-text="modal.badge"></span>
+          <h3 class="font-serif font-bold text-lg text-white m-0 truncate max-w-xl" x-text="modal.title"></h3>
+        </div>
+        <button @click="modal.show=false" class="font-mono text-white text-xl hover:text-[#CC0000] px-2 py-0.5 transition-colors">&times;</button>
+      </div>
+
+      <!-- Modal Body (Rendered Markdown) -->
+      <div class="p-6 overflow-y-auto flex-1 bg-[#F9F9F7]">
+        <div class="markdown-body" x-html="modal.html"></div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="border-t border-[#111111] bg-white p-3 flex items-center justify-between font-mono text-xs">
+        <span class="text-neutral-500" x-text="'File: ' + modal.filename"></span>
+        <button @click="modal.show=false" class="btn-news-primary px-4 py-1.5 uppercase font-bold">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPLICATION SCRIPT -->
+  <script>
+    function plansApp() {
+      return {
+        activeSubTab: 'plans',
+        statusFilter: 'ALL',
+        findingCategory: 'ALL',
+        searchQuery: '',
+        loadingRecheck: false,
+        stats: {},
+        plans: [],
+        reviews: [],
+        findings: [],
+        evidence: [],
+        toasts: [],
+        modal: {
+          show: false,
+          title: '',
+          badge: '',
+          filename: '',
+          html: '',
+        },
+
+        async init() {
+          await this.loadData();
+        },
+
+        showToast(message, type = 'info') {
+          const id = Date.now();
+          this.toasts.push({ id, message, type });
+          setTimeout(() => {
+            this.toasts = this.toasts.filter(t => t.id !== id);
+          }, 4500);
+        },
+
+        async loadData() {
+          try {
+            // First attempt API route, fallback to static JSON
+            let resp = await fetch('/api/plans').catch(() => null);
+            if (!resp || !resp.ok) {
+              resp = await fetch('plans-data.json');
+            }
+            if (resp.ok) {
+              const data = await resp.json();
+              this.stats = data.stats || {};
+              this.plans = data.plans || [];
+              this.reviews = data.reviews || [];
+              this.findings = data.findings || [];
+              this.evidence = data.evidence || [];
+            } else {
+              this.showToast('Could not load plans data from server', 'danger');
+            }
+          } catch (e) {
+            console.error('Error loading plans data', e);
+            this.showToast('Error loading plans data: ' + e.message, 'danger');
+          }
+        },
+
+        async recheckHashes() {
+          this.loadingRecheck = true;
+          try {
+            const resp = await fetch('/api/plans/recheck', { method: 'POST' });
+            if (resp.ok) {
+              const res = await resp.json();
+              this.showToast('SHA-256 evidence hashes successfully verified!', 'info');
+              await this.loadData();
+            } else {
+              // Static reload fallback
+              await this.loadData();
+              this.showToast('Reloaded static plans data.', 'info');
+            }
+          } catch (e) {
+            await this.loadData();
+            this.showToast('Reloaded plans data locally.', 'info');
+          } finally {
+            this.loadingRecheck = false;
+          }
+        },
+
+        get filteredPlans() {
+          let list = this.plans;
+          if (this.statusFilter === 'DONE') {
+            list = list.filter(p => p.status_category === 'DONE' || p.status_category === 'LOCAL ACCEPTED');
+          } else if (this.statusFilter === 'IN PROGRESS') {
+            list = list.filter(p => p.status_category === 'IN PROGRESS');
+          }
+
+          if (this.searchQuery.trim()) {
+            const q = this.searchQuery.toLowerCase();
+            list = list.filter(p =>
+              p.title.toLowerCase().includes(q) ||
+              p.summary.toLowerCase().includes(q) ||
+              p.id.toLowerCase().includes(q) ||
+              p.category.toLowerCase().includes(q)
+            );
+          }
+          return list;
+        },
+
+        get filteredFindings() {
+          let list = this.findings;
+          if (this.findingCategory !== 'ALL') {
+            list = list.filter(f => f.category.toLowerCase().includes(this.findingCategory.toLowerCase()));
+          }
+          if (this.searchQuery.trim()) {
+            const q = this.searchQuery.toLowerCase();
+            list = list.filter(f =>
+              f.id.toLowerCase().includes(q) ||
+              f.finding.toLowerCase().includes(q) ||
+              f.evidence.toLowerCase().includes(q)
+            );
+          }
+          return list;
+        },
+
+        openPlanModal(plan) {
+          this.modal.title = plan.title;
+          this.modal.badge = 'PLAN ' + plan.id;
+          this.modal.filename = plan.filename;
+          if (window.marked && plan.content) {
+            this.modal.html = window.marked.parse(plan.content);
+          } else {
+            this.modal.html = '<pre>' + (plan.content || 'No content') + '</pre>';
+          }
+          this.modal.show = true;
+        },
+
+        openReviewModal(review) {
+          this.modal.title = review.title;
+          this.modal.badge = 'AUDIT REVIEW';
+          this.modal.filename = review.filename;
+          if (window.marked && review.content) {
+            this.modal.html = window.marked.parse(review.content);
+          } else {
+            this.modal.html = '<pre>' + (review.content || 'No content') + '</pre>';
+          }
+          this.modal.show = true;
+        },
+
+        navigateToPlan(planId) {
+          const cleanId = planId.replace(/^0+/, '');
+          this.activeSubTab = 'plans';
+          this.statusFilter = 'ALL';
+          this.searchQuery = '';
+          const match = this.plans.find(p => p.id === cleanId || p.id === planId || p.id.endsWith(cleanId));
+          if (match) {
+            this.openPlanModal(match);
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>

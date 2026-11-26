@@ -3,9 +3,14 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Internal checks use Docker exec; the public gateway intentionally rejects /internal/.
+if [[ -z "${PORYGON_VERIFY_BASE_URL:-}" ]]; then
+  exec python3 scripts/verification_api.py bash "$0" "$@"
+fi
+
 RUN_ID="${PORYGON_VERIFY_RUN_ID:-$(date -u +%Y%m%dt%H%M%Sz)-$$}"
 PROBE_NAME="porygon-telemetry-${RUN_ID}"
-PROBE_IMAGE="alpine:3.20"
+PROBE_IMAGE="alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
 LOCAL_ARTIFACT_DIR="artifacts/local"
 CONTAINERS_PATH="${LOCAL_ARTIFACT_DIR}/telemetry-${RUN_ID}-containers.json"
 PROCESS_EVENTS_PATH="${LOCAL_ARTIFACT_DIR}/telemetry-${RUN_ID}-process.json"
@@ -63,7 +68,12 @@ mkdir -p "$EVIDENCE_DIR"
 docker compose config --quiet
 pass "Compose configuration is valid"
 
-docker compose up --detach --build --wait
+# A caller may prebuild images separately (for example with a local build network).
+build_options=()
+if [[ "${PORYGON_VERIFY_BUILD:-true}" == "true" ]]; then
+  build_options+=(--build)
+fi
+docker compose up --detach "${build_options[@]}" --wait
 pass "PostgreSQL, backend, Docker collector, telemetry adapter, and Falco started"
 
 falco_id="$(docker compose ps -q falco)"
@@ -74,7 +84,7 @@ pass "Falco remained running with the modern eBPF configuration"
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
 backend_port="${backend_port:-8000}"
-base_url="http://127.0.0.1:${backend_port}"
+base_url="${PORYGON_VERIFY_BASE_URL:-http://127.0.0.1:${backend_port}}"
 curl --fail --silent --show-error "${base_url}/health/ready" >/dev/null
 
 collector_uid="$(docker compose exec -T collector id -u | tr -d '\r')"
@@ -87,7 +97,17 @@ telemetry_mounts="$(docker inspect "$(docker compose ps -q telemetry)" --format 
 [[ "$telemetry_mounts" != *"docker.sock"* ]] || fail "Telemetry adapter must not have Docker socket access"
 pass "Docker and kernel privileges are isolated from the backend and telemetry adapter"
 
-docker pull "$PROBE_IMAGE" >/dev/null
+# Retain historical diagnostics and measure only newly recorded errors. Row IDs
+# remain monotonic even when bounded dead-letter retention prunes older rows.
+dead_letter_start_id="$(docker compose exec -T telemetry python - <<'PYTHON'
+import sqlite3
+connection=sqlite3.connect('/var/lib/porygon/process-outbox.db')
+print(connection.execute('SELECT COALESCE(MAX(id),0) FROM dead_letters').fetchone()[0])
+PYTHON
+)"
+dead_letter_start_id="$(echo "$dead_letter_start_id" | tr -d '\r' | tail -1)"
+
+docker image inspect "$PROBE_IMAGE" >/dev/null 2>&1 || docker pull "$PROBE_IMAGE" >/dev/null
 expected_repo_digest="$(docker image inspect "$PROBE_IMAGE" --format '{{index .RepoDigests 0}}')"
 [[ "$expected_repo_digest" == *@sha256:* ]] || fail "Could not resolve a repository digest for $PROBE_IMAGE"
 
@@ -313,15 +333,17 @@ PY
 [[ "$count_before" == "$count_after" ]] || fail "Telemetry replay changed event count from $count_before to $count_after"
 pass "Durable file replay and backend ingestion are idempotent"
 
-dead_letters="$(docker compose exec -T telemetry python - <<'PY'
-import sqlite3
+readarray -t dead_letter_counts < <(docker compose exec -T -e DEAD_LETTER_START_ID="$dead_letter_start_id" telemetry python - <<'PYTHON'
+import os, sqlite3
 connection=sqlite3.connect('/var/lib/porygon/process-outbox.db')
 print(connection.execute('SELECT COUNT(*) FROM dead_letters').fetchone()[0])
-PY
-)"
-dead_letters="$(echo "$dead_letters" | tr -d '\r' | tail -1)"
-[[ "$dead_letters" == "0" ]] || fail "Telemetry adapter recorded $dead_letters malformed Falco lines"
-pass "Falco JSON stream contained no malformed records"
+print(connection.execute('SELECT COUNT(*) FROM dead_letters WHERE id > ?', (int(os.environ['DEAD_LETTER_START_ID']),)).fetchone()[0])
+PYTHON
+)
+dead_letters="${dead_letter_counts[0]}"
+new_dead_letters="${dead_letter_counts[1]}"
+[[ "$new_dead_letters" == "0" ]] || fail "Telemetry adapter recorded $new_dead_letters new malformed Falco lines"
+pass "Falco JSON stream produced no new malformed records; historical diagnostics retained"
 
 docker compose exec -T telemetry python - <<'PY' > "$TELEMETRY_STATUS_PATH"
 import json, urllib.request
@@ -367,6 +389,7 @@ TELEMETRY_OUTBOX_DURING_OUTAGE="$spooled_count" \
 POSTGRES_COUNT="$count_after" \
 REPLAY_ROW_GROWTH="$((count_after - count_before))" \
 DEAD_LETTERS="$dead_letters" \
+NEW_DEAD_LETTERS="$new_dead_letters" \
 CORRELATION_METRICS="$correlation_metrics" \
 TELEMETRY_STATUS_PATH="$TELEMETRY_STATUS_PATH" \
 python3 - <<'PY' > artifacts/ebpf-capture-integrity.json
@@ -386,6 +409,7 @@ document={
         'postgres_probe_rows_by_correlation_status': correlation,
         'postgres_row_growth_after_replay': int(os.environ['REPLAY_ROW_GROWTH']),
         'telemetry_dead_letters_retained': int(os.environ['DEAD_LETTERS']),
+        'telemetry_new_dead_letters_during_run': int(os.environ['NEW_DEAD_LETTERS']),
         'telemetry_spool_overflow_attempts_observed': status['spool_overflow_count'],
     },
     'unmeasured_boundaries': [

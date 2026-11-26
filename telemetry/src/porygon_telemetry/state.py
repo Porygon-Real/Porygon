@@ -24,6 +24,8 @@ class TelemetryState:
     queue_depth: int = 0
     events_enqueued: int = 0
     events_delivered: int = 0
+    process_events_delivered: int = 0
+    kernel_events_delivered: int = 0
     duplicates_ignored: int = 0
     ignored_non_porygon_events: int = 0
     malformed_lines: int = 0
@@ -59,6 +61,8 @@ class TelemetryState:
                 "queue_depth": self.queue_depth,
                 "events_enqueued": self.events_enqueued,
                 "events_delivered": self.events_delivered,
+                "process_events_delivered": self.process_events_delivered,
+                "kernel_events_delivered": self.kernel_events_delivered,
                 "duplicates_ignored": self.duplicates_ignored,
                 "ignored_non_porygon_events": self.ignored_non_porygon_events,
                 "malformed_lines": self.malformed_lines,

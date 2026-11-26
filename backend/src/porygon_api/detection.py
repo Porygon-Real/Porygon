@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from datetime import datetime, timedelta, timezone
+from itertools import islice
 from pathlib import PurePosixPath
 from typing import Any, Iterable
 
 RULESET_VERSION = "porygon.detection.v1"
-MATCHER_REVISION = "porygon.detection.matcher.v5"
+MATCHER_REVISION = "porygon.detection.matcher.path-aware-structural-independent-on-score-abstention"
 CORRELATION_WINDOW_SECONDS = 120
 
 SHELL_NAMES = {"sh", "bash", "dash", "ash", "zsh", "ksh", "fish"}
@@ -84,8 +86,36 @@ CUSTOM_RULE_ID_PREFIX = "POR-CUS-"
 CUSTOM_CONDITION_MAX_DEPTH = 6
 CUSTOM_CONDITION_MAX_LEAVES = 40
 CUSTOM_ANCESTOR_MAX_DEPTH = 25
-NUMERIC_CONDITION_FIELDS = {"user_uid"}
+MAX_ACTIVE_CUSTOM_RULES = 128
+MAX_CUSTOM_RULESET_BYTES = 262_144
+MAX_CUSTOM_RULE_SNAPSHOT_BYTES = 524_288
+MAX_RULE_EVALUATION_OPERATIONS = 100_000
+MAX_PREVIEW_EVALUATION_OPERATIONS = 50_000
+MAX_CUSTOM_RULE_MATCH_OUTPUTS = 250
 POR_DET_004_MATCH_CAP = 10
+
+
+class RuleEvaluationBudgetExceeded(RuntimeError):
+    """Raised when a bounded custom-rule evaluation exhausts its shared work budget."""
+
+
+class RuleSetCapacityExceeded(ValueError):
+    """Raised when the active immutable rule set exceeds declared count or byte caps."""
+
+
+class RuleMatchOutputLimitExceeded(RuntimeError):
+    """Raised before custom match output can exceed its response bound."""
+
+
+class EvaluationBudget:
+    def __init__(self, maximum: int) -> None:
+        self.maximum = maximum
+        self.used = 0
+
+    def consume(self, amount: int = 1) -> None:
+        self.used += amount
+        if self.used > self.maximum:
+            raise RuleEvaluationBudgetExceeded
 
 _PROCESS_FIELDS = {
     "executable",
@@ -97,10 +127,46 @@ _PROCESS_FIELDS = {
     "command_line",
     "user_uid",
     "container_id",
+    "exe_from_memfd",
+    "exe_writable",
 }
 _RUNTIME_FIELDS = {"action", "privileged", "image_digest", "container_id"}
-_CONTAINS_FIELDS = {"command_line", "executable", "executable_path", "parent_executable_path"}
-_CONDITION_OPS = {"equals", "not_equals", "in", "not_in", "contains"}
+_KERNEL_FIELDS = {
+    "runtime_action", "event_type", "return_value", "exe_from_memfd", "exe_writable",
+    "file_path", "remote_address", "remote_port", "process_name", "executable", "executable_path",
+    "user_uid", "process_pid", "process_start_ns", "pid_namespace_start_ns",
+    "sensor_epoch", "docker_host_id", "container_id",
+}
+_CONTAINS_FIELDS = {"command_line", "executable", "executable_path", "parent_executable_path", "file_path"}
+_PATH_PREFIX_FIELDS = {"file_path", "executable_path", "parent_executable_path"}
+_NUMERIC_CONDITION_FIELDS = {
+    "user_uid", "return_value", "remote_port", "process_pid", "process_start_ns",
+    "pid_namespace_start_ns",
+}
+NUMERIC_CONDITION_FIELDS = _NUMERIC_CONDITION_FIELDS
+_BOOLEAN_CONDITION_FIELDS = {"privileged", "exe_from_memfd", "exe_writable"}
+_CONDITION_OPS = {"equals", "not_equals", "in", "not_in", "contains", "startswith", "gt", "gte", "lt", "lte"}
+CUSTOM_RULE_INTERPRETER_CONTRACT = {
+    "dsl": "bounded-condition-tree",
+    "missing_evidence": "kleene-three-valued-conservative-unknown",
+    "ancestor_scope": "verified-host-epoch-sensor-container-namespace-parent-start-chain",
+    "boolean_logic": "kleene-all-any-not",
+    "operators": sorted(_CONDITION_OPS),
+    "targets": {"process": sorted(_PROCESS_FIELDS), "runtime": sorted(_RUNTIME_FIELDS),
+                "kernel": sorted(_KERNEL_FIELDS)},
+    "condition_max_depth": CUSTOM_CONDITION_MAX_DEPTH,
+    "condition_max_leaves": CUSTOM_CONDITION_MAX_LEAVES,
+    "ancestor_max_depth": CUSTOM_ANCESTOR_MAX_DEPTH,
+    "max_active_rules": MAX_ACTIVE_CUSTOM_RULES,
+    "max_ruleset_bytes": MAX_CUSTOM_RULESET_BYTES,
+    "max_snapshot_bytes": MAX_CUSTOM_RULE_SNAPSHOT_BYTES,
+    "max_shared_evaluation_operations": MAX_RULE_EVALUATION_OPERATIONS,
+    "max_preview_evaluation_operations": MAX_PREVIEW_EVALUATION_OPERATIONS,
+    "max_custom_match_outputs": MAX_CUSTOM_RULE_MATCH_OUTPUTS,
+    "list_max_items": 100,
+    "text_max_characters": 512,
+    "explanation": "field-operator-status-only-no-values",
+}
 
 
 def _canonical_json(value: Any) -> str:
@@ -116,11 +182,17 @@ def ruleset_hash() -> str:
 
 
 def custom_ruleset_hash(custom_rules: Iterable[dict[str, Any]]) -> str:
+    custom_rules = list(islice(iter(custom_rules), MAX_ACTIVE_CUSTOM_RULES + 1))
+    if len(custom_rules) > MAX_ACTIVE_CUSTOM_RULES:
+        raise RuleSetCapacityExceeded("active custom rule count exceeds the configured cap")
     documents = sorted(
         (
             {
                 "slug": rule["slug"],
+                "revision_hash": rule.get("revision_hash"),
                 "name": rule["name"],
+                "category": rule["category"],
+                "description": rule["description"],
                 "target": rule["target"],
                 "condition": rule["condition"],
                 "severity_weight": rule["severity_weight"],
@@ -131,7 +203,13 @@ def custom_ruleset_hash(custom_rules: Iterable[dict[str, Any]]) -> str:
         ),
         key=lambda item: item["slug"],
     )
-    return hashlib.sha256(_canonical_json(documents).encode("utf-8")).hexdigest()
+    rules_json = _canonical_json(documents)
+    if len(rules_json.encode("utf-8")) > MAX_CUSTOM_RULESET_BYTES:
+        raise RuleSetCapacityExceeded("active custom rule content exceeds the configured byte cap")
+    contract_hash = hashlib.sha256(_canonical_json(CUSTOM_RULE_INTERPRETER_CONTRACT).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        _canonical_json({"interpreter_hash": contract_hash, "rules": documents}).encode("utf-8")
+    ).hexdigest()
 
 
 def validate_custom_condition(condition: Any, *, target: str, _depth: int = 0, _leaves: list[None] | None = None) -> None:
@@ -148,14 +226,18 @@ def validate_custom_condition(condition: Any, *, target: str, _depth: int = 0, _
         raise ValueError("condition node must be an object")
 
     if "all" in condition or "any" in condition:
+        if set(condition) not in ({"all"}, {"any"}):
+            raise ValueError("boolean condition nodes must contain exactly one operator")
         key = "all" if "all" in condition else "any"
         children = condition[key]
-        if not isinstance(children, list) or not children:
-            raise ValueError(f"'{key}' must be a non-empty list of conditions")
+        if not isinstance(children, list) or not children or len(children) > CUSTOM_CONDITION_MAX_LEAVES:
+            raise ValueError(f"'{key}' must be a bounded, non-empty list of conditions")
         for child in children:
             validate_custom_condition(child, target=target, _depth=_depth + 1, _leaves=_leaves)
         return
     if "not" in condition:
+        if set(condition) != {"not"}:
+            raise ValueError("negation condition nodes must contain exactly 'not'")
         validate_custom_condition(condition["not"], target=target, _depth=_depth + 1, _leaves=_leaves)
         return
 
@@ -163,24 +245,55 @@ def validate_custom_condition(condition: Any, *, target: str, _depth: int = 0, _
     if len(_leaves) > CUSTOM_CONDITION_MAX_LEAVES:
         raise ValueError("condition tree exceeds the maximum number of leaf conditions")
 
+    if set(condition) - {"field", "op", "value", "scope"}:
+        raise ValueError("condition leaf contains unsupported keys")
     field = condition.get("field")
     op = condition.get("op")
     scope = condition.get("scope", "event")
-    allowed_fields = _PROCESS_FIELDS if target == "process" else _RUNTIME_FIELDS
+    allowed_fields = {"process": _PROCESS_FIELDS, "runtime": _RUNTIME_FIELDS, "kernel": _KERNEL_FIELDS}.get(target)
+    if allowed_fields is None:
+        raise ValueError(f"unknown custom rule target {target!r}")
     if field not in allowed_fields:
         raise ValueError(f"unknown field {field!r} for target {target!r}")
     if op not in _CONDITION_OPS:
         raise ValueError(f"unknown operator {op!r}")
     if op == "contains" and field not in _CONTAINS_FIELDS:
         raise ValueError(f"operator 'contains' is not supported for field {field!r}")
+    if op == "startswith" and field not in _PATH_PREFIX_FIELDS:
+        raise ValueError(f"operator 'startswith' is not supported for field {field!r}")
+    if op in {"gt", "gte", "lt", "lte"} and field not in _NUMERIC_CONDITION_FIELDS:
+        raise ValueError(f"operator {op!r} is only supported for numeric fields")
     if scope not in {"event", "ancestor"}:
         raise ValueError(f"unknown scope {scope!r}")
     if scope == "ancestor" and target != "process":
         raise ValueError("scope 'ancestor' is only valid for target 'process'")
     if "value" not in condition:
         raise ValueError("condition leaf is missing 'value'")
-    if op in {"in", "not_in"} and not isinstance(condition["value"], list):
-        raise ValueError(f"operator {op!r} requires a list value")
+    value = condition["value"]
+    if op in {"in", "not_in"}:
+        if not isinstance(value, list) or not value or len(value) > 100:
+            raise ValueError(f"operator {op!r} requires a bounded, non-empty list value")
+        values = value
+    else:
+        values = [value]
+    if field in _NUMERIC_CONDITION_FIELDS:
+        if any(isinstance(item, bool) or not isinstance(item, int) for item in values):
+            raise ValueError(f"{field} conditions require integer values")
+        if field not in {"return_value"} and any(item < 0 for item in values):
+            raise ValueError(f"{field} conditions require non-negative integer values")
+        if any(item < -(2**63) or item > 2**63 - 1 for item in values):
+            raise ValueError(f"{field} values exceed the supported signed 64-bit range")
+        if field == "remote_port" and any(item < 1 or item > 65535 for item in values):
+            raise ValueError("remote_port values must be between 1 and 65535")
+        if field == "process_pid" and any(item < 1 for item in values):
+            raise ValueError("process_pid values must be positive")
+    elif field in _BOOLEAN_CONDITION_FIELDS:
+        if any(not isinstance(item, bool) for item in values):
+            raise ValueError("privileged conditions require boolean values")
+    elif any(not isinstance(item, str) or len(item) > 512 for item in values):
+        raise ValueError("string conditions require strings of at most 512 characters")
+    if any(isinstance(item, float) and not math.isfinite(item) for item in values):
+        raise ValueError("condition values must be finite")
 
 
 
@@ -223,17 +336,19 @@ def build_detection_run_key(
     score_id: str,
     selected_allowlist_hash: str,
     selected_custom_ruleset_hash: str = "",
+    selected_interpreter_hash: str = "",
 ) -> str:
+    document = {
+        "score_id": score_id,
+        "ruleset_version": RULESET_VERSION,
+        "ruleset_hash": ruleset_hash(),
+        "allowlist_set_hash": selected_allowlist_hash,
+        "custom_ruleset_hash": selected_custom_ruleset_hash,
+    }
+    if selected_interpreter_hash:
+        document["custom_rule_interpreter_hash"] = selected_interpreter_hash
     return hashlib.sha256(
-        _canonical_json(
-            {
-                "score_id": score_id,
-                "ruleset_version": RULESET_VERSION,
-                "ruleset_hash": ruleset_hash(),
-                "allowlist_set_hash": selected_allowlist_hash,
-                "custom_ruleset_hash": selected_custom_ruleset_hash,
-            }
-        ).encode("utf-8")
+        _canonical_json(document).encode("utf-8")
     ).hexdigest()
 
 
@@ -337,10 +452,86 @@ def _ancestor_chain(event: Any, events_by_id: dict[str, Any], *, max_depth: int 
         parent = events_by_id.get(parent_id)
         if parent is None:
             break
+        # Old or imported links must obey the same boundary as new ingestion.
+        container_id = getattr(current, "container_id", None)
+        if not container_id or getattr(parent, "container_id", None) != container_id:
+            break
+        host_id = getattr(current, "docker_host_id", None)
+        parent_host_id = getattr(parent, "docker_host_id", None)
+        if host_id != parent_host_id:
+            break
+        sensor_id = getattr(current, "sensor_instance_id", None)
+        parent_sensor_id = getattr(parent, "sensor_instance_id", None)
+        if sensor_id and parent_sensor_id and sensor_id != parent_sensor_id:
+            break
+        current_time = getattr(current, "occurred_at", None)
+        parent_time = getattr(parent, "occurred_at", None)
+        if current_time and parent_time and parent_time > current_time:
+            break
+        current_nano = getattr(current, "time_nano", None)
+        parent_nano = getattr(parent, "time_nano", None)
+        if current_nano is not None and parent_nano is not None and parent_nano > current_nano:
+            break
         chain.append(parent)
         seen.add(parent_id)
         current = parent
     return chain
+
+
+def _verified_ancestor_chain(
+    event: Any, events_by_id: dict[str, Any], *, max_depth: int = CUSTOM_ANCESTOR_MAX_DEPTH,
+    work_budget: EvaluationBudget | None = None,
+) -> tuple[list[Any], bool]:
+    """Return verified ancestors and whether the complete in-window chain is known."""
+    chain: list[Any] = []
+    current = event
+    seen = {getattr(event, "event_id", "")}
+    for _ in range(max_depth):
+        if work_budget is not None:
+            work_budget.consume()
+        parent_id = getattr(current, "parent_event_id", None)
+        if not parent_id:
+            return chain, bool(getattr(current, "_fixture_lineage_complete", False))
+        if parent_id in seen:
+            return chain, False
+        parent = events_by_id.get(parent_id)
+        if parent is None:
+            return chain, False
+        required_equal = (
+            ("docker_host_id", "docker_host_id"),
+            ("container_id", "container_id"),
+            ("sensor_instance_id", "sensor_instance_id"),
+            ("sensor_epoch", "sensor_epoch"),
+            ("pid_namespace_start_ns", "pid_namespace_start_ns"),
+        )
+        if any(
+            getattr(current, left, None) is None
+            or getattr(parent, right, None) is None
+            or getattr(current, left, None) != getattr(parent, right, None)
+            for left, right in required_equal
+        ):
+            return chain, False
+        parent_start = getattr(current, "parent_start_ns", None)
+        parent_process_start = getattr(parent, "process_start_ns", None)
+        if parent_start is None or parent_process_start is None or parent_start != parent_process_start:
+            return chain, False
+        parent_pid = getattr(current, "process_ppid", None)
+        actual_parent_pid = getattr(parent, "process_pid", None)
+        if parent_pid is None or actual_parent_pid is None or parent_pid != actual_parent_pid:
+            return chain, False
+        current_time = getattr(current, "occurred_at", None)
+        parent_time = getattr(parent, "occurred_at", None)
+        if current_time is None or parent_time is None or parent_time > current_time:
+            return chain, False
+        current_nano = getattr(current, "time_nano", None)
+        parent_nano = getattr(parent, "time_nano", None)
+        if current_nano is None or parent_nano is None or parent_nano > current_nano:
+            return chain, False
+        chain.append(parent)
+        seen.add(parent_id)
+        current = parent
+    # Reaching the hard bound means the remaining chain was deliberately truncated.
+    return chain, False
 
 
 def _process_chain_documents(event: Any, events_by_id: dict[str, Any]) -> list[dict[str, Any]]:
@@ -358,20 +549,23 @@ def _process_chain_documents(event: Any, events_by_id: dict[str, Any]) -> list[d
 
 def _field_value(event: Any, field: str) -> Any:
     if field == "executable_path":
-        return _event_executable(event) or ""
+        return getattr(event, "executable", None)
     if field == "parent_executable_path":
-        return _parent_executable(event) or ""
+        return getattr(event, "parent_executable", None)
     if field == "executable":
-        return _basename(event)
+        value = _basename(event)
+        return value or None
     if field == "parent_executable":
         parent = _parent_executable(event)
-        return PurePosixPath(parent).name.lower() if parent else ""
+        return PurePosixPath(parent).name.lower() if parent else None
     if field == "process_name":
-        return (getattr(event, "process_name", None) or "").lower()
+        value = getattr(event, "process_name", None)
+        return value.lower() if isinstance(value, str) else None
     if field == "parent_name":
-        return (getattr(event, "parent_name", None) or "").lower()
+        value = getattr(event, "parent_name", None)
+        return value.lower() if isinstance(value, str) else None
     if field == "command_line":
-        return getattr(event, "command_line", None) or ""
+        return getattr(event, "command_line", None)
     if field == "user_uid":
         return getattr(event, "user_uid", None)
     if field == "container_id":
@@ -382,31 +576,32 @@ def _field_value(event: Any, field: str) -> Any:
         return getattr(event, "image_digest", None)
     if field == "privileged":
         snapshot = getattr(event, "container_snapshot", None) or {}
-        return bool((snapshot.get("host_config") or {}).get("privileged"))
+        host_config = snapshot.get("host_config") if isinstance(snapshot, dict) else None
+        if not isinstance(host_config, dict) or not isinstance(host_config.get("privileged"), bool):
+            return None
+        return host_config["privileged"]
+    if field in _KERNEL_FIELDS:
+        kernel_field_map = {
+            "runtime_action": "runtime_action", "event_type": "event_type",
+            "return_value": "return_value", "exe_from_memfd": "exe_from_memfd",
+            "exe_writable": "exe_writable", "file_path": "file_path",
+            "remote_address": "remote_address", "remote_port": "remote_port",
+            "process_name": "process_name", "executable": "executable",
+            "user_uid": "user_uid", "process_pid": "process_pid",
+            "process_start_ns": "process_start_ns",
+            "pid_namespace_start_ns": "pid_namespace_start_ns",
+            "sensor_epoch": "sensor_epoch", "docker_host_id": "docker_host_id",
+            "container_id": "container_id",
+        }
+        return getattr(event, kernel_field_map[field], None)
     return None
 
 
-def _coerce_numeric(value: Any) -> Any:
-    """Coerce a string-typed numeric value to int, leaving everything else untouched.
-
-    The dashboard's rule-builder UI sends UID values as strings; the events themselves
-    carry `user_uid` as an int. Without this, `leaf["value"] == event.user_uid` compares
-    a string to an int and is always False in Python, so builder-authored rules on
-    numeric fields silently never match.
-    """
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return value
-    return value
-
-
-def _leaf_matches(leaf: dict[str, Any], event: Any) -> bool:
+def _leaf_matches(leaf: dict[str, Any], event: Any) -> bool | None:
     field = leaf["field"]
     value = _field_value(event, field)
+    if value is None:
+        return None
     expected = leaf["value"]
     op = leaf["op"]
     # Keep existing basename rules working, while path-bearing conditions use
@@ -415,46 +610,112 @@ def _leaf_matches(leaf: dict[str, Any], event: Any) -> bool:
         full_path = _field_value(event, field + "_path")
         def matches(item: Any) -> bool:
             actual = full_path if isinstance(item, str) and "/" in item else value
+            if actual is None:
+                return None
             return actual == item
         if op in {"equals", "not_equals"}:
             result = matches(expected)
+            if result is None:
+                return None
             return result if op == "equals" else not result
         if op in {"in", "not_in"}:
-            result = any(matches(item) for item in expected)
+            outcomes = [matches(item) for item in expected]
+            result = any(item is True for item in outcomes)
+            if not result and any(item is None for item in outcomes):
+                return None
             return result if op == "in" else not result
         if op == "contains" and isinstance(expected, str) and "/" in expected:
-            return expected in full_path
+            return expected in full_path if isinstance(full_path, str) else None
+        if op == "startswith" and isinstance(expected, str):
+            return full_path.startswith(expected) if isinstance(full_path, str) else None
+    if field in {"executable_path", "parent_executable_path"} and op == "contains":
+        return isinstance(expected, str) and expected in value
     if field in NUMERIC_CONDITION_FIELDS:
-        value = _coerce_numeric(value)
-        if isinstance(expected, list):
-            expected = [_coerce_numeric(item) for item in expected]
-        else:
-            expected = _coerce_numeric(expected)
+        if isinstance(value, bool) or not isinstance(value, int):
+            return None
     if op == "equals":
+        if not isinstance(value, type(expected)) or isinstance(value, bool) != isinstance(expected, bool):
+            return None
         return value == expected
     if op == "not_equals":
+        if not isinstance(value, type(expected)) or isinstance(value, bool) != isinstance(expected, bool):
+            return None
         return value != expected
     if op == "in":
+        if not isinstance(expected, list):
+            return None
+        if any(type(value) is not type(item) for item in expected):
+            return None
         return value in expected
     if op == "not_in":
+        if not isinstance(expected, list):
+            return None
+        if any(type(value) is not type(item) for item in expected):
+            return None
         return value not in expected
     if op == "contains":
-        return isinstance(value, str) and isinstance(expected, str) and expected.lower() in value.lower()
+        if not isinstance(value, str) or not isinstance(expected, str):
+            return None
+        if field in _PATH_PREFIX_FIELDS:
+            return expected in value
+        return expected.lower() in value.lower()
+    if op == "startswith":
+        if not isinstance(value, str) or not isinstance(expected, str):
+            return None
+        return value.startswith(expected)
+    if op in {"gt", "gte", "lt", "lte"}:
+        if isinstance(value, bool) or not isinstance(value, int) or isinstance(expected, bool) or not isinstance(expected, int):
+            return None
+        return {"gt": value > expected, "gte": value >= expected,
+                "lt": value < expected, "lte": value <= expected}[op]
     return False
 
 
-def evaluate_custom_condition(condition: dict[str, Any], event: Any, events_by_id: dict[str, Any]) -> bool:
+def evaluate_custom_condition_detailed(
+    condition: dict[str, Any], event: Any, events_by_id: dict[str, Any],
+    work_budget: EvaluationBudget | None = None,
+) -> tuple[bool | None, list[dict[str, str]]]:
+    """Evaluate with Kleene three-valued logic and bounded, value-free explanations."""
+    if work_budget is not None:
+        work_budget.consume()
     if "all" in condition:
-        return all(evaluate_custom_condition(child, event, events_by_id) for child in condition["all"])
+        outcomes = [evaluate_custom_condition_detailed(child, event, events_by_id, work_budget) for child in condition["all"]]
+        value = False if any(item[0] is False for item in outcomes) else (
+            None if any(item[0] is None for item in outcomes) else True
+        )
+        return value, [reason for _, reasons in outcomes for reason in reasons][:8]
     if "any" in condition:
-        return any(evaluate_custom_condition(child, event, events_by_id) for child in condition["any"])
+        outcomes = [evaluate_custom_condition_detailed(child, event, events_by_id, work_budget) for child in condition["any"]]
+        value = True if any(item[0] is True for item in outcomes) else (
+            None if any(item[0] is None for item in outcomes) else False
+        )
+        return value, [reason for _, reasons in outcomes for reason in reasons][:8]
     if "not" in condition:
-        return not evaluate_custom_condition(condition["not"], event, events_by_id)
+        value, reasons = evaluate_custom_condition_detailed(condition["not"], event, events_by_id, work_budget)
+        return (None if value is None else not value), reasons
 
     scope = condition.get("scope", "event")
     if scope == "ancestor":
-        return any(_leaf_matches(condition, ancestor) for ancestor in _ancestor_chain(event, events_by_id))
-    return _leaf_matches(condition, event)
+        ancestors, complete = _verified_ancestor_chain(event, events_by_id, work_budget=work_budget)
+        if not ancestors:
+            if complete:
+                return False, []
+            return None, [{"field": str(condition.get("field", "")), "operator": str(condition.get("op", "")), "scope": "ancestor", "reason": "ancestry_unavailable"}]
+        outcomes = [_leaf_matches(condition, ancestor) for ancestor in ancestors]
+        if any(item is True for item in outcomes):
+            return True, []
+        if not complete or any(item is None for item in outcomes):
+            return None, [{"field": str(condition.get("field", "")), "operator": str(condition.get("op", "")), "scope": "ancestor", "reason": "field_unavailable"}]
+        return False, []
+    result = _leaf_matches(condition, event)
+    if result is None:
+        return None, [{"field": str(condition.get("field", "")), "operator": str(condition.get("op", "")), "scope": "event", "reason": "field_unavailable"}]
+    return result, []
+
+
+def evaluate_custom_condition(condition: dict[str, Any], event: Any, events_by_id: dict[str, Any]) -> bool:
+    """Boolean compatibility wrapper: unknown evidence is conservatively nonmatching."""
+    return evaluate_custom_condition_detailed(condition, event, events_by_id)[0] is True
 
 
 def _iso(value: datetime) -> str:
@@ -492,8 +753,10 @@ def _custom_rule_matches(
     *,
     process_events: list[Any],
     runtime_events: list[Any],
+    kernel_events: list[Any],
     events_by_id: dict[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    work_budget: EvaluationBudget,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, bool]:
     """Evaluate every custom rule, isolating each rule's failures from the others.
 
     A single malformed rule row (bad migration, direct SQL edit, a future relaxed
@@ -503,6 +766,8 @@ def _custom_rule_matches(
     """
     matches: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
+    unknown_count = 0
+    budget_exhausted = False
     for custom_rule in custom_rules:
         slug = custom_rule.get("slug") if isinstance(custom_rule, dict) else None
         try:
@@ -520,27 +785,44 @@ def _custom_rule_matches(
             }
             target = custom_rule["target"]
             condition = custom_rule["condition"]
-            source_events = process_events if target == "process" else runtime_events
+            validate_custom_condition(condition, target=target)
+            source_events = {"process": process_events, "runtime": runtime_events,
+                             "kernel": kernel_events}.get(target)
+            if source_events is None:
+                raise ValueError(f"unsupported custom rule target {target!r}")
             for event in source_events:
-                if not evaluate_custom_condition(condition, event, events_by_id):
+                outcome, _reasons = evaluate_custom_condition_detailed(condition, event, events_by_id, work_budget)
+                if outcome is None:
+                    unknown_count += 1
+                if outcome is not True:
                     continue
+                if len(matches) >= MAX_CUSTOM_RULE_MATCH_OUTPUTS:
+                    raise RuleMatchOutputLimitExceeded
                 if target == "process":
                     details = {
                         "executable": _event_executable(event),
                         "parent_executable": _parent_executable(event),
-                        "command_line": getattr(event, "command_line", None),
                         "process_chain": _process_chain_documents(event, events_by_id),
                     }
-                else:
+                elif target == "runtime":
                     details = {
                         "action": getattr(event, "action", None),
                         "image_digest": getattr(event, "image_digest", None),
+                    }
+                else:
+                    details = {
+                        "event_type": getattr(event, "event_type", None),
+                        "runtime_action": getattr(event, "runtime_action", None),
+                        "process_pid": getattr(event, "process_pid", None),
+                        "process_start_ns": getattr(event, "process_start_ns", None),
+                        "sensor_epoch": getattr(event, "sensor_epoch", None),
                     }
                 matches.append(
                     _match(
                         rule_id,
                         occurred_at=event.occurred_at,
-                        source_type="process_event" if target == "process" else "runtime_event",
+                        source_type={"process": "process_event", "runtime": "runtime_event",
+                                     "kernel": "kernel_event"}[target],
                         source_id=event.event_id,
                         container_id=event.container_id,
                         summary=f"Custom rule '{custom_rule['name']}' matched.",
@@ -548,15 +830,31 @@ def _custom_rule_matches(
                         rule=rule_document,
                     )
                 )
-        except (KeyError, TypeError, ValueError) as exc:
+        except RuleEvaluationBudgetExceeded:
+            errors.append({
+                "slug": slug,
+                "rule_id": f"{CUSTOM_RULE_ID_PREFIX}{slug}" if slug else None,
+                "error_code": "budget_exhausted",
+            })
+            budget_exhausted = True
+            break
+        except RuleMatchOutputLimitExceeded:
+            errors.append({
+                "slug": slug,
+                "rule_id": f"{CUSTOM_RULE_ID_PREFIX}{slug}" if slug else None,
+                "error_code": "match_output_limit_exceeded",
+            })
+            budget_exhausted = True
+            break
+        except (KeyError, TypeError, ValueError, RecursionError):
             errors.append(
                 {
                     "slug": slug,
                     "rule_id": f"{CUSTOM_RULE_ID_PREFIX}{slug}" if slug else None,
-                    "error": str(exc),
+                    "error_code": "rule_error",
                 }
             )
-    return matches, errors
+    return matches, errors, unknown_count, budget_exhausted
 
 
 def _deduplicate(matches: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -627,11 +925,16 @@ def _apply_allowlists(
         if match["rule_id"] != "POR-DET-005":
             continue
         details = match.get("details", {})
-        suppressor = suppressed_source_events.get(details.get("shell_event_id")) or suppressed_source_events.get(
-            details.get("tool_event_id")
-        )
-        if suppressor is not None:
-            suppressed.append({**match, "suppressed_by_allowlist_id": suppressor})
+        # Both concrete source events must have exact approved exceptions.
+        # Approval of either endpoint alone cannot exempt the whole sequence.
+        shell_approval = suppressed_source_events.get(details.get("shell_event_id"))
+        tool_approval = suppressed_source_events.get(details.get("tool_event_id"))
+        if shell_approval is not None and tool_approval is not None:
+            suppressed.append({
+                **match,
+                "suppressed_by_allowlist_id": tool_approval,
+                "suppressed_by_allowlist_ids": [shell_approval, tool_approval],
+            })
         else:
             active.append(match)
 
@@ -646,6 +949,7 @@ def evaluate_detection(
     runtime_events: list[Any],
     allowlists: list[Any] | None = None,
     custom_rules: list[dict[str, Any]] | None = None,
+    kernel_events: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate deterministic evidence rules for one immutable score window.
 
@@ -655,29 +959,22 @@ def evaluate_detection(
     only the 7 built-in rules.
     """
 
-    if getattr(anomaly_score, "status", None) != "scored" or getattr(anomaly_score, "total_score", None) is None:
-        return {
-            "ruleset_version": RULESET_VERSION,
-            "ruleset_hash": ruleset_hash(),
-            "custom_ruleset_hash": custom_ruleset_hash(custom_rules or []),
-            "status": "insufficient_data",
-            "matches": [],
-            "suppressed_matches": [],
-            "rule_errors": [],
-            "incident_eligible": False,
-            "anomaly_score": None,
-            "severity_score": None,
-            "severity_level": "unknown",
-            "confidence_score": 0.0,
-            "confidence_level": "low",
-            "summary": "Detection was not run because the observation lacked sufficient scoreable evidence.",
-            "metrics": {
-                "process_events": len(process_events),
-                "runtime_events": len(runtime_events),
-                "source_types": [],
-            },
-        }
+    custom_rules = list(islice(iter(custom_rules or ()), MAX_ACTIVE_CUSTOM_RULES + 1))
+    custom_rule_errors: list[dict[str, Any]] = []
+    custom_ruleset_hash_value: str | None
+    custom_capacity_exhausted = False
+    try:
+        custom_ruleset_hash_value = custom_ruleset_hash(custom_rules)
+    except RuleSetCapacityExceeded:
+        custom_ruleset_hash_value = None
+        custom_rules = []
+        custom_capacity_exhausted = True
+        custom_rule_errors.append({"rule_id": "CUSTOM_RULESET", "error_code": "ruleset_capacity_exceeded"})
 
+    score_available = (
+        getattr(anomaly_score, "status", None) == "scored"
+        and getattr(anomaly_score, "total_score", None) is not None
+    )
     baseline_sets = (getattr(profile, "features", {}) or {}).get("observed_sets", {})
     baseline_executables = set(baseline_sets.get("executables", []))
     baseline_process_names = {str(item).lower() for item in baseline_sets.get("process_names", [])}
@@ -685,8 +982,8 @@ def evaluate_detection(
     events_by_id = {event.event_id: event for event in process_events}
 
     matches: list[dict[str, Any]] = []
-    anomaly_value = float(anomaly_score.total_score)
-    if anomaly_value >= 0.50:
+    anomaly_value = float(anomaly_score.total_score) if score_available else 0.0
+    if score_available and anomaly_value >= 0.50:
         matches.append(
             _match(
                 "POR-DET-001",
@@ -842,12 +1139,19 @@ def evaluate_detection(
                 )
             )
 
-    custom_matches, rule_errors = _custom_rule_matches(
-        custom_rules or [],
-        process_events=process_events,
-        runtime_events=runtime_events,
-        events_by_id=events_by_id,
-    )
+    custom_work_budget = EvaluationBudget(MAX_RULE_EVALUATION_OPERATIONS)
+    if custom_capacity_exhausted:
+        custom_matches, rule_errors, custom_unknown_count, custom_work_exhausted = [], [], 0, True
+    else:
+        custom_matches, rule_errors, custom_unknown_count, custom_work_exhausted = _custom_rule_matches(
+            custom_rules,
+            process_events=process_events,
+            runtime_events=runtime_events,
+            kernel_events=kernel_events or [],
+            events_by_id=events_by_id,
+            work_budget=custom_work_budget,
+        )
+    rule_errors = custom_rule_errors + rule_errors
     matches.extend(custom_matches)
 
     matches, suppressed_matches = _apply_allowlists(_deduplicate(matches), allowlists or [])
@@ -881,9 +1185,21 @@ def evaluate_detection(
     if incident_eligible:
         summary = f"{len(eligible_matches)} incident-eligible rule match(es) correlated for {profile.image_digest}."
         status = "incident_created"
+    elif custom_work_exhausted:
+        summary = "Custom rule evaluation exceeded its shared work budget; absence of a match is inconclusive."
+        status = "budget_exhausted"
+    elif custom_unknown_count:
+        summary = "Custom rule evaluation had unknown evidence; absence of a match is inconclusive."
+        status = "rule_evidence_incomplete"
+    elif rule_errors:
+        summary = "One or more custom rules could not be evaluated; absence of a match is inconclusive."
+        status = "rule_error"
     elif matches:
         summary = "Only informational evidence matched; no incident was created."
         status = "findings_only"
+    elif not score_available:
+        summary = "Behavioral scoring abstained for insufficient data; structural rules produced no match."
+        status = "insufficient_data"
     else:
         summary = "No deterministic detection rules matched this scored window."
         status = "no_findings"
@@ -891,13 +1207,13 @@ def evaluate_detection(
     return {
         "ruleset_version": RULESET_VERSION,
         "ruleset_hash": ruleset_hash(),
-        "custom_ruleset_hash": custom_ruleset_hash(custom_rules or []),
+        "custom_ruleset_hash": custom_ruleset_hash_value,
         "status": status,
         "matches": matches,
         "suppressed_matches": suppressed_matches,
         "rule_errors": rule_errors,
         "incident_eligible": incident_eligible,
-        "anomaly_score": _round(anomaly_value),
+        "anomaly_score": _round(anomaly_value) if score_available else None,
         "severity_score": severity_score,
         "severity_level": severity_level(severity_score),
         "confidence_score": confidence_score,
@@ -906,11 +1222,18 @@ def evaluate_detection(
         "metrics": {
             "process_events": len(process_events),
             "runtime_events": len(runtime_events),
+            "kernel_events": len(kernel_events or []),
+            "behavioral_score_available": score_available,
             "source_types": source_types,
             "eligible_matches": len(eligible_matches),
             "informational_matches": len(matches) - len(eligible_matches),
             "suppressed_matches": len(suppressed_matches),
             "correlation_window_seconds": CORRELATION_WINDOW_SECONDS,
             "additional_unseen_executables": additional_unseen_executables,
+            "custom_rule_unknown_evaluations": custom_unknown_count,
+            "custom_rule_work_operations": custom_work_budget.used,
+            "custom_rule_work_limit": MAX_RULE_EVALUATION_OPERATIONS,
+            "custom_rule_error_count": len(rule_errors),
+            "custom_rule_evaluation_complete": not custom_work_exhausted and not custom_capacity_exhausted and not rule_errors,
         },
     }

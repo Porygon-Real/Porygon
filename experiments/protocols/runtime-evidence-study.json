@@ -1,0 +1,46 @@
+{
+  "contract": "porygon.runtime-evidence-study",
+  "status": "design-pending",
+  "primary_question": "Does causal runtime evidence reduce benign false alerts per container-hour while preserving controlled-scenario recall compared with deployment-scoped profiles?",
+  "primary_contrast": ["causal-plus-profile", "profile-only"],
+  "primary_endpoint": "false-alerts-per-container-hour",
+  "recall_noninferiority_margin": 0.05,
+  "independent_unit": "whole-collection-run",
+  "split_before_window_extraction": true,
+  "split_groups": ["run_id", "family", "release", "host_id", "day"],
+  "evaluations": ["family-held-out", "forward-in-time"],
+  "calibration": "separate-independent-runs",
+  "workload_families": ["nginx", "redis", "postgresql"],
+  "releases_per_family": 2,
+  "benign_intervals": ["startup", "steady", "burst", "backup", "update", "admin", "debug"],
+  "scenarios": [
+    {"id": "renamed-writable-tool", "negative_control": "legitimate-writable-tool", "required_fields": ["process_start_ns", "exe_writable", "parent_start_ns"]},
+    {"id": "memory-backed-execution", "negative_control": "legitimate-memfd-user", "required_fields": ["process_start_ns", "exe_from_memfd", "exec_return_value"]},
+    {"id": "attributed-outbound-connection", "negative_control": "ordinary-service-network", "required_fields": ["process_start_ns", "return_value", "remote_address", "remote_port"]},
+    {"id": "sensitive-file-write", "negative_control": "approved-package-update", "required_fields": ["process_start_ns", "file_path", "return_value"]},
+    {"id": "missing-parent-and-loss", "negative_control": "complete-observation", "required_fields": ["sensor_epoch", "kernel-drop-counter", "output-drop-counter"]},
+    {"id": "interleaved-processes", "negative_control": "verified-parent-child", "required_fields": ["process_start_ns", "parent_start_ns", "pid_namespace_start_ns"]}
+  ],
+  "comparators": ["rules-only", "profile-only", "legacy-heuristic", "causal-only", "causal-plus-profile", "trained-model-if-approved"],
+  "ablations": ["remove-causal-linkage", "remove-structural-features", "remove-kernel-channel"],
+  "ground_truth": "independent-controller-with-corroborating-evidence",
+  "missingness": "retain-all-planned-runs-and-report-abstention-bounds",
+  "multiplicity": "one-primary-contrast; Holm correction separately for secondary families",
+  "sample_size": null,
+  "precollection_lock": null,
+  "images": [],
+  "runs": [],
+  "sources": [
+    {"id": "holmes", "url": "https://www.seclab.cs.sunysb.edu/seclab/pubs/holmes19.pdf", "supports": "causal-correlation-prior-art", "accessed": "2026-10-27"},
+    {"id": "unicorn", "url": "https://www.ndss-symposium.org/wp-content/uploads/2020/02/24046-paper.pdf", "supports": "long-running-provenance-prior-art", "accessed": "2026-10-27"},
+    {"id": "provdetector", "url": "https://www.ndss-symposium.org/wp-content/uploads/2020/02/24167.pdf", "supports": "provenance-anomaly-prior-art", "accessed": "2026-10-27"},
+    {"id": "tetragon", "url": "https://tetragon.io/docs/use-cases/", "supports": "alternative-sensor-comparison", "accessed": "2026-10-27"},
+    {"id": "falco", "url": "https://falco.org/docs/concepts/metrics/", "supports": "capture-loss-boundaries", "accessed": "2026-10-27"},
+    {"id": "conformal-shift", "url": "https://arxiv.org/abs/2202.13415", "supports": "coverage-assumptions-under-shift", "accessed": "2026-10-27"}
+  ],
+  "claims": [
+    {"id": "incremental-causal-value", "test": "primary-paired-whole-run-comparison"},
+    {"id": "uncertainty-visible", "test": "loss-reset-and-missing-parent-negative-controls"},
+    {"id": "operational-cost", "test": "sensor-disabled-and-enabled-paired-resource-controls"}
+  ]
+}

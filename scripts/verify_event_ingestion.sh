@@ -3,10 +3,15 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Internal checks use Docker exec; the public gateway intentionally rejects /internal/.
+if [[ -z "${PORYGON_VERIFY_BASE_URL:-}" ]]; then
+  exec python3 scripts/verification_api.py bash "$0" "$@"
+fi
+
 RUN_ID="${PORYGON_VERIFY_RUN_ID:-$(date -u +%Y%m%dt%H%M%Sz)-$$}"
 PROBE_NAME="porygon-ingest-${RUN_ID}"
 PROBE_NETWORK="porygon-ingest-net-${RUN_ID}"
-PROBE_IMAGE="alpine:3.20"
+PROBE_IMAGE="alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
 PROBE_EXECUTIONS="${PORYGON_INGEST_EXECUTIONS:-40}"
 COLLECTOR_CONSTRAINED=false
 LOCAL_ARTIFACT_DIR="artifacts/local"
@@ -62,12 +67,17 @@ mkdir -p "$EVIDENCE_DIR"
 docker compose config --quiet
 pass "Compose configuration is valid"
 
-docker compose up --detach --build --wait
+# A caller may prebuild images separately (for example with a local build network).
+build_options=()
+if [[ "${PORYGON_VERIFY_BUILD:-true}" == "true" ]]; then
+  build_options+=(--build)
+fi
+docker compose up --detach "${build_options[@]}" --wait
 pass "PostgreSQL, backend, and Docker collector reached healthy state"
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
 backend_port="${backend_port:-8000}"
-base_url="http://127.0.0.1:${backend_port}"
+base_url="${PORYGON_VERIFY_BASE_URL:-http://127.0.0.1:${backend_port}}"
 
 curl --fail --silent --show-error "${base_url}/health/live" >/dev/null
 curl --fail --silent --show-error "${base_url}/health/ready" >/dev/null
@@ -96,7 +106,7 @@ configured_spool_limit="$(echo "$configured_spool_limit" | tr -d '\r' | tail -1)
 [[ "$configured_spool_limit" == "100" ]] || fail "Collector spool limit was not constrained to 100"
 pass "Collector spool was temporarily constrained to 100 events"
 
-docker pull "$PROBE_IMAGE" >/dev/null
+docker image inspect "$PROBE_IMAGE" >/dev/null 2>&1 || docker pull "$PROBE_IMAGE" >/dev/null
 expected_repo_digest="$(docker image inspect "$PROBE_IMAGE" --format '{{index .RepoDigests 0}}')"
 [[ "$expected_repo_digest" == *@sha256:* ]] || fail "Could not resolve a repository digest for $PROBE_IMAGE"
 pass "Pulled probe image has immutable repository digest $expected_repo_digest"

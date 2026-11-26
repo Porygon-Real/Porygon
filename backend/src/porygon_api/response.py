@@ -60,6 +60,7 @@ def build_recommendation_key(
     incident_id: str,
     target_container_id: str | None,
     policy_hash: str | None = None,
+    evidence_run_id: str | None = None,
 ) -> str:
     document = {
         "incident_id": incident_id,
@@ -67,15 +68,13 @@ def build_recommendation_key(
         "policy_version": POLICY_VERSION,
         "policy_hash": policy_hash or response_policy_hash(),
     }
+    if evidence_run_id is not None:
+        document["evidence_run_id"] = evidence_run_id
     return hashlib.sha256(canonical_json(document).encode("utf-8")).hexdigest()
 
 
 def _finding_rule_ids(findings: Iterable[dict[str, Any]]) -> set[str]:
-    return {
-        str(item.get("rule_id"))
-        for item in findings
-        if item.get("rule_id") is not None
-    }
+    return {str(item.get("rule_id")) for item in findings if item.get("rule_id") is not None}
 
 
 def allowed_actions_for_incident(
@@ -90,9 +89,8 @@ def allowed_actions_for_incident(
         return allowed
 
     thresholds = RESPONSE_POLICY["decision_thresholds"]
-    if (
-        severity_score >= float(thresholds["pause_min_severity"])
-        and confidence_score >= float(thresholds["pause_min_confidence"])
+    if severity_score >= float(thresholds["pause_min_severity"]) and confidence_score >= float(
+        thresholds["pause_min_confidence"]
     ):
         allowed.append("pause_container")
 
@@ -151,9 +149,7 @@ def build_recommendation_document(
     }
 
 
-def build_execution_idempotency_key(
-    *, recommendation_id: str, action_type: str
-) -> str:
+def build_execution_idempotency_key(*, recommendation_id: str, action_type: str) -> str:
     document = {
         "recommendation_id": recommendation_id,
         "action_type": action_type,

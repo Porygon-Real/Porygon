@@ -1,8 +1,8 @@
 import pytest
-from pydantic import ValidationError
-
+from porygon_api.detection import MATCHER_REVISION
 from porygon_api.main import app, get_detection_rules_config
 from porygon_api.schemas import CustomDetectionRuleCreateIn, DetectionAllowlistCreateIn
+from pydantic import ValidationError
 
 
 def test_detection_rules_routes_are_exposed_in_openapi() -> None:
@@ -23,6 +23,13 @@ def test_detection_rules_routes_are_exposed_in_openapi() -> None:
         "/operator/v1/custom-detection-rules",
         "/operator/v1/custom-detection-rules/{custom_rule_id}/disable",
         "/operator/v1/custom-detection-rules/{custom_rule_id}/enable",
+        "/api/v1/rule-workbench/rules",
+        "/operator/v1/rule-workbench/validate",
+        "/operator/v1/rule-workbench/rules/{rule_id}/preview",
+        "/operator/v1/rule-workbench/rules/{rule_id}/shadow",
+        "/operator/v1/rule-workbench/rules/{rule_id}/activate",
+        "/operator/v1/rule-workbench/rules/{rule_id}/rollback",
+        "/api/v1/rule-workbench/runs/{run_id}/ruleset",
     }
     assert required.issubset(paths)
 
@@ -30,7 +37,7 @@ def test_detection_rules_routes_are_exposed_in_openapi() -> None:
 def test_detection_config_separates_severity_confidence_and_verdict() -> None:
     response = get_detection_rules_config()
     assert response["ruleset_version"] == "porygon.detection.v1"
-    assert response["matcher_revision"] == "porygon.detection.matcher.v5"
+    assert response["matcher_revision"] == MATCHER_REVISION
     assert len(response["ruleset_hash"]) == 64
     assert response["rules"]
     assert "Neither is a probability of compromise" in response["interpretation"]
@@ -139,6 +146,34 @@ def test_custom_detection_rule_schema_rejects_ancestor_scope_on_runtime_target()
             incident_eligible=True,
             created_by="operator@example.com",
         )
+
+
+def test_rule_workbench_accepts_typed_kernel_rule_and_numeric_operators() -> None:
+    from porygon_api.rule_workbench import RuleDocumentIn
+
+    payload = RuleDocumentIn(
+        slug="positive-write", name="Positive write", description="Detect positive writes.",
+        category="kernel", target="kernel",
+        expression='runtime_action == "file_write" and return_value > 0 and file_path startswith "/etc/"',
+        severity_weight=0.7, confidence_weight=0.8, incident_eligible=True,
+    )
+    assert payload.condition["all"][1]["op"] == "gt"
+    assert payload.condition["all"][2]["op"] == "startswith"
+
+
+def test_rule_workbench_rejects_wrong_numeric_type_and_unbounded_tree() -> None:
+    from porygon_api.rule_workbench import RuleDocumentIn
+    from pydantic import ValidationError
+
+    base = {
+        "slug": "bad-kernel", "name": "Bad kernel", "description": "Bad type.",
+        "category": "kernel", "target": "kernel", "severity_weight": 0.7,
+        "confidence_weight": 0.8, "incident_eligible": True,
+    }
+    with pytest.raises(ValidationError):
+        RuleDocumentIn(**base, condition={"field": "remote_port", "op": "equals", "value": "443"})
+    with pytest.raises(ValidationError):
+        RuleDocumentIn(**base, condition={"field": "file_path", "op": "equals", "value": "/etc/", "extra": True})
 
 
 def _allowlist_payload(rule_id: str) -> DetectionAllowlistCreateIn:

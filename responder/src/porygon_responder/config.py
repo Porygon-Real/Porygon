@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,6 +14,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    access_mode: Literal["local", "authenticated"] = "local"
     service_name: str = "responder"
     responder_instance_id: str = "local-responder-01"
     api_base_url: str = "http://backend:8000"
@@ -27,6 +29,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     version: str = "0.7.0"
+    completion_store_path: str = "/var/lib/porygon/completions.sqlite"
+    completion_max_operations: int = Field(default=50000, ge=100, le=1000000)
 
 
 @lru_cache

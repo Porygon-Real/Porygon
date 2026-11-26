@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     docker_reconnect_max_seconds: int = Field(default=30, ge=2, le=300)
 
     spool_path: str = "/var/lib/porygon/outbox.db"
+    spool_max_bytes: int = Field(default=268435456,ge=1048576,le=10737418240)
     spool_max_events: int = Field(default=100_000, ge=100, le=10_000_000)
     delivery_batch_size: int = Field(default=100, ge=1, le=250)
     delivery_poll_seconds: float = Field(default=1.0, ge=0.2, le=30.0)

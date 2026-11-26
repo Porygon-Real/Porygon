@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from porygon_api.db import Base
@@ -160,3 +160,24 @@ def test_recent_rows_are_never_touched_regardless_of_batch_size() -> None:
 
     assert db.scalar(select(ProcessExecEvent.event_id).where(ProcessExecEvent.event_id == "recent-process")) == "recent-process"
     assert db.scalar(select(RuntimeEvent.event_id).where(RuntimeEvent.event_id == "recent-runtime")) == "recent-runtime"
+
+
+def test_retention_handles_large_batch_across_parameter_chunks() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = Session(engine)
+    old = NOW - timedelta(days=60)
+    count = 1200
+    for i in range(count):
+        db.add(_process_event(f"chunk-proc-{i}", old))
+        db.add(_runtime_event(f"chunk-rt-{i}", old))
+    db.commit()
+
+    result = apply_retention(db, retention_days=30, max_delete_batch=2000, dry_run=False, now=NOW)
+    db.commit()
+
+    assert result.process_exec_events_deleted == count
+    assert result.runtime_events_deleted == count
+    assert db.scalar(select(func.count(ProcessExecEvent.event_id))) == 0
+    assert db.scalar(select(func.count(RuntimeEvent.event_id))) == 0
+

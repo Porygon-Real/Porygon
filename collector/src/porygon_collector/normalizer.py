@@ -215,11 +215,25 @@ def normalize_event(
     container_id = _container_id_from_event(event_type, actor_id, attributes)
     snapshot: dict[str, Any] = {}
     if container_id:
-        try:
-            snapshot = build_container_snapshot(api_client, container_id)
-            store.cache_container(container_id, snapshot)
-        except (APIError, NotFound):
-            snapshot = store.get_cached_container(container_id) or {}
+        # Exec and health notifications do not change inspection metadata. All other
+        # actions refresh immediately, including rename, update, pause and networking.
+        reusable = event_type == "container" and action in {
+            "exec_create", "exec_start", "exec_die", "health_status"
+        }
+        cached = store.get_cached_container(
+            container_id, docker_host_id=docker_host_id, max_age_seconds=30
+        ) if reusable else None
+        if cached is not None:
+            snapshot = cached
+        else:
+            try:
+                snapshot = build_container_snapshot(api_client, container_id)
+                store.cache_container(container_id, snapshot, docker_host_id=docker_host_id)
+            except (APIError, NotFound):
+                # Removed containers still need their last known identity for evidence.
+                snapshot = store.get_cached_container(
+                    container_id, docker_host_id=docker_host_id
+                ) or {}
 
     container_info = snapshot.get("container", {})
     config = snapshot.get("config", {})

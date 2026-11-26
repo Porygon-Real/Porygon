@@ -8,10 +8,10 @@ Porygon monitors container execution at the kernel level using modern eBPF (via 
 
 ## Features
 
-- **Kernel-Level Telemetry**: Captures process execution events (`execve`/`execveat`) in real time using modern eBPF probes.
+- **Kernel-Level Telemetry**: Captures process execution (`execve`/`execveat`) plus separate typed evidence for outbound connections, memory-backed files, and sensitive-path opens and writes using modern eBPF probes.
 - **Digest-Bound Baselines**: Profiles expected process behavior bound to cryptographic image digests (`sha256:...`) rather than mutable image tags.
 - **Behavioral Anomaly Scoring**: Calculates runtime drift using Jensen-Shannon divergence to identify unexpected processes and abnormal tool usage.
-- **ML Threat Classification**: Classifies runtime telemetry into MITRE attack tactics (`shell_escape`, `reconnaissance`, `suspicious_tooling`, `privilege_escalation`, `benign`) using an explainable Random Forest ensemble with TreeSHAP feature attribution.
+- **ML Threat Classification**: Classifies runtime telemetry into MITRE attack tactics (`shell_escape`, `reconnaissance`, `suspicious_tooling`, `privilege_escalation`, `benign`) using a hand-authored heuristic tree ensemble with tree-path feature deltas.
 - **Rule Engine & AI Auditor**: Detects shell escapes, privilege escalation, unknown binaries, and suspicious executions, supplemented by automated incident summaries.
 - **Automated / Approved Containment**: Quarantines compromised containers (pause or stop) with configurable human-in-the-loop approval workflows.
 - **Vulnerability & SBOM Context**: Scans images with Trivy and enriches findings with EPSS exploit probabilities and CISA KEV exploitation data.
@@ -25,7 +25,7 @@ Porygon monitors container execution at the kernel level using modern eBPF (via 
 | :--- | :--- | :--- |
 | **`backend`** | Core API, scoring engine, detection logic, and incident management | `8000` (via gateway) |
 | **`collector`** | Streams Docker daemon lifecycle events (create, start, exec, die) | Internal |
-| **`telemetry`** | Ingests and spools kernel process events from Falco | Internal |
+| **`telemetry`** | Normalizes and durably spools separate process and kernel-runtime channels from Falco | Internal |
 | **`responder`** | Executes container containment actions (pause / stop) | Internal |
 | **`scanner`** | Runs Trivy vulnerability scans and retrieves EPSS/KEV metadata | Internal |
 | **`falco`** | Modern eBPF sensor monitoring system calls | Internal |
@@ -37,15 +37,14 @@ Porygon monitors container execution at the kernel level using modern eBPF (via 
 
 ## Machine Learning Threat Classification
 
-Porygon pairs continuous kernel eBPF observation with a supervised **Random Forest ensemble** and **TreeSHAP additive feature attribution**. Rather than treating machine learning as an opaque scoring mechanism, Porygon classifies runtime process telemetry directly into standardized **MITRE ATT&CK tactics** while mathematically explaining every prediction down to individual feature contributions.
-
+Porygon's default classifier is a **hand-authored five-tree heuristic ensemble** over 12 process-execution features. It returns operational class scores and raw tree-path feature deltas. Every response identifies its model kind, training and calibration status, feature contract and canonical ensemble hash. The historical model identifier remains stable for replay.
 ### Multi-Layer Detection Architecture
 
 | Defense Layer | Detection Engine | Target Threat Vector | Evaluation Latency | Output Representation | Explainability Mechanism |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Statistical Drift** | Jensen-Shannon Divergence | Unseen process churn & baseline deviation | < 0.2 ms | Continuous distance score (`0.00`–`1.00`) | Digest symbol distribution delta |
 | **Deterministic Rules** | Falco eBPF Kernel Probes | Known exploits (`setuid`, cgroup escape, shim bypass) | Real-time (< 0.1 ms) | Boolean incident alerts | Syscall argument match & trace |
-| **Supervised ML** | Calibrated Random Forest Ensemble | Stealthy multi-stage attack tactics & intent | < 1.5 ms | MITRE tactic probabilities + verdict | Exact TreeSHAP additive feature attributions ($\Delta \mathbf{P}$) |
+| **Heuristic classifier** | Hand-authored five-tree ensemble | Execution feature patterns | Benchmark-dependent | Heuristic class scores + operational label | Tree-path deltas in raw ensemble probability space |
 | **Generative AI** | Local LLM Auditor (Claude/Ollama) | Complex alert correlation & blast-radius analysis | 1.5 s – 3.0 s | Plain-language remediation brief | Chain-of-thought markdown narrative |
 
 ### MITRE ATT&CK Tactic Mapping
@@ -77,13 +76,13 @@ The ML classifier ingests 12 normalized telemetry features derived from kernel `
 | **`suspicious_sequence_ratio`** | `[0.0, 1.0]` | Sequences matching rapid recon-to-exploit chaining patterns | Multi-step automated cyber kill-chain execution |
 | **`jensen_shannon_drift`** | `[0.0, 1.0]` | Jensen-Shannon distance against the baseline process distribution | Global behavioral divergence from expected workload profile |
 
-### TreeSHAP Mathematical Explainability
+### Tree-path Feature Explanation
 
-To satisfy strict regulatory and security audit requirements, Porygon rejects black-box classifications. Each prediction is accompanied by exact TreeSHAP local additive feature attributions:
+For each output class, the average tree-root value plus all traversed feature deltas reconstructs the raw ensemble output:
 
-$$\mathbf{f}(x) = \phi_0 + \sum_{i=1}^{12} \phi_i(x)$$
+$$f_c^{\mathrm{raw}}(x) = b_c + \sum_{i=1}^{12} \Delta_{i,c}(x)$$
 
-Where $\phi_0$ is the base expected model value and $\phi_i(x)$ represents the exact marginal contribution of feature $i$ pushing the probability toward or away from a given MITRE tactic.
+Responses expose `explanation_base_values`, `raw_output_values` and `full_feature_contributions` for this identity. The dashboard shows the top five raw-space drivers. The existing `class_probabilities` and `confidence` field names retain their historical numeric values: they contain fixed-temperature sharpened heuristic scores. Their calibration status is `unvalidated`; the path deltas explain the raw output before that nonlinear transform. Training provenance and a distinct output-space contract accompany model metadata.
 
 ### ML Classifier REST API
 
@@ -150,6 +149,48 @@ Key settings:
 - `PORYGON_RESPONSE_EXECUTION_MODE`: Set to `disabled` (safe default, approvals queued) or `live` (for active containment).
 - `PORYGON_LOG_LEVEL`: Logging verbosity (`DEBUG`, `INFO`, `WARNING`).
 - `PORYGON_OPERATOR_API_TOKEN`: Secret token used for operator actions in the dashboard and API.
+- `PORYGON_COMPLETION_MAX_OPERATIONS`: Maximum retained responder operation receipts (default `50000`); only acknowledged receipts are pruned when capacity is reached.
+- `PORYGON_AI_MAX_CONCURRENT_AUDITS`: Maximum simultaneous external AI calls per backend process (default `2`). Database connections are released before these calls.
+- `PORYGON_RETENTION_SCHEDULER_ENABLED`: Enable periodic raw-event pruning (default `false`).
+- `PORYGON_RETENTION_INTERVAL_SECONDS`: Delay between bounded retention batches (default `21600`).
+- `PORYGON_RAW_EVENT_RETENTION_DAYS`: Raw-event age cutoff (default `30`).
+- `PORYGON_RETENTION_MAX_DELETE_BATCH`: Maximum rows deleted per event table per tick (default `50000`).
+
+### Local images and rare execution
+
+Scans accept explicit `local:sha256:<64-hex-digits>` targets, including undeployed images, and bind requests, workers and exposure evidence to the Docker host. See [local image scanning](docs/local-image-scanning.md).
+
+Scoring can explicitly select `porygon.distance.rare-execution` to retain a rare shell signal against an entirely zero shell baseline. The policy has its own score identity and preserves existing defaults; see [rare execution scoring](docs/rare-execution-scoring.md).
+
+### Command and lineage profiles
+
+Baseline builds can opt into `--feature-schema porygon.behaviour.command-lineage` for fixed-vocabulary command shapes and verified parent-linked sequences. Scoring uses the selected profile's contract, records command coverage, and retains existing profile defaults and historical scores. See [command and lineage scoring](docs/command-lineage-scoring.md) for selection, feature semantics and model compatibility.
+
+### Incident episodes and response recovery
+
+Repeated findings for the same exact container/host scope, image, profile, and detection configuration update one active incident. Every detection run remains stored and linked to the incident; each appended evidence row includes its run ID. Closing an incident ends that episode. Unknown or ambiguous container identities do not group. Recommendations bind to the latest assessed window; generate a fresh recommendation after the evidence changes.
+
+The responder keeps an intent and completion journal in the `porygon_responder_state` named volume, using SQLite WAL with FULL durability. Pending completions are delivered before new Docker actions. Reclaimed operations replay their saved receipt; an interrupted operation with an unknown outcome requires operator review. Keep this volume across restarts and share it between workers using the same executor identity. The journal's exclusive worker lock coordinates processes sharing that filesystem; separate hosts need shared response ownership before scaling execution across them.
+
+Collector events and their replay cursor commit atomically in batches of up to 100 events or approximately 50 ms, retaining FULL durability. Spool capacity applies backpressure without advancing the cursor past uncommitted events. External AI audit evidence is escaped and isolated from system instructions; malformed assessments and invented command citations are rejected. AI suggestions remain advisory.
+
+### Kernel runtime evidence and background identity repair
+
+Outbound connections, memory-backed file creation, and sensitive-path writable opens and actual writes are stored separately from exec scoring. The telemetry tab provides host and activity filters. Durable mixed-channel delivery, replay-safe storage, background identity repair, and verification commands are documented in [Kernel runtime telemetry](docs/kernel-runtime-telemetry.md). Configure the worker with `PORYGON_RECONCILIATION_ENABLED` (default `true`), `PORYGON_RECONCILIATION_INTERVAL_SECONDS` (default `5`), and `PORYGON_RECONCILIATION_BATCH_SIZE` (default `500`).
+
+### Internal administration and verification
+
+The public gateway rejects `/internal` and `/internal/*`. Internal services use the private Docker network. Local administrative commands use authenticated Docker-exec transport for internal routes, so the backend needs no published host port:
+
+```bash
+python3 scripts/porygon_baseline.py --help
+python3 scripts/porygon_score.py --help
+python3 scripts/porygon_detect.py --help
+```
+
+Public API reads and explicit remote URLs continue to use HTTP. Acceptance scripts manage their private transport automatically. To reuse images already built locally, set `PORYGON_VERIFY_BUILD=false` when running verification; the default still rebuilds images.
+
+Retention is opt-in because it removes raw evidence older than the configured cutoff. Each scheduled batch uses a short database session and a cross-worker lock. Existing profiles and recorded score documents are retained. See [improvement progress](docs/review/improvement-progress.md) for implemented fixes, regression coverage, and remaining work.
 
 ---
 
@@ -162,6 +203,7 @@ Explore the complete documentation in [`docs/`](docs/):
 - **Architecture:**
   - [System Overview](docs/architecture/system-overview.md)
   - [eBPF Kernel Telemetry](docs/architecture/ebpf-telemetry.md)
+  - [Kernel Runtime Evidence and Recovery](docs/kernel-runtime-telemetry.md)
   - [Digest-Bound Behavioral Profiling](docs/architecture/behavioral-profiling.md)
   - [Explainable ML Threat Classifier](docs/architecture/ml-threat-classifier.md)
   - [Containment Engine & Safety Leases](docs/architecture/containment-engine.md)

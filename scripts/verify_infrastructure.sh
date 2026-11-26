@@ -26,7 +26,12 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is not installed"
 docker compose config --quiet
 pass "Compose configuration is valid"
 
-docker compose up --detach --build --wait
+# A caller may prebuild images separately (for example with a local build network).
+build_options=()
+if [[ "${PORYGON_VERIFY_BUILD:-true}" == "true" ]]; then
+  build_options+=(--build)
+fi
+docker compose up --detach "${build_options[@]}" --wait
 pass "All infrastructure services reached healthy state"
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
@@ -36,6 +41,12 @@ base_url="http://127.0.0.1:${backend_port}"
 curl --fail --silent --show-error "${base_url}/health/live" >/dev/null
 curl --fail --silent --show-error "${base_url}/health/ready" >/dev/null
 pass "Backend liveness and database readiness checks passed"
+
+for path in /internal /internal/ /internal/v1/process-events/batch /%69nternal/v1/process-events/batch; do
+  code="$(curl --silent --output /dev/null --write-out '%{http_code}' "${base_url}${path}")"
+  [[ "$code" == "403" ]] || fail "Gateway exposed internal route ${path}: ${code}"
+done
+pass "Public gateway rejects internal control-plane routes"
 
 backend_id="$(docker compose ps --quiet backend)"
 gateway_id="$(docker compose ps --quiet gateway)"
@@ -49,8 +60,8 @@ backend, gateway = json.loads(os.environ["BOUNDARY_JSON"])
 backend_ports = backend["NetworkSettings"]["Ports"]
 assert not any(backend_ports.values()), "backend publishes a host port"
 backend_networks = set(backend["NetworkSettings"]["Networks"])
-assert len(backend_networks) == 1
-assert next(iter(backend_networks)).endswith("_porygon_internal")
+assert any(name.endswith("_porygon_internal") for name in backend_networks)
+assert not any(name.endswith("_porygon_ingress") for name in backend_networks)
 
 gateway_ports = gateway["NetworkSettings"]["Ports"]
 bindings = gateway_ports.get("8080/tcp") or []
@@ -67,6 +78,19 @@ secret_prefixes = ("PORYGON_", "POSTGRES_")
 assert not any(item.startswith(secret_prefixes) for item in gateway["Config"]["Env"])
 PY
 pass "Loopback gateway exposes no backend port or service credentials"
+
+# Replacing only the backend must not leave the running gateway bound to an old IP.
+docker compose up --detach --no-deps --force-recreate --wait backend
+for attempt in {1..15}; do
+  if curl --fail --silent "${base_url}/health/ready" >/dev/null; then
+    break
+  fi
+  sleep 1
+done
+curl --fail --silent --show-error "${base_url}/health/ready" >/dev/null
+[[ "$(docker compose ps --quiet gateway)" == "$gateway_id" ]] || fail "Gateway was unexpectedly replaced"
+pass "Gateway recovered after backend replacement without restarting"
+
 
 sleep 2
 services_before="$(curl --fail --silent --show-error "${base_url}/api/v1/services")"

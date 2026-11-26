@@ -29,10 +29,14 @@ def test_container_cache_survives_store_reopen(tmp_path) -> None:
     first.cache_container("container-1", {"container": {"name": "probe"}})
 
     second = OutboxStore(path, max_events=10)
-    assert second.get_cached_container("container-1") == {"container": {"name": "probe"}}
+    assert second.get_cached_container("container-1") == {
+        "container": {"name": "probe"}
+    }
 
 
-def test_store_repairs_legacy_detailed_actions_without_dropping_events(tmp_path) -> None:
+def test_store_repairs_legacy_detailed_actions_without_dropping_events(
+    tmp_path,
+) -> None:
     path = str(tmp_path / "outbox.db")
     event_id = "b" * 64
     store = OutboxStore(path, max_events=10)
@@ -65,3 +69,41 @@ def test_store_repairs_legacy_detailed_actions_without_dropping_events(tmp_path)
             "SELECT payload FROM outbox WHERE event_id = ?", (event_id,)
         ).fetchone()[0]
     assert json.loads(raw)["action"] == "exec_create"
+
+
+def test_batch_failure_rolls_back_events_and_cursor(tmp_path):
+    import pytest
+    from porygon_collector.spool import SpoolFullError
+
+    store = OutboxStore(str(tmp_path / "batch.db"), max_events=2)
+    store.enqueue_batch([_event("a")], cursor=10)
+    with pytest.raises(SpoolFullError):
+        store.enqueue_batch([_event("b"), _event("c")], cursor=30)
+    assert store.count() == 1
+    assert store.get_cursor() == 10
+    assert store.enqueue_batch([_event("a"), _event("b"), _event("b")], cursor=20) == (
+        1,
+        2,
+    )
+    store.enqueue_batch([], cursor=15)
+    assert store.get_cursor() == 20
+    assert OutboxStore(str(store.path), 2).count() == 2
+
+
+def test_concurrent_batches_cannot_exceed_capacity(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from porygon_collector.spool import SpoolFullError
+
+    path = str(tmp_path / "race.db")
+    stores = [OutboxStore(path, 1), OutboxStore(path, 1)]
+
+    def insert(index):
+        try:
+            stores[index].enqueue_batch([_event(str(index))], cursor=index + 1)
+            return True
+        except SpoolFullError:
+            return False
+
+    with ThreadPoolExecutor(2) as pool:
+        assert sum(pool.map(insert, range(2))) == 1
+    assert stores[0].count() == 1

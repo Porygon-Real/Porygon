@@ -13,6 +13,8 @@
 // exposing them to the component via a getter fixes it without touching any
 // of the many `chartRegistry.X` call sites throughout this file.
 const chartRegistry = {};
+let ruleWorkbenchReturnFocus = null;
+let ruleWorkbenchTokenReturnFocus = null;
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('porygonApp', () => ({
@@ -22,6 +24,7 @@ document.addEventListener('alpine:init', () => {
 
     // System & Health Data
     systemInfo: {},
+    assessmentStatus: null,
     services: [],
     containers: [],
     selectedContainer: null,
@@ -44,6 +47,12 @@ document.addEventListener('alpine:init', () => {
     },
     processSummary: null,
     runtimeSummary: null,
+    kernelEvents: [],
+    kernelActionFilter: '',
+    kernelHostFilter: '',
+    kernelLoading: false,
+    kernelError: '',
+    kernelRequestId: 0,
 
     // Behavioural Anomaly & Distance
     scores: [],
@@ -77,6 +86,13 @@ document.addEventListener('alpine:init', () => {
     mlLoadingBatch: false,
     mlTacticFilter: 'all',
     mlSearchQuery: '',
+    mlModelInfo: null,
+    mlModelInfoError: false,
+    mlIncludeStopped: false,
+    mlAutoRefreshTimer: null,
+    mlAutoRefreshPaused: false,
+    mlLastUpdated: null,
+    mlQueuedStoppedClassification: false,
 
     // Rules & Incidents
     rules: [],
@@ -99,8 +115,7 @@ document.addEventListener('alpine:init', () => {
     // Unified view of built-in + custom detection rules for the Incidents
     // tab's single rules list. Custom rules are mapped onto the same shape
     // as built-in rules (rule_id, name, description, severity_weight,
-    // confidence_weight) plus is_custom/enabled flags and a back-reference
-    // to the original custom rule object so the Disable action still works.
+    // confidence_weight) plus lifecycle state and a back-reference for workbench review.
     get allRules() {
       const mappedCustom = this.customRules.map(r => ({
         rule_id: r.rule_id || `POR-CUS-${r.slug}`,
@@ -109,6 +124,12 @@ document.addEventListener('alpine:init', () => {
         severity_weight: r.severity_weight,
         confidence_weight: r.confidence_weight,
         enabled: r.enabled,
+        lifecycle_state: r.lifecycle_state,
+        candidate_state: r.candidate_state,
+        revision_hash: r.revision_hash,
+        active_revision_hash: r.active_revision_hash,
+        category: r.category,
+        target: r.target,
         // Canonical text form of the rule's condition, rendered by the backend from
         // the stored tree, so builder- and text-authored rules read the same here.
         expression: r.expression,
@@ -131,7 +152,25 @@ document.addEventListener('alpine:init', () => {
       severity_weight: 0.6,
       confidence_weight: 0.8,
       incident_eligible: true,
-      conditions: [{ field: 'executable', op: 'equals', value: '', scope: 'event' }],
+      expression: '',
+    },
+    ruleWorkbench: {
+      selectedRule: null,
+      mode: 'manual',
+      eventIds: '',
+      fixtures: '',
+      reference: '',
+      rollbackRevisionHash: '',
+      revisions: [],
+      result: null,
+      message: '',
+      busy: false,
+    },
+    ruleAssistant: {
+      objective: '', recipes: [], loadingRecipes: false, busy: false,
+      recipeId: '', parameters: {}, recommendations: [], triage: null,
+      proposal: null, proposalExpression: '', ready: false, message: '', requestId: 0,
+      suggestedParameters: null,
     },
 
     // Pipeline trace (raw event -> rule match -> incident)
@@ -172,7 +211,7 @@ document.addEventListener('alpine:init', () => {
         icon: 'ph-cpu',
         tag: 'KERNEL HOOK',
         badgeColor: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
-        summary: 'Falco\'s modern-eBPF driver attaches to process-execution tracepoints without modifying container binaries or kernel source. It observes execve/execveat only in v1 -- no network, file, or socket syscalls are captured (see docs/research/threat-model.md).',
+        summary: 'Falco\'s modern-eBPF driver attaches to process-execution tracepoints without modifying container binaries or kernel source. Execve/execveat feed behavioral scoring. Outbound connections, memory-backed file creation, and sensitive-path writes are stored separately as typed kernel evidence.',
         technicalHook: 'evt.type in (execve, execveat)  [falco/porygon_rules.yaml]',
         inputSource: 'Process-execution syscalls from containerized processes.',
         outputArtifact: 'Process-exec records (process name, executable path, full command line, ppid, uid/gid, parent context) -- see falco/porygon_rules.yaml for the exact output fields.',
@@ -319,7 +358,7 @@ document.addEventListener('alpine:init', () => {
         icon: 'ph-funnel',
         tag: 'REACHABILITY ENGINE',
         badgeColor: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
-        summary: 'Cross-correlates static CVE manifests against live kernel execution memory to prove whether a vulnerability is reachable or dormant dead-code.',
+        summary: 'Correlates package inventories with deployment, process execution, and published-port evidence to prioritize vulnerability review.',
         technicalHook: 'Evidence Ladder:\n1. Package Present -> 2. Deployed -> 3. Runtime Observed -> 4. Port Published',
         inputSource: 'CycloneDX SBOM packages (Tier 1) intersected with eBPF execve telemetry (Tier 1).',
         outputArtifact: 'Vulnerability findings partitioned by evidence stage (package present / deployed / runtime-observed / port-published); no aggregate noise-reduction percentage has been measured.',
@@ -420,23 +459,34 @@ document.addEventListener('alpine:init', () => {
     isExecutingAttack: false,
     authorizingIncidentId: null,
     toasts: [],
+    feedUnavailable: {
+      health: false,
+      inventory: false,
+      telemetry: false,
+      incidents: false,
+      vulnerabilities: false,
+    },
+    get unavailableFeeds() {
+      const labels = {
+        health: 'service health',
+        inventory: 'container inventory',
+        telemetry: 'process telemetry',
+        incidents: 'incident feed',
+        vulnerabilities: 'vulnerability scans',
+      };
+      return Object.keys(labels).filter(feed => this.feedUnavailable[feed]).map(feed => labels[feed]);
+    },
     showDocsModal: false,
     docsTab: 'mental_model',
 
-    // Operator token (stored in localStorage)
-    get operatorToken() {
+    // Human credentials persist in sessionStorage for this tab only.
+    _humanToken: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('porygon_operator_token')) || '',
+    get operatorToken() { return this._humanToken; },
+    set operatorToken(value) {
+      this._humanToken = value || '';
       try {
-        const stored = localStorage.getItem('porygon_operator_token');
-        if (stored) return stored;
-        return 'dev-operator-clearance';
-      } catch (e) {
-        return 'dev-operator-clearance';
-      }
-    },
-    set operatorToken(v) {
-      try {
-        if (v) localStorage.setItem('porygon_operator_token', v);
-        else localStorage.removeItem('porygon_operator_token');
+        if (value) sessionStorage.setItem('porygon_operator_token', value);
+        else sessionStorage.removeItem('porygon_operator_token');
       } catch (e) { }
     },
 
@@ -448,11 +498,22 @@ document.addEventListener('alpine:init', () => {
 
     requestOperatorToken(message, title = 'Operator authorization required') {
       return new Promise((resolve) => {
+        if (this.showAddRuleModal) ruleWorkbenchTokenReturnFocus = document.activeElement;
         this.tokenModal.title = title;
         this.tokenModal.message = message;
         this.tokenModal.value = '';
         this.tokenModal.show = true;
         this.tokenModal.resolve = resolve;
+        if (this.showAddRuleModal) this.$nextTick(() => document.getElementById('human-access-token')?.focus({ preventScroll: true }));
+      });
+    },
+
+    restoreRuleWorkbenchTokenFocus() {
+      this.$nextTick(() => {
+        if (this.showAddRuleModal && ruleWorkbenchTokenReturnFocus?.isConnected) {
+          ruleWorkbenchTokenReturnFocus.focus({ preventScroll: true });
+        }
+        ruleWorkbenchTokenReturnFocus = null;
       });
     },
 
@@ -460,15 +521,19 @@ document.addEventListener('alpine:init', () => {
       const value = (this.tokenModal.value || '').trim();
       const resolve = this.tokenModal.resolve;
       this.tokenModal.show = false;
+      this.tokenModal.value = '';
       this.tokenModal.resolve = null;
       if (resolve) resolve(value || null);
+      this.restoreRuleWorkbenchTokenFocus();
     },
 
     cancelTokenModal() {
       const resolve = this.tokenModal.resolve;
       this.tokenModal.show = false;
+      this.tokenModal.value = '';
       this.tokenModal.resolve = null;
       if (resolve) resolve(null);
+      this.restoreRuleWorkbenchTokenFocus();
     },
 
     // Styled confirmation modal — replaces raw window.confirm() for destructive
@@ -539,7 +604,7 @@ document.addEventListener('alpine:init', () => {
       this.aiAuditModal.show = true;
 
       try {
-        const resp = await fetch('/api/v1/ai/audit', {
+        const resp = await this._apiFetch('/api/v1/ai/audit', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -569,6 +634,146 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    isContainerRunning(c) {
+      if (!c?.current_snapshot?.state?.running) {
+        return false;
+      }
+      if (!c?.last_seen_at) {
+        return false;
+      }
+      const seenMs = new Date(c.last_seen_at).getTime();
+      if (isNaN(seenMs)) {
+        return false;
+      }
+      const ageSeconds = (Date.now() - seenMs) / 1000;
+      return ageSeconds >= -60 && ageSeconds <= 120;
+    },
+
+    formatLastSeen(ts) {
+      if (!ts) return '—';
+      try {
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return String(ts);
+        return d.toLocaleTimeString();
+      } catch (_) {
+        return String(ts);
+      }
+    },
+
+    get mlBaseWorkloads() {
+      const all = this.containers || [];
+      if (this.mlIncludeStopped) {
+        return all;
+      }
+      return all.filter(c => this.isContainerRunning(c));
+    },
+
+    stopMLAutoRefresh() {
+      if (this.mlAutoRefreshTimer) {
+        clearInterval(this.mlAutoRefreshTimer);
+        this.mlAutoRefreshTimer = null;
+      }
+    },
+
+    startMLAutoRefresh() {
+      this.stopMLAutoRefresh(); // Always clearInterval first so there are never two timers
+      if (this.mlAutoRefreshPaused) return;
+
+      this.mlAutoRefreshTimer = setInterval(async () => {
+        if (this.activeTab !== 'ml') {
+          this.stopMLAutoRefresh();
+          return;
+        }
+        if (this.mlAutoRefreshPaused) return;
+        if (typeof document !== 'undefined' && document.hidden) return; // Skip if tab hidden
+        if (this.mlLoadingBatch) return;
+
+        // Re-fetch container inventory first so new, stopped and removed containers update
+        await this.fetchContainers();
+        await this.classifyFleetForMLView(true);
+      }, 30000);
+    },
+
+    toggleMLAutoRefresh() {
+      this.mlAutoRefreshPaused = !this.mlAutoRefreshPaused;
+      if (this.mlAutoRefreshPaused) {
+        this.stopMLAutoRefresh();
+      } else {
+        this.startMLAutoRefresh();
+      }
+    },
+
+    async toggleIncludeStopped() {
+      this.mlIncludeStopped = !this.mlIncludeStopped;
+      if (this.mlIncludeStopped) {
+        if (this.mlLoadingBatch) {
+          // A run is currently active; queue classification of stopped containers
+          this.mlQueuedStoppedClassification = true;
+          return;
+        }
+        // Classify newly visible stopped containers once if not already classified
+        const newlyVisible = (this.containers || []).filter(c =>
+          !this.isContainerRunning(c) && !this.mlClassifications[c.container_id || c.id]
+        );
+        if (newlyVisible.length > 0) {
+          await this.classifyContainerBatch(newlyVisible, false, false);
+        }
+      } else {
+        this.mlQueuedStoppedClassification = false;
+      }
+    },
+
+    mlIsInsufficient(r) {
+      return r?.predicted_class === 'insufficient_data';
+    },
+
+    mlIsError(r) {
+      return r?.predicted_class === 'error' || Boolean(r?.error);
+    },
+
+    mlVariantLabel(r) {
+      if (!r || this.mlIsError(r)) return '';
+      const base = r.model_variant === 'no_baseline'
+        ? 'NO BASELINE · 10 FEATURES · LOWER CONFIDENCE'
+        : 'BASELINE · 12 FEATURES';
+      return r.stale ? `${base} · STALE` : base;
+    },
+
+    mlVerdictLabel(r) {
+      if (this.mlIsError(r)) return 'ERROR';
+      if (this.mlIsInsufficient(r)) return r?.stale ? 'INSUFFICIENT DATA (STALE)' : 'INSUFFICIENT DATA';
+      const v = (r?.risk_level || '').toUpperCase() === 'CLEAN' ? 'CLEAN' : (r?.risk_level || '').toUpperCase();
+      return r?.stale ? `${v} (STALE)` : v;
+    },
+
+    mlVerdictClass(r) {
+      if (this.mlIsError(r)) return 'bg-red-700 text-white';
+      if (this.mlIsInsufficient(r)) return 'bg-neutral-400 text-white'; // grey
+      const rl = (r?.risk_level || '').toLowerCase();
+      if (rl === 'clean') return 'bg-emerald-600 text-white';
+      if (rl === 'medium' || rl === 'low') return 'bg-amber-500 text-white';
+      if (rl === 'high' || rl === 'critical') return 'bg-red-600 text-white';
+      return 'bg-neutral-400 text-white';
+    },
+
+    mlTacticLabel(r) {
+      if (this.mlIsError(r)) return 'ERROR';
+      if (this.mlIsInsufficient(r)) return 'INSUFFICIENT DATA';
+      return r?.predicted_class ? r.predicted_class.replace(/_/g, ' ') : 'UNCLASSIFIED';
+    },
+
+    mlTacticBadgeClass(r) {
+      if (this.mlIsError(r)) return 'border-red-400 bg-red-100 text-red-700';
+      if (this.mlIsInsufficient(r)) return 'border-neutral-400 bg-neutral-100 text-neutral-600';
+      const cls = r?.predicted_class;
+      if (cls === 'benign') return 'bg-emerald-100 text-emerald-800 border-[#111111]';
+      if (cls === 'shell_escape') return 'bg-red-100 text-red-800 border-[#111111]';
+      if (cls === 'reconnaissance') return 'bg-blue-100 text-blue-800 border-[#111111]';
+      if (cls === 'suspicious_tooling') return 'bg-amber-100 text-amber-800 border-[#111111]';
+      if (cls === 'privilege_escalation') return 'bg-purple-100 text-purple-800 border-[#111111]';
+      return 'border-neutral-400 bg-neutral-100 text-neutral-600';
+    },
+
     async classifyContainerWithML(container) {
       this.mlClassifyModal.container = container;
       this.mlClassifyModal.loading = true;
@@ -578,7 +783,7 @@ document.addEventListener('alpine:init', () => {
 
       try {
         const cid = container.container_id || container.id;
-        const resp = await fetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
+        const resp = await this._apiFetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -595,7 +800,18 @@ document.addEventListener('alpine:init', () => {
 
         if (!resp.ok) {
           const detail = data.detail;
-          this.mlClassifyModal.error = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg || d).join(', ') : 'ML classification failed');
+          const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg || d).join(', ') : 'ML classification failed');
+          this.mlClassifyModal.error = msg;
+          if (cid) {
+            this.mlClassifications = {
+              ...this.mlClassifications,
+              [cid]: {
+                predicted_class: 'error',
+                error: true,
+                errorMessage: msg,
+              }
+            };
+          }
         } else {
           this.mlClassifyModal.result = data;
           if (cid) {
@@ -603,36 +819,118 @@ document.addEventListener('alpine:init', () => {
           }
         }
       } catch (err) {
-        this.mlClassifyModal.error = err.message || 'Network error communicating with ML classification API';
+        const msg = err.message || 'Network error communicating with ML classification API';
+        this.mlClassifyModal.error = msg;
+        const cid = container.container_id || container.id;
+        if (cid) {
+          this.mlClassifications = {
+            ...this.mlClassifications,
+            [cid]: {
+              predicted_class: 'error',
+              error: true,
+              errorMessage: msg,
+            }
+          };
+        }
       } finally {
         this.mlClassifyModal.loading = false;
       }
     },
 
-    async classifyFleetForMLView() {
-      if (!this.containers || this.containers.length === 0) return;
+    async classifyContainerBatch(targets, clearAtStart = false, isAuto = false) {
+      if (this.mlLoadingBatch) return;
+      if (!targets || targets.length === 0) return;
       this.mlLoadingBatch = true;
+      if (clearAtStart) {
+        this.mlClassifications = {};
+      }
       try {
-        const promises = this.containers.map(async (c) => {
-          const cid = c.container_id || c.id;
-          if (!cid) return;
-          try {
-            const resp = await fetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-            });
-            if (resp.ok) {
-              const data = await resp.json();
-              this.mlClassifications = { ...this.mlClassifications, [cid]: data };
+        const newResults = {};
+        const chunkSize = 8;
+        const list = [...targets];
+        for (let i = 0; i < list.length; i += chunkSize) {
+          const chunk = list.slice(i, i + chunkSize);
+          await Promise.all(chunk.map(async (c) => {
+            const cid = c.container_id || c.id;
+            if (!cid) return;
+            try {
+              const resp = await this._apiFetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              });
+              if (resp.ok) {
+                const data = await resp.json();
+                newResults[cid] = data;
+              } else {
+                let errText = `HTTP ${resp.status}`;
+                try {
+                  const errJson = await resp.json();
+                  errText = errJson.detail || errText;
+                } catch (_) {}
+                const prev = this.mlClassifications[cid];
+                if (isAuto && prev && !prev.error && prev.predicted_class !== 'error') {
+                  newResults[cid] = {
+                    ...prev,
+                    stale: true,
+                    staleError: typeof errText === 'string' ? errText : JSON.stringify(errText),
+                  };
+                } else {
+                  newResults[cid] = {
+                    predicted_class: 'error',
+                    error: true,
+                    errorMessage: typeof errText === 'string' ? errText : JSON.stringify(errText),
+                  };
+                }
+              }
+            } catch (e) {
+              console.warn(`Failed ML classification for ${cid}:`, e);
+              const prev = this.mlClassifications[cid];
+              if (isAuto && prev && !prev.error && prev.predicted_class !== 'error') {
+                newResults[cid] = {
+                  ...prev,
+                  stale: true,
+                  staleError: e.message || 'Network error',
+                };
+              } else {
+                newResults[cid] = {
+                  predicted_class: 'error',
+                  error: true,
+                  errorMessage: e.message || 'Network error',
+                };
+              }
             }
-          } catch (e) {
-            console.warn(`Failed ML classification for ${cid}:`, e);
-          }
-        });
-        await Promise.all(promises);
+          }));
+        }
+        if (clearAtStart) {
+          this.mlClassifications = newResults;
+        } else {
+          // Swap in new results
+          this.mlClassifications = { ...this.mlClassifications, ...newResults };
+        }
+        this.mlLastUpdated = new Date().toLocaleTimeString();
       } finally {
         this.mlLoadingBatch = false;
+        if (this.mlQueuedStoppedClassification) {
+          this.mlQueuedStoppedClassification = false;
+          if (this.mlIncludeStopped) {
+            const newlyVisible = (this.containers || []).filter(c =>
+              !this.isContainerRunning(c) && !this.mlClassifications[c.container_id || c.id]
+            );
+            if (newlyVisible.length > 0) {
+              setTimeout(() => {
+                this.classifyContainerBatch(newlyVisible, false, false);
+              }, 0);
+            }
+          }
+        }
       }
+    },
+
+    async classifyFleetForMLView(isAuto = false) {
+      const targets = isAuto
+        ? (this.containers || []).filter(c => this.isContainerRunning(c))
+        : this.mlBaseWorkloads;
+      await this.classifyContainerBatch(targets, !isAuto, isAuto);
     },
 
     inspectMLFromTable(container) {
@@ -640,7 +938,7 @@ document.addEventListener('alpine:init', () => {
       if (this.mlClassifications[cid]) {
         this.mlClassifyModal.container = container;
         this.mlClassifyModal.result = this.mlClassifications[cid];
-        this.mlClassifyModal.error = null;
+        this.mlClassifyModal.error = this.mlClassifications[cid].error ? (this.mlClassifications[cid].errorMessage || 'ML classification failed') : null;
         this.mlClassifyModal.loading = false;
         this.mlClassifyModal.show = true;
       } else {
@@ -649,7 +947,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     get filteredMLWorkloads() {
-      let list = (this.containers || []).map(c => {
+      let list = this.mlBaseWorkloads.map(c => {
         const cid = c.container_id || c.id;
         const ml = this.mlClassifications[cid] || null;
         return {
@@ -658,10 +956,16 @@ document.addEventListener('alpine:init', () => {
         };
       });
 
+      const attackClasses = new Set(['reconnaissance', 'privilege_escalation', 'shell_escape', 'suspicious_tooling']);
+
       if (this.mlTacticFilter === 'clean' || this.mlTacticFilter === 'benign') {
         list = list.filter(item => item.ml && item.ml.predicted_class === 'benign');
       } else if (this.mlTacticFilter === 'threats') {
-        list = list.filter(item => item.ml && item.ml.predicted_class !== 'benign');
+        list = list.filter(item => item.ml && attackClasses.has(item.ml.predicted_class));
+      } else if (this.mlTacticFilter === 'insufficient') {
+        list = list.filter(item => item.ml && item.ml.predicted_class === 'insufficient_data');
+      } else if (this.mlTacticFilter === 'error') {
+        list = list.filter(item => item.ml && (item.ml.predicted_class === 'error' || item.ml.error));
       } else if (this.mlTacticFilter && this.mlTacticFilter !== 'all') {
         list = list.filter(item => item.ml && item.ml.predicted_class === this.mlTacticFilter);
       }
@@ -679,20 +983,69 @@ document.addEventListener('alpine:init', () => {
     },
 
     get mlSummaryStats() {
-      const total = (this.containers || []).length;
-      const keys = Object.keys(this.mlClassifications);
-      const classified = keys.length;
+      const base = this.mlBaseWorkloads;
+      const total = base.length;
       let benign = 0;
       let threats = 0;
-      for (const cid of keys) {
+      let insufficient = 0;
+      let error = 0;
+      const attackClasses = new Set(['reconnaissance', 'privilege_escalation', 'shell_escape', 'suspicious_tooling']);
+      for (const c of base) {
+        const cid = c.container_id || c.id;
         const res = this.mlClassifications[cid];
-        if (res && res.predicted_class === 'benign') {
+        if (!res) continue;
+        if (res.predicted_class === 'benign') {
           benign++;
-        } else if (res) {
+        } else if (res.predicted_class === 'insufficient_data') {
+          insufficient++;
+        } else if (res.predicted_class === 'error' || res.error) {
+          error++;
+        } else if (attackClasses.has(res.predicted_class)) {
           threats++;
         }
       }
-      return { total, classified, benign, threats };
+      return { total, benign, threats, insufficient, error };
+    },
+
+    get mlModelBadge() {
+      if (this.mlModelInfoError) return 'MODEL ERROR';
+      if (!this.mlModelInfo) return 'LOADING MODEL INFO...';
+      const meta = this.mlModelInfo.model_metadata || {};
+      const training = (meta.training_status || 'unknown').toUpperCase();
+      const calibRaw = (meta.calibration_status || 'unvalidated').toUpperCase();
+      const calibration = calibRaw === 'VALIDATED' ? 'CALIBRATED' : calibRaw;
+      const sha = meta.model_artifact_sha256 || '';
+      const hash = sha ? sha.substring(0, 8) : '';
+      return hash ? `${training} · ${calibration} · ${hash}` : `${training} · ${calibration}`;
+    },
+
+    get mlClassificationSummary() {
+      const res = this.mlClassifyModal.result;
+      if (!res) return '';
+      if (res.error) {
+        return `Classification error: ${res.errorMessage || 'Unable to classify container'}`;
+      }
+      if (res.summary) {
+        return res.summary.replace(/^Heuristic classification:/i, 'Classification:');
+      }
+      const cls = res.predicted_class ? res.predicted_class.replace(/_/g, ' ') : 'unknown';
+      const score = ((res.confidence || 0) * 100).toFixed(1);
+      return `Classification: ${cls} (${score}% class score).`;
+    },
+
+    async fetchMLModelInfo() {
+      try {
+        const res = await this._apiFetch('/api/v1/ml/model-info');
+        if (res.ok) {
+          this.mlModelInfo = await res.json();
+          this.mlModelInfoError = false;
+        } else {
+          this.mlModelInfoError = true;
+        }
+      } catch (e) {
+        console.warn('ml/model-info failed', e);
+        this.mlModelInfoError = true;
+      }
     },
 
     // Chart.js instances are NOT kept as an Alpine component property at
@@ -712,9 +1065,21 @@ document.addEventListener('alpine:init', () => {
       await this.fetchRules();
       await this.fetchCustomRules();
       await this.refreshAllData();
+      await this.fetchKernelEvents();
       this.initCharts();
       // after DOM for charts, init reveal again for bento
       if (typeof window.initReveal === 'function') window.initReveal();
+
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('assistant') === '1') {
+          setTimeout(async () => {
+            await this.startGuidedRuleAuthoring();
+            await this.fillAndTriageObjective('Detect successful writes under /etc/ by a process');
+            await this.proposeRuleDraft();
+          }, 800);
+        }
+      }
 
       // Watch activeTab to resize charts and trigger pipeline auto-selection
       if (typeof this.$watch === 'function') {
@@ -725,8 +1090,16 @@ document.addEventListener('alpine:init', () => {
           if (newTab === 'pipeline' && !this.pipelineIncidentId && this.incidents.length > 0) {
             this.openPipelineForIncident(this.incidents[0]);
           }
-          if (newTab === 'ml' && Object.keys(this.mlClassifications).length === 0) {
-            this.classifyFleetForMLView();
+          if (newTab === 'ml') {
+            if (!this.mlModelInfo && !this.mlModelInfoError) {
+              this.fetchMLModelInfo();
+            }
+            if (Object.keys(this.mlClassifications).length === 0) {
+              this.classifyFleetForMLView(false);
+            }
+            this.startMLAutoRefresh();
+          } else {
+            this.stopMLAutoRefresh();
           }
           const triggerResize = () => {
             if (newTab === 'overview') {
@@ -755,21 +1128,42 @@ document.addEventListener('alpine:init', () => {
       // Auto-refresh interval every 3 seconds (lightweight polling without heavy summaries)
       setInterval(() => {
         this.pollLiveTelemetry();
+        if (this.activeTab === 'telemetry') this.fetchKernelEvents();
       }, 3000);
       // heavier refresh for system info every 10s
-      setInterval(() => { this.fetchSystemInfo(); this.fetchAnomalyScores(); }, 10000);
+      setInterval(() => { this.fetchSystemInfo(); this.fetchAnomalyScores(); this.fetchAssessmentStatus(); }, 10000);
+
+      if (this.activeTab === 'ml') {
+        this.startMLAutoRefresh();
+      }
     },
 
     // helpers
-    _apiFetch(path, opts = {}) {
-      // attach operator token if present for operator routes
+    _authPrompt: null,
+    _authPromptShown: false,
+    async _apiFetch(path, opts = {}) {
+      // Attach the tab credential to same-origin API reads and writes.
       const headers = Object.assign({}, opts.headers || {});
       const token = this.operatorToken;
-      if (token && path.includes('/operator/')) {
+      if (token && path.startsWith('/')) {
         headers['X-Porygon-Operator-Token'] = token;
       }
       // for demo route via dashboard server, keep same host
-      return fetch(path, Object.assign({}, opts, { headers }));
+      let response = await fetch(path, Object.assign({}, opts, { headers }));
+      if ((response.status === 401 || (response.status === 422 && !token)) && !token && !this._authPromptShown) {
+        this._authPromptShown = true;
+        this._authPrompt = this.requestOperatorToken('Enter your enrolled human access token to load this deployment.', 'Access token required');
+      }
+      if ((response.status === 401 || (response.status === 422 && !token)) && !token && this._authPrompt) {
+        const entered = await this._authPrompt;
+        if (entered) this.operatorToken = entered;
+        if (this.operatorToken) {
+          headers['X-Porygon-Operator-Token'] = this.operatorToken;
+          response = await fetch(path, Object.assign({}, opts, { headers }));
+        }
+        this._authPrompt = null;
+      }
+      return response;
     },
 
     formatCompactNumber(num) {
@@ -783,7 +1177,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchProcessSummary() {
       try {
-        const res = await fetch('/api/v1/process-events/summary');
+        const res = await this._apiFetch('/api/v1/process-events/summary');
         if (res.ok) {
           this.processSummary = await res.json();
         }
@@ -793,8 +1187,9 @@ document.addEventListener('alpine:init', () => {
     },
 
     showToast(message, type = 'info') {
+      if (this.toasts.some(toast => toast.message === message && toast.type === type)) return;
       const id = Date.now() + Math.random();
-      this.toasts.push({ id, message, type });
+      this.toasts = [...this.toasts.slice(-1), { id, message, type }];
       setTimeout(() => {
         this.toasts = this.toasts.filter(t => t.id !== id);
       }, 4500);
@@ -836,7 +1231,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchRules() {
       try {
-        const res = await fetch('/api/v1/detection-rules/config');
+        const res = await this._apiFetch('/api/v1/detection-rules/config');
         if (res.ok) {
           const data = await res.json();
           this.rules = data.rules || [];
@@ -850,14 +1245,14 @@ document.addEventListener('alpine:init', () => {
         console.warn('Could not load detection rules config:', err);
       }
       try {
-        const cfg = await fetch('/api/v1/anomaly-scores/config');
+        const cfg = await this._apiFetch('/api/v1/anomaly-scores/config');
         if (cfg.ok) this.anomalyConfig = await cfg.json();
       } catch (e) { }
     },
 
     async fetchCustomRules() {
       try {
-        const res = await fetch('/api/v1/custom-detection-rules');
+        const res = await this._apiFetch('/api/v1/rule-workbench/rules');
         if (res.ok) {
           this.customRules = await res.json();
           // Index custom rules into rulesMeta too, so a custom-rule match
@@ -873,31 +1268,324 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    openAddRuleModal() {
+    openAddRuleModal(rule = null) {
+      ruleWorkbenchReturnFocus = typeof document !== 'undefined' ? document.activeElement : null;
+      this.ruleWorkbench = {
+        selectedRule: rule,
+        mode: 'manual',
+        eventIds: '',
+        fixtures: '',
+        reference: '',
+        rollbackRevisionHash: '',
+        revisions: [],
+        result: null,
+        message: '',
+        busy: false,
+      };
       this.newRuleDraft = {
-        slug: '',
-        name: '',
-        description: '',
-        category: 'custom',
-        target: 'process',
-        severity_weight: 0.6,
-        confidence_weight: 0.8,
-        incident_eligible: true,
-        mode: 'builder',
-        expression: '',
+        slug: rule?.slug || '',
+        name: rule?.name || '',
+        description: rule?.description || '',
+        category: rule?.category || 'custom',
+        target: rule?.target || 'process',
+        severity_weight: rule?.severity_weight ?? 0.6,
+        confidence_weight: rule?.confidence_weight ?? 0.8,
+        incident_eligible: rule?.incident_eligible ?? true,
+        mode: 'expression',
+        expression: rule?.expression || '',
         conditions: [{ field: 'executable', op: 'equals', value: '', scope: 'event' }],
       };
       this.ruleFormError = '';
+      this.ruleAssistant = { objective: '', recipes: [], loadingRecipes: false, busy: false, recipeId: '', parameters: {}, recommendations: [], triage: null, suggestedParameters: null, proposal: null, proposalExpression: '', ready: false, message: '', requestId: 0 };
       this.showAddRuleModal = true;
+      this.$nextTick(() => {
+        const target = this.ruleWorkbench.mode === 'guided'
+          ? document.getElementById('rule-assistant-objective')
+          : (rule?.custom_rule_id ? document.getElementById('rule-workbench-expression') : document.getElementById('rule-workbench-slug'));
+        target?.focus({ preventScroll: true });
+      });
+      if (rule) this.fetchRuleRevisions(rule.custom_rule_id);
+    },
+
+    closeRuleWorkbench() {
+      this.showAddRuleModal = false;
+      this.$nextTick(() => {
+        if (ruleWorkbenchReturnFocus?.isConnected && typeof ruleWorkbenchReturnFocus.focus === 'function') {
+          ruleWorkbenchReturnFocus.focus({ preventScroll: true });
+        }
+        ruleWorkbenchReturnFocus = null;
+      });
+    },
+
+    trapRuleWorkbenchFocus(event) {
+      const dialog = event.currentTarget;
+      const focusable = [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]
+        .filter(element => element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden');
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    },
+
+    async openRuleAssistant() {
+      if (!this.ruleWorkbench.selectedRule) this.ruleWorkbench.mode = 'guided';
+      if (!await this._ensureRuleOperator()) return;
+      if (this.ruleAssistant.recipes.length || this.ruleAssistant.loadingRecipes) return;
+      this.ruleAssistant.loadingRecipes = true;
+      this.ruleAssistant.message = '';
+      try {
+        const response = await this._apiFetch('/api/v1/rule-workbench/assistant');
+        if (!response.ok) throw new Error(await this._extractApiError(response));
+        const body = await response.json();
+        this.ruleAssistant.recipes = Array.isArray(body.recipes) ? body.recipes : [];
+        if (!this.ruleAssistant.recipes.length) this.ruleAssistant.message = 'No local playbooks are available. Use the manual editor.';
+      } catch (err) {
+        this.ruleAssistant.message = `Could not load playbooks: ${err.message}`;
+      } finally {
+        this.ruleAssistant.loadingRecipes = false;
+      }
+    },
+
+    startGuidedRuleAuthoring() {
+      this.openAddRuleModal();
+      this.ruleWorkbench.mode = 'guided';
+      return this.openRuleAssistant();
+    },
+
+    fillAndTriageObjective(text) {
+      this.ruleAssistant.objective = text;
+      this.invalidateRuleObjective();
+      return this.triageRuleObjective();
+    },
+
+    selectedRecipe() {
+      return this.ruleAssistant.recipes.find(recipe => recipe.id === this.ruleAssistant.recipeId) || null;
+    },
+
+    recipeTitle(id) {
+      return this.ruleAssistant.recipes.find(recipe => recipe.id === id)?.title || id;
+    },
+
+    recipeDescription(id) {
+      return this.ruleAssistant.recipes.find(recipe => recipe.id === id)?.description || '';
+    },
+
+    invalidateRuleObjective() {
+      this.ruleAssistant.requestId += 1;
+      this.ruleAssistant.busy = false;
+      this.ruleAssistant.recipeId = '';
+      this.ruleAssistant.parameters = {};
+      this.ruleAssistant.recommendations = [];
+      this.ruleAssistant.triage = null;
+      this.ruleAssistant.proposal = null;
+      this.ruleAssistant.proposalExpression = '';
+      this.ruleAssistant.ready = false;
+      this.ruleAssistant.message = '';
+    },
+
+    invalidateRuleParameters() {
+      this.ruleAssistant.requestId += 1;
+      this.ruleAssistant.busy = false;
+      this.ruleAssistant.proposal = null;
+      this.ruleAssistant.proposalExpression = '';
+      this.ruleAssistant.ready = false;
+      this.ruleAssistant.message = '';
+    },
+
+    invalidateRuleExpression() {
+      this.ruleAssistant.requestId += 1;
+      this.ruleAssistant.busy = false;
+      this.ruleAssistant.ready = false;
+      this.ruleAssistant.message = 'Expression changed. Run the checks again before applying.';
+    },
+
+    selectRuleRecipe(id) {
+      if (this.ruleAssistant.recipeId === id) return;
+      this.ruleAssistant.requestId += 1;
+      this.ruleAssistant.busy = false;
+      this.ruleAssistant.recipeId = id;
+      const recipe = this.selectedRecipe();
+      this.ruleAssistant.parameters = Object.fromEntries((recipe?.parameters || []).map(param => [param.id, Array.isArray(param.default) ? param.default.join(', ') : String(param.default ?? '')]));
+      this.ruleAssistant.proposal = null;
+      this.ruleAssistant.proposalExpression = '';
+      this.ruleAssistant.ready = false;
+      this.ruleAssistant.suggestedParameters = null;
+    },
+
+    async triageRuleObjective() {
+      if (this.ruleAssistant.busy || !this.ruleAssistant.objective.trim()) return;
+      if (!await this._ensureRuleOperator()) return;
+      this.ruleAssistant.busy = true;
+      const requestId = ++this.ruleAssistant.requestId;
+      const objective = this.ruleAssistant.objective.trim();
+      this.ruleAssistant.message = '';
+      this.ruleAssistant.triage = null;
+      this.ruleAssistant.recommendations = [];
+      this.ruleAssistant.proposal = null;
+      try {
+        const response = await this._apiFetch('/operator/v1/rule-workbench/assistant/triage', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ objective }),
+        });
+        if (!response.ok) throw new Error(await this._extractApiError(response));
+        const result = await response.json();
+        if (requestId !== this.ruleAssistant.requestId || objective !== this.ruleAssistant.objective.trim()) return;
+        this.ruleAssistant.triage = result;
+        this.ruleAssistant.recommendations = (result.recommendations || []).map(item => typeof item === 'string' ? { id: item, rationale: '' } : ({ ...item, id: item.id || item.recipe_id }));
+        const selectedId = result.selected_recipe_id;
+        if (selectedId && this.ruleAssistant.recipes.some(recipe => recipe.id === selectedId)) {
+          const alreadySelected = this.ruleAssistant.recipeId === selectedId;
+          this.selectRuleRecipe(selectedId);
+          if (!alreadySelected) {
+            const suggestions = result.suggested_parameters || {};
+            for (const param of this.selectedRecipe()?.parameters || []) {
+              if (Object.prototype.hasOwnProperty.call(suggestions, param.id)) {
+                const value = suggestions[param.id];
+                this.ruleAssistant.parameters[param.id] = Array.isArray(value) ? value.join(', ') : String(value);
+              }
+            }
+            this.ruleAssistant.suggestedParameters = Object.keys(suggestions).length ? suggestions : null;
+          }
+        }
+        else if (!this.ruleAssistant.recommendations.length) this.ruleAssistant.message = 'No close playbook match. Refine the objective or continue in the manual editor.';
+      } catch (err) {
+        if (requestId !== this.ruleAssistant.requestId) return;
+        this.ruleAssistant.message = `Objective routing failed: ${err.message}`;
+      } finally {
+        if (requestId === this.ruleAssistant.requestId) this.ruleAssistant.busy = false;
+      }
+    },
+
+    async proposeRuleDraft() {
+      if (this.ruleAssistant.busy || !this.ruleAssistant.recipeId) return;
+      if (!await this._ensureRuleOperator()) return;
+      const recipe = this.selectedRecipe();
+      const parameters = {};
+      try {
+        for (const param of recipe?.parameters || []) {
+          const raw = String(this.ruleAssistant.parameters[param.id] ?? '').trim();
+          if (param.type === 'integer_list' || param.type === 'string_list') {
+            const items = raw.split(',').map(value => value.trim()).filter(Boolean);
+            parameters[param.id] = param.type === 'integer_list' ? items.map(value => {
+              if (!/^\d+$/.test(value)) throw new Error(`${param.label} must contain comma-separated integers.`);
+              return Number(value);
+            }) : items;
+          } else parameters[param.id] = raw;
+        }
+      } catch (err) {
+        this.ruleAssistant.message = err.message;
+        return;
+      }
+      this.ruleAssistant.busy = true;
+      const requestId = ++this.ruleAssistant.requestId;
+      const recipeId = this.ruleAssistant.recipeId;
+      const objective = this.ruleAssistant.objective.trim();
+      const proposalExpression = this.ruleAssistant.proposalExpression.trim();
+      this.ruleAssistant.message = '';
+      this.ruleAssistant.proposal = null;
+      this.ruleAssistant.ready = false;
+      try {
+        const response = await this._apiFetch('/operator/v1/rule-workbench/assistant/propose', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipe_id: recipeId, parameters, ...(proposalExpression ? { expression: proposalExpression } : {}) }),
+        });
+        if (!response.ok) throw new Error(await this._extractApiError(response));
+        const proposal = await response.json();
+        if (requestId !== this.ruleAssistant.requestId || recipeId !== this.ruleAssistant.recipeId || objective !== this.ruleAssistant.objective.trim()) return;
+        this.ruleAssistant.proposal = proposal;
+        this.ruleAssistant.proposalExpression = proposal.rule?.expression || '';
+        this.ruleAssistant.ready = Array.isArray(proposal.checks) && proposal.checks.length > 0 && proposal.checks.every(check => check.passed);
+        if (!proposal.checks?.length) this.ruleAssistant.message = 'Proposal returned without checks. It cannot be applied until checks are available.';
+      } catch (err) {
+        if (requestId !== this.ruleAssistant.requestId) return;
+        this.ruleAssistant.message = `Proposal could not be generated: ${err.message}`;
+      } finally {
+        if (requestId === this.ruleAssistant.requestId) this.ruleAssistant.busy = false;
+      }
+    },
+
+    applyRuleProposal() {
+      const proposal = this.ruleAssistant.proposal;
+      if (!proposal || !this.ruleAssistant.ready) return;
+      const rule = proposal.rule || {};
+      this.newRuleDraft = {
+        slug: rule.slug || '', name: rule.name || '', description: rule.description || '',
+        category: rule.category || 'custom', target: rule.target || 'process',
+        severity_weight: rule.severity_weight ?? 0.25, confidence_weight: rule.confidence_weight ?? 0.25,
+        incident_eligible: rule.incident_eligible ?? false, mode: 'expression',
+        expression: rule.expression || '', conditions: [{ field: 'executable', op: 'equals', value: '', scope: 'event' }],
+      };
+      this.ruleWorkbench.fixtures = JSON.stringify(proposal.fixtures || [], null, 2);
+      this.ruleWorkbench.eventIds = '';
+      this.ruleWorkbench.mode = 'manual';
+      this.ruleWorkbench.message = 'Proposal copied into the editor. Review it, then save explicitly as a draft.';
+    },
+
+    openRuleWorkbench(rule) {
+      this.openAddRuleModal(rule);
+    },
+
+    async _ensureRuleOperator() {
+      if (this.operatorToken) return true;
+      const token = await this.requestOperatorToken('Rule authoring and lifecycle actions require operator authorization.', 'Authorize rule workbench');
+      if (!token) return false;
+      this.operatorToken = token;
+      return true;
+    },
+
+    _ruleWorkbenchPayload() {
+      const draft = this.newRuleDraft;
+      return {
+        slug: String(draft.slug || '').trim(),
+        name: String(draft.name || '').trim(),
+        description: String(draft.description || '').trim(),
+        category: String(draft.category || '').trim(),
+        target: draft.target,
+        expression: String(draft.expression || '').trim(),
+        severity_weight: Number(draft.severity_weight),
+        confidence_weight: Number(draft.confidence_weight),
+        incident_eligible: !!draft.incident_eligible,
+      };
+    },
+
+    async _ruleWorkbenchRequest(path, method = 'POST', body = null) {
+      const response = await this._apiFetch(path, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      if (!response.ok) throw new Error(await this._extractApiError(response));
+      return response.status === 204 ? null : response.json();
+    },
+
+    async fetchRuleRevisions(ruleId) {
+      try {
+        const revisions = await this._ruleWorkbenchRequest(`/api/v1/rule-workbench/rules/${ruleId}/revisions`, 'GET');
+        this.ruleWorkbench.revisions = revisions;
+      } catch (err) {
+        this.ruleWorkbench.message = `Could not load revision history: ${err.message}`;
+      }
     },
 
     // Field vocabulary shown as a reference alongside the expression editor. It
     // mirrors _PROCESS_FIELDS/_RUNTIME_FIELDS in backend detection.py; the backend
     // validator remains the authority and rejects anything outside it.
     get expressionFields() {
-      return this.newRuleDraft.target === 'process'
-        ? ['executable', 'process_name', 'parent_executable', 'parent_name', 'command_line', 'user_uid', 'container_id']
-        : ['action', 'privileged', 'image_digest', 'container_id'];
+      if (this.newRuleDraft.target === 'process') {
+        return ['executable', 'executable_path', 'process_name', 'parent_executable', 'parent_name', 'command_line', 'user_uid', 'container_id', 'exe_from_memfd', 'exe_writable'];
+      }
+      if (this.newRuleDraft.target === 'runtime') return ['action', 'privileged', 'image_digest', 'container_id'];
+      return ['runtime_action', 'event_type', 'return_value', 'exe_from_memfd', 'exe_writable', 'file_path', 'remote_address', 'remote_port', 'process_name', 'executable', 'executable_path', 'user_uid', 'process_pid', 'process_start_ns', 'pid_namespace_start_ns', 'sensor_epoch', 'docker_host_id', 'container_id'];
     },
 
     addRuleCondition() {
@@ -908,66 +1596,103 @@ document.addEventListener('alpine:init', () => {
       this.newRuleDraft.conditions.splice(index, 1);
     },
 
-    async submitCustomRule() {
-      if (!this.operatorToken) {
-        const t = await this.requestOperatorToken('Adding a custom detection rule requires operator authorization.', 'Authorize new rule');
-        if (!t) return;
-        this.operatorToken = t;
-      }
-      const draft = this.newRuleDraft;
-      const payload = {
-        slug: draft.slug,
-        name: draft.name,
-        description: draft.description,
-        category: draft.category,
-        target: draft.target,
-        severity_weight: Number(draft.severity_weight),
-        confidence_weight: Number(draft.confidence_weight),
-        incident_eligible: !!draft.incident_eligible,
-        created_by: 'dashboard-operator',
-      };
-
-      // The backend accepts exactly one of 'expression' or 'condition'. Text is
-      // compiled server-side into the same condition tree the builder emits, so both
-      // paths land on one validated representation.
-      if (draft.mode === 'expression') {
-        if (!String(draft.expression || '').trim()) {
-          this.showToast('Write an expression first', 'warn');
-          return;
-        }
-        payload.expression = draft.expression.trim();
-      } else {
-        const leaves = draft.conditions
-          .filter(c => String(c.value).trim() !== '')
-          .map(c => ({
-            field: c.field,
-            op: c.op,
-            scope: draft.target === 'process' ? c.scope : 'event',
-            value: c.op === 'in' || c.op === 'not_in'
-              ? String(c.value).split(',').map(v => v.trim()).filter(Boolean)
-              : (c.field === 'privileged' ? c.value === 'true' : c.value),
-          }));
-        if (!leaves.length) {
-          this.showToast('Add at least one condition', 'warn');
-          return;
-        }
-        payload.condition = { all: leaves };
-      }
+    async validateRuleDraft() {
+      if (this.ruleWorkbench.busy) return;
+      this.ruleWorkbench.busy = true;
       try {
-        const res = await this._apiFetch('/operator/v1/custom-detection-rules', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-          throw new Error(await this._extractApiError(res));
-        }
-        this.showToast(`Custom rule '${draft.name}' added`, 'success');
-        this.showAddRuleModal = false;
-        await this.fetchCustomRules();
+        if (!await this._ensureRuleOperator()) return;
+        const result = await this._ruleWorkbenchRequest('/operator/v1/rule-workbench/validate', 'POST', this._ruleWorkbenchPayload());
+        this.ruleWorkbench.message = `Valid · ${result.document_hash}`;
       } catch (err) {
-        this.ruleFormError = err.message;
-        this.showToast(`Failed to add rule: ${err.message}`, 'error');
+        this.ruleWorkbench.message = err.message;
+      } finally {
+        this.ruleWorkbench.busy = false;
+      }
+    },
+
+    async saveRuleDraft() {
+      if (this.ruleWorkbench.busy) return;
+      const rule = this.ruleWorkbench.selectedRule;
+      const payload = this._ruleWorkbenchPayload();
+      if (!payload.expression) {
+        this.ruleWorkbench.message = 'Write a condition expression before saving.';
+        return;
+      }
+      this.ruleWorkbench.busy = true;
+      try {
+        if (!await this._ensureRuleOperator()) return;
+        const path = rule
+          ? `/operator/v1/rule-workbench/rules/${rule.custom_rule_id}/revisions`
+          : '/operator/v1/rule-workbench/rules';
+        const body = rule ? { ...payload, reference: this.ruleWorkbench.reference.trim(),
+          expected_revision_hash: rule.revision_hash } : payload;
+        if (rule && !body.reference) throw new Error('Enter an operator reference before saving a revision.');
+        const saved = await this._ruleWorkbenchRequest(path, 'POST', body);
+        this.ruleWorkbench.selectedRule = saved;
+        this.ruleWorkbench.message = `Draft saved · ${saved.revision_hash}`;
+        this.showToast('Draft saved; it is not active', 'success');
+        await Promise.all([this.fetchCustomRules(), this.fetchRuleRevisions(saved.custom_rule_id)]);
+      } catch (err) {
+        this.ruleWorkbench.message = err.message;
+      } finally {
+        this.ruleWorkbench.busy = false;
+      }
+    },
+
+    async runRuleWorkbench(action) {
+      if (this.ruleWorkbench.busy) return;
+      const rule = this.ruleWorkbench.selectedRule;
+      if (!rule) {
+        this.ruleWorkbench.message = 'Save the draft before preview, shadow review, activation, or rollback.';
+        return;
+      }
+      this.ruleWorkbench.busy = true;
+      this.ruleWorkbench.message = '';
+      try {
+        if (!await this._ensureRuleOperator()) return;
+        let path = `/operator/v1/rule-workbench/rules/${rule.custom_rule_id}/${action}`;
+        let body;
+        if (action === 'preview' || action === 'shadow') {
+          const eventIds = this.ruleWorkbench.eventIds.split(/[\s,]+/).map(id => id.trim()).filter(Boolean);
+          const fixtures = String(this.ruleWorkbench.fixtures || '').trim()
+            ? JSON.parse(this.ruleWorkbench.fixtures) : [];
+          if (eventIds.length && fixtures.length) throw new Error('Use event IDs or labeled fixtures, not both.');
+          body = { event_ids: eventIds, fixtures, expected_revision_hash: rule.revision_hash };
+          if (!rule.revision_hash) throw new Error('Refresh the rule to load its current immutable revision before preview.');
+        } else {
+          const reference = String(this.ruleWorkbench.reference || '').trim();
+          if (!reference) throw new Error('Enter an operator reference for this lifecycle action.');
+          body = { reference, expected_revision_hash: rule.revision_hash || undefined };
+          if (action === 'disable' && rule.revision_hash) body.expected_revision_hash = rule.revision_hash;
+          if (action === 'activate' || action === 'rollback') {
+            if (!rule.revision_hash) throw new Error('Refresh the rule to load its current immutable revision before this action.');
+          }
+          if (action === 'rollback') {
+            if (!this.ruleWorkbench.rollbackRevisionHash) throw new Error('Select an immutable revision to stage.');
+            body.revision_hash = this.ruleWorkbench.rollbackRevisionHash;
+          }
+        }
+        const result = await this._ruleWorkbenchRequest(path, 'POST', body);
+        if (action === 'preview' || action === 'shadow') {
+          this.ruleWorkbench.result = result;
+          if (action === 'shadow') {
+            this.ruleWorkbench.selectedRule.candidate_state = 'shadow';
+            await this.fetchCustomRules();
+          }
+        }
+        else {
+          this.ruleWorkbench.selectedRule = result;
+          this.ruleWorkbench.result = null;
+          await Promise.all([this.fetchCustomRules(), this.fetchRuleRevisions(rule.custom_rule_id)]);
+        }
+        this.ruleWorkbench.message = action === 'activate'
+          ? 'Revision activated after receipt and operator-reference checks.'
+          : action === 'rollback' ? 'Rollback staged as a shadow revision; preview and shadow it before activation.'
+            : `${action === 'shadow' ? 'Shadow' : 'Preview'} receipt ${result.receipt_hash}`;
+      } catch (err) {
+        this.ruleWorkbench.message = err.message;
+      } finally {
+        this.ruleWorkbench.busy = false;
       }
     },
 
@@ -1009,7 +1734,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchSystemInfo() {
       try {
-        const res = await fetch('/api/v1/system/info');
+        const res = await this._apiFetch('/api/v1/system/info');
         if (res.ok) {
           this.systemInfo = await res.json();
           // sync counters that were previously hardcoded
@@ -1020,30 +1745,75 @@ document.addEventListener('alpine:init', () => {
 
     async fetchServices() {
       try {
-        const res = await fetch('/api/v1/services');
+        const res = await this._apiFetch('/api/v1/services');
         if (res.ok) {
           this.services = await res.json();
+          this.feedUnavailable.health = false;
         } else throw new Error('non-200');
       } catch (err) {
         // An unavailable health endpoint must not look like a healthy fleet.
         this.services = [];
-        this.showToast('Service health is unavailable', 'warn');
+        this.feedUnavailable.health = true;
       }
     },
 
     async fetchContainers() {
       try {
-        const res = await fetch('/api/v1/containers?limit=100');
+        const res = await this._apiFetch('/api/v1/containers?limit=100');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         this.containers = Array.isArray(data) ? data : (data.items || []);
+        this.feedUnavailable.inventory = false;
       } catch (err) {
         // An unavailable containers endpoint must not look like an empty,
         // fully-monitored fleet — clear stale data and signal the gap.
         console.warn('Could not fetch containers:', err);
         this.containers = [];
-        this.showToast('Container inventory is unavailable', 'warn');
+        this.feedUnavailable.inventory = true;
       }
+    },
+
+    async fetchKernelEvents() {
+      const requestId = ++this.kernelRequestId;
+      this.kernelLoading = true;
+      this.kernelError = '';
+      const query = new URLSearchParams({ limit: '100' });
+      if (this.kernelActionFilter) query.set('runtime_action', this.kernelActionFilter);
+      if (this.kernelHostFilter.trim()) query.set('docker_host_id', this.kernelHostFilter.trim());
+      if (this.selectedContainer) query.set('container_id', this.selectedContainer);
+      try {
+        const response = await this._apiFetch(`/api/v1/kernel-events?${query}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const events = await response.json();
+        if (!Array.isArray(events)) throw new Error('Invalid kernel event response');
+        if (requestId === this.kernelRequestId) this.kernelEvents = events;
+      } catch (error) {
+        if (requestId === this.kernelRequestId) {
+          this.kernelEvents = [];
+          this.kernelError = 'Kernel activity is unavailable. Refresh to retry.';
+        }
+      } finally {
+        if (requestId === this.kernelRequestId) this.kernelLoading = false;
+      }
+    },
+
+    kernelActionLabel(event) {
+      return ({ net_outbound: 'Outbound connection', memfd_create: 'Memory-backed file',
+        file_write_open: 'Writable file open', file_write: 'File write' })[event.runtime_action] || event.runtime_action;
+    },
+
+    kernelTarget(event) {
+      if (event.remote_address) {
+        const address = event.remote_address.includes(':') ? `[${event.remote_address}]` : event.remote_address;
+        return `${address}:${event.remote_port}`;
+      }
+      return event.file_path || event.memory_name || '—';
+    },
+
+    kernelOutcome(event) {
+      if (event.runtime_action === 'net_outbound') return event.return_value < 0 ? 'In progress' : 'Connected';
+      if (event.runtime_action === 'file_write') return `${event.return_value} bytes`;
+      return `fd ${event.return_value}`;
     },
 
     async fetchEvents() {
@@ -1060,34 +1830,37 @@ document.addEventListener('alpine:init', () => {
           fallbackEndpoint += `&container_id=${encodeURIComponent(this.selectedContainer)}`;
         }
 
-        const res = await fetch(endpoint);
+        const res = await this._apiFetch(endpoint);
         if (res.ok) {
           const data = await res.json();
           // If container_name query returned empty (e.g. name mismatch), fallback to container_id prefix if available
           if (Array.isArray(data) && data.length === 0 && this.selectedContainer && this.selectedContainerName) {
-            const resById = await fetch(`/api/v1/process-events?limit=100&container_id=${encodeURIComponent(this.selectedContainer.substring(0, 12))}`);
+            const resById = await this._apiFetch(`/api/v1/process-events?limit=100&container_id=${encodeURIComponent(this.selectedContainer.substring(0, 12))}`);
             if (resById.ok) {
               const dataById = await resById.json();
               if (Array.isArray(dataById) && dataById.length > 0) {
                 this.events = dataById;
+                this.feedUnavailable.telemetry = false;
                 return;
               }
             }
           }
           this.events = data;
+          this.feedUnavailable.telemetry = false;
           return;
         }
 
-        const r2 = await fetch(fallbackEndpoint);
+        const r2 = await this._apiFetch(fallbackEndpoint);
         if (r2.ok) {
           this.events = await r2.json();
+          this.feedUnavailable.telemetry = false;
           return;
         }
         throw new Error(`process-events HTTP ${res.status}, events fallback HTTP ${r2.status}`);
       } catch (err) {
         console.warn('Could not fetch process-events:', err);
         this.events = [];
-        this.showToast('Process telemetry is unavailable', 'warn');
+        this.feedUnavailable.telemetry = true;
       } finally {
         this.isLoadingEvents = false;
       }
@@ -1095,7 +1868,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchAnomalyScores() {
       try {
-        const res = await fetch('/api/v1/anomaly-scores?limit=20');
+        const res = await this._apiFetch('/api/v1/anomaly-scores?limit=20');
         if (res.ok) {
           const list = await res.json();
           if (Array.isArray(list) && list.length) {
@@ -1167,7 +1940,7 @@ document.addEventListener('alpine:init', () => {
 
     async fetchIncidents() {
       try {
-        const res = await fetch('/api/v1/incidents?limit=50');
+        const res = await this._apiFetch('/api/v1/incidents?limit=50');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const fetched = await res.json();
         const getTime = (x) => {
@@ -1175,6 +1948,7 @@ document.addEventListener('alpine:init', () => {
           return isNaN(d.getTime()) ? 0 : d.getTime();
         };
         this.incidents = fetched.sort((a, b) => getTime(b) - getTime(a));
+        this.feedUnavailable.incidents = false;
         if (this.incidents.length > 0 && !this.selectedIncident) {
           this.selectedIncident = this.incidents[0];
         }
@@ -1184,15 +1958,16 @@ document.addEventListener('alpine:init', () => {
         // was last fetched on screen with no indicator.
         console.warn('Could not fetch incidents:', err);
         this.incidents = [];
-        this.showToast('Incident feed is unavailable', 'warn');
+        this.feedUnavailable.incidents = true;
       }
     },
 
     async fetchScans() {
       try {
-        const res = await fetch('/api/v1/image-scans?limit=20');
+        const res = await this._apiFetch('/api/v1/image-scans?limit=20');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const scans = await res.json();
+        this.feedUnavailable.vulnerabilities = false;
         if (Array.isArray(scans) && scans.length > 0) {
           const completedScans = scans.filter(s => s.status === 'completed');
           // Real bug found live: this used to cap detail fetches at the first
@@ -1205,7 +1980,7 @@ document.addEventListener('alpine:init', () => {
           const allFindings = [];
           for (const scan of targets) {
             try {
-              const detailRes = await fetch(`/api/v1/image-scans/${scan.scan_id}`);
+              const detailRes = await this._apiFetch(`/api/v1/image-scans/${scan.scan_id}`);
               if (detailRes.ok) {
                 const detail = await detailRes.json();
                 if (Array.isArray(detail.vulnerabilities)) {
@@ -1234,7 +2009,7 @@ document.addEventListener('alpine:init', () => {
         console.warn('Could not fetch scans:', err);
         this.vulnerabilityFindings = [];
         this.calculateEvidenceCounts();
-        this.showToast('Vulnerability scan data is unavailable', 'warn');
+        this.feedUnavailable.vulnerabilities = true;
       }
     },
 
@@ -1281,16 +2056,25 @@ document.addEventListener('alpine:init', () => {
       return this.vulnerabilityFindings.filter(v => this.matchesReachabilityFilter(v, this.reachabilityFilter));
     },
 
+    async fetchAssessmentStatus() {
+      try {
+        const response = await this._apiFetch('/api/v1/assessment-worker/status');
+        this.assessmentStatus = response.ok ? await response.json() : null;
+      } catch (_) { this.assessmentStatus = null; }
+    },
+
     async refreshAllData() {
       await this.fetchSystemInfo();
       await Promise.all([
+        this.fetchAssessmentStatus(),
         this.fetchServices(),
         this.fetchContainers(),
         this.fetchEvents(),
         this.fetchProcessSummary(),
         this.fetchIncidents(),
         this.fetchScans(),
-        this.fetchAnomalyScores()
+        this.fetchAnomalyScores(),
+        this.fetchMLModelInfo()
       ]);
     },
 
@@ -1556,8 +2340,9 @@ document.addEventListener('alpine:init', () => {
       }
 
       // NOTE: System Call Flow Deviation Radar chart was intentionally removed
-      // because Porygon sensor is execve/execveat-only (see docs/research/threat-model.md)
-      // and does not capture per-syscall frequency telemetry.
+      // because behavioral profiles retain the execve/execveat contract
+      // (see docs/research/threat-model.md). Separate typed kernel evidence
+      // does not provide a complete per-syscall frequency distribution.
     },
 
     updateTimelineChart() {
@@ -1603,12 +2388,12 @@ document.addEventListener('alpine:init', () => {
 
       try {
         const headers = { 'Content-Type': 'application/json' };
-        const token = this.operatorToken || 'dev-operator-clearance';
+        const token = this.operatorToken;
         if (token) {
           headers['X-Porygon-Operator-Token'] = token;
         }
 
-        const res = await fetch('/api/demo/run-scenario', {
+        const res = await this._apiFetch('/api/demo/run-scenario', {
           method: 'POST',
           headers,
           body: JSON.stringify({ scenario_id: scenarioId })
@@ -1754,7 +2539,7 @@ document.addEventListener('alpine:init', () => {
           recommendationId = match?.recommendation_id;
         } else {
           // if already generated, list existing
-          const listRes = await fetch(`/api/v1/response-recommendations?incident_id=${incident.incident_id}`);
+          const listRes = await this._apiFetch(`/api/v1/response-recommendations?incident_id=${incident.incident_id}`);
           if (listRes.ok) {
             const list = await listRes.json();
             const match = list.find(r => r.incident_id === incident.incident_id && r.status === 'proposed');
@@ -1811,7 +2596,7 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // Operator incident clean/resolve action
+    // Operator incident workflow resolution
     async resolveIncident(incident) {
       if (!incident) return;
       if (incident.status === 'closed' || incident.status === 'resolved') {
@@ -1831,15 +2616,13 @@ document.addEventListener('alpine:init', () => {
           body: JSON.stringify({
             status: 'resolved',
             actor: 'operator-dashboard',
-            note: 'Marked clean & resolved by operator'
+            note: 'Resolved after operator review'
           })
         });
 
         if (res.ok) {
-          incident.status = 'resolved';
-          incident.closed_at = new Date().toISOString();
-          this.showToast(`Incident marked as CLEAN & RESOLVED.`, 'success');
-          this.logTerminal('OPERATOR', `Incident ${incident.incident_id} marked as clean/resolved`, 'success');
+          this.showToast(`Incident resolved.`, 'success');
+          this.logTerminal('OPERATOR', `Incident ${incident.incident_id} resolved after operator review`, 'success');
           await this.fetchIncidents();
         } else {
           const err = await res.json().catch(() => ({}));
@@ -1850,42 +2633,39 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // Operator batch clean action
+    // Resolve one bounded batch and then reload the server's incident state.
     async cleanAllIncidents() {
       const openCount = (this.incidents || []).filter(i => i.status === 'open' || i.status === 'acknowledged').length;
       if (openCount === 0) {
-        this.showToast('No active incidents to clean.', 'info');
+        this.showToast('No active incidents in the current list.', 'info');
         return;
       }
-      if (!confirm(`Mark all ${openCount} active incident(s) as CLEAN and RESOLVED?`)) return;
+      if (!confirm('Resolve up to 100 active incidents after operator review?')) return;
       try {
         if (!this.operatorToken) {
-          const t = await this.requestOperatorToken('Cleaning all incidents requires operator clearance.', 'Clean All Incidents');
+          const t = await this.requestOperatorToken('Resolving an incident batch requires operator clearance.', 'Resolve Incident Batch');
           if (!t) { this.showToast('Operator clearance cancelled', 'danger'); return; }
           this.operatorToken = t;
         }
 
-        const res = await this._apiFetch('/operator/v1/incidents/clean-all', {
+        const res = await this._apiFetch('/operator/v1/incidents/clean-all?limit=100', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
 
         if (res.ok) {
           const data = await res.json();
-          this.incidents.forEach(i => {
-            if (i.status === 'open' || i.status === 'acknowledged') {
-              i.status = 'resolved';
-            }
-          });
-          this.showToast(`All active incidents (${data.resolved_count || openCount}) marked CLEAN & RESOLVED.`, 'success');
-          this.logTerminal('OPERATOR', `Cleaned ${data.resolved_count || openCount} incidents`, 'success');
+          const count = Number.isInteger(data.resolved_count) ? data.resolved_count : 0;
+          const remaining = data.more_pending ? ' More active incidents remain; review another batch.' : '';
           await this.fetchIncidents();
+          this.showToast(`Resolved ${count} incident(s).${remaining}`, data.more_pending ? 'info' : 'success');
+          this.logTerminal('OPERATOR', `Resolved batch of ${count} incident(s).${remaining}`, 'success');
         } else {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.detail || `HTTP ${res.status}`);
         }
       } catch (err) {
-        this.showToast(`Failed to clean incidents: ${err.message}`, 'danger');
+        this.showToast(`Failed to resolve incident batch: ${err.message}`, 'danger');
       }
     },
 
@@ -1923,7 +2703,7 @@ document.addEventListener('alpine:init', () => {
       if (!scoreId) return;
       this.pipelineScoreLoading = true;
       try {
-        const res = await fetch(`/api/v1/anomaly-scores/${scoreId}`);
+        const res = await this._apiFetch(`/api/v1/anomaly-scores/${scoreId}`);
         if (!res.ok) throw new Error(`score fetch failed: ${res.status}`);
         this.pipelineScoreDetail = await res.json();
       } catch (err) {
@@ -1945,7 +2725,7 @@ document.addEventListener('alpine:init', () => {
       this.pipelineLoading = true;
       this.pipelineError = '';
       try {
-        const res = await fetch(`/api/v1/incidents/${incidentId}/timeline`);
+        const res = await this._apiFetch(`/api/v1/incidents/${incidentId}/timeline`);
         if (!res.ok) throw new Error(`timeline fetch failed: ${res.status}`);
         const rows = await res.json();
         this.pipelineTimeline = rows;
@@ -1991,15 +2771,15 @@ document.addEventListener('alpine:init', () => {
 
     async manageOperatorToken() {
       if (this.operatorToken) {
-        const confirmed = await this.requestConfirm(`Operator token is active (${this.operatorToken.slice(0, 6)}...). Clear stored token?`, 'Clear operator token', 'Clear', false);
+        const confirmed = await this.requestConfirm(`Operator token is active (configured). Log out this tab?`, 'Clear operator token', 'Clear', false);
         if (confirmed) {
           this.clearOperatorToken();
         }
       } else {
-        const val = await this.requestOperatorToken('Paste the X-Porygon-Operator-Token value from your local .env (PORYGON_OPERATOR_API_TOKEN).', 'Set operator token');
+        const val = await this.requestOperatorToken('Paste your enrolled human access token. It stays in this tab until logout or reload.', 'Set operator token');
         if (val) {
           this.operatorToken = val;
-          this.showToast('Operator token stored securely in localStorage', 'success');
+          this.showToast('Access token configured for this tab', 'success');
           this.logTerminal('OPERATOR', 'Operator token configured for human-in-the-loop containment', 'success');
         }
       }

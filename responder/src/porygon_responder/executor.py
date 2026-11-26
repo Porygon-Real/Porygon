@@ -38,10 +38,12 @@ class DockerResponseExecutor:
         stop_timeout_seconds: int,
         protected_label: str,
         client: Any | None = None,
+        authenticated: bool = False,
     ) -> None:
         self.client = client or docker.DockerClient(base_url=base_url, timeout=timeout_seconds)
         self.stop_timeout_seconds = stop_timeout_seconds
         self.protected_label = protected_label
+        self.authenticated = authenticated
 
     @staticmethod
     def _state(container: ContainerLike) -> dict[str, Any]:
@@ -50,6 +52,7 @@ class DockerResponseExecutor:
         labels = dict(config.get("Labels") or {})
         host_config = dict(container.attrs.get("HostConfig") or {})
         restart_policy = dict(host_config.get("RestartPolicy") or {})
+        auto_remove = bool(host_config.get("AutoRemove"))
         return {
             "container_id": container.id,
             "name": str(container.attrs.get("Name") or "").lstrip("/") or None,
@@ -63,6 +66,7 @@ class DockerResponseExecutor:
             "started_at": state.get("StartedAt"),
             "finished_at": state.get("FinishedAt"),
             "restart_policy": restart_policy,
+            "auto_remove": auto_remove,
             "labels": labels,
         }
 
@@ -85,6 +89,7 @@ class DockerResponseExecutor:
         action_type: str,
         target_container_id: str | None,
         operation: str,
+        target_docker_host_id: str | None = None,
     ) -> ActionResult:
         if action_type == "observe_only":
             return ActionResult(
@@ -106,6 +111,12 @@ class DockerResponseExecutor:
         pre_state: dict[str, Any] = {}
         post_state: dict[str, Any] = {}
         try:
+            if target_docker_host_id is None and self.authenticated:
+                raise ValueError("enrolled response requires a frozen Docker host identity")
+            if target_docker_host_id is not None:
+                daemon_id = str(self.client.info().get("ID") or "")
+                if not daemon_id or daemon_id != target_docker_host_id:
+                    raise ValueError("target Docker host does not match the configured daemon")
             container = self._exact_container(target_container_id)
             pre_state = self._state(container)
             self._guard(pre_state)
@@ -179,6 +190,8 @@ class DockerResponseExecutor:
             container.unpause()
             return True
         if action_type == "stop_container":
+            if state.get("auto_remove"):
+                raise ValueError("cannot rollback stop on auto-remove container; container was removed upon exit")
             if state["running"]:
                 return False
             container.start()

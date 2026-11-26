@@ -22,10 +22,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from private_api import open_api
+
 ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD_DIR = ROOT / "dashboard"
 PORT = 3000
-API_BASE = "http://127.0.0.1:8000"
+
+def _detect_api_base() -> str:
+    env_target = os.environ.get("PORYGON_API_BASE")
+    if env_target:
+        return env_target
+    for candidate in ("http://127.0.0.1:18080", "http://127.0.0.1:8000"):
+        try:
+            with urllib.request.urlopen(f"{candidate}/health/live", timeout=0.5) as r:
+                if r.status == 200:
+                    return candidate
+        except Exception:
+            pass
+    return "http://127.0.0.1:18080"
+
+API_BASE = _detect_api_base()
 
 # The demo/scenario runner shells out to `docker run` against attacker-influenceable
 # scenario selection, so it is opt-in only (PORYGON_DEMO_MODE=1) and requires the same
@@ -76,20 +92,68 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             super().do_HEAD()
 
     def do_GET(self) -> None:
-        if self._is_backend_path():
+        if self.path == "/api/plans" or self.path.startswith("/api/plans?"):
+            self.handle_get_plans()
+        elif self._is_backend_path():
             self.proxy_api()
         else:
             super().do_GET()
 
     def do_POST(self) -> None:
-        if self.path.startswith("/api/demo/"):
+        if self.path == "/api/plans/recheck":
+            self.handle_recheck_plans()
+        elif self.path.startswith("/api/demo/"):
             self._dispatch_demo_route()
         elif self._is_backend_path():
             self.proxy_api()
         else:
             self.send_error(404, "Not Found")
 
+    def handle_get_plans(self) -> None:
+        try:
+            from scripts.build_plans_data import build_plans_data
+            data = build_plans_data()
+            payload = json.dumps(data).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except Exception as e:
+            err = json.dumps({"error": str(e)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(err)))
+            self.end_headers()
+            self.wfile.write(err)
+
+    def handle_recheck_plans(self) -> None:
+        try:
+            from scripts.build_plans_data import build_plans_data, OUTPUT_FILE
+            data = build_plans_data()
+            OUTPUT_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            payload = json.dumps({
+                "status": "ok",
+                "message": "Evidence hashes rechecked and plans data refreshed",
+                "stats": data["stats"]
+            }).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except Exception as e:
+            err = json.dumps({"error": str(e)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(err)))
+            self.end_headers()
+            self.wfile.write(err)
+
     def _dispatch_demo_route(self) -> None:
+        if os.environ.get("PORYGON_ACCESS_MODE", "local") != "local":
+            self.send_error(403, "Local demo routes are unavailable in authenticated mode")
+            return
         if os.environ.get(DEMO_MODE_ENV) != "1":
             self.send_error(
                 403,
@@ -141,12 +205,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length) if length > 0 else None
         headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "content-length")}
-        # Automatically inject operator token from local environment for proxied operator routes
-        # when running in local development / demo mode so secrets never leak into client code.
-        token = os.environ.get(OPERATOR_TOKEN_ENV, "")
-        if token and (OPERATOR_TOKEN_HEADER not in headers or headers[OPERATOR_TOKEN_HEADER] in ("dev-operator-clearance", "")):
-            headers[OPERATOR_TOKEN_HEADER] = token
-
+        # If client has not yet supplied an operator token, fall back to the local environment token in dev/demo mode
+        if not any(k.lower() == "x-porygon-operator-token" for k in headers):
+            token = os.environ.get("PORYGON_OPERATOR_API_TOKEN")
+            if token:
+                headers["X-Porygon-Operator-Token"] = token
+        # Forward caller authentication exactly; never synthesize a shared identity.
         req = urllib.request.Request(url, data=body, headers=headers, method=self.command)
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
@@ -238,7 +302,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     "X-Porygon-Internal-Token": internal_token
                 }
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with open_api(req, timeout=5) as resp:
                 return resp.status == 200
         except Exception as e:
             print(f"[!] Canary telemetry ingestion warning: {e}")

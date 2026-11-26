@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -14,19 +15,37 @@ class SpoolFullError(RuntimeError):
 
 
 class OutboxStore:
-    def __init__(self, path: str, max_events: int) -> None:
+    def __init__(self, path: str, max_events: int, *, max_bytes: int = 268435456) -> None:
         self.path = Path(path)
         self.max_events = max_events
+        self.max_bytes = max_bytes
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         connection = sqlite3.connect(self.path, timeout=10.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
         connection.execute("PRAGMA busy_timeout=10000")
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
+
+    def health_stats(self):
+        with self._connect() as connection:
+            row=connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(payload AS BLOB))),0),MIN(enqueued_at) FROM outbox").fetchone()
+        disk=sum(path.stat().st_size for path in (self.path,Path(str(self.path)+'-wal'),Path(str(self.path)+'-shm')) if path.exists())
+        return {'queue_depth':int(row[0]),'queue_payload_bytes':int(row[1]),'spool_disk_bytes':disk,
+                'oldest_age_seconds':max(0,time.time()-float(row[2])) if row[2] is not None else 0}
+
+    def _check_byte_budget(self,connection,additional):
+        used=int(connection.execute("SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) FROM outbox").fetchone()[0])
+        if used+additional>self.max_bytes:
+            raise SpoolFullError('Durable outbox reached configured payload byte budget')
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -78,7 +97,9 @@ class OutboxStore:
                 changed = True
 
             raw_event = payload.get("raw_event")
-            raw_action = raw_event.get("Action") if isinstance(raw_event, dict) else None
+            raw_action = (
+                raw_event.get("Action") if isinstance(raw_event, dict) else None
+            )
             detail = action_detail(raw_action)
             if (
                 canonical in {"exec_create", "exec_start"}
@@ -124,30 +145,56 @@ class OutboxStore:
             )
 
     def enqueue(self, payload: dict[str, Any]) -> bool:
-        event_id = str(payload["event_id"])
-        serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        with self._connect() as connection:
-            existing = connection.execute(
-                "SELECT 1 FROM outbox WHERE event_id = ?",
-                (event_id,),
-            ).fetchone()
-            if existing:
-                return False
+        inserted, _ = self.enqueue_batch([payload])
+        return inserted == 1
 
-            count = connection.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
-            if count >= self.max_events:
+    def enqueue_batch(
+        self, payloads: list[dict[str, Any]], cursor: int | None = None
+    ) -> tuple[int, int]:
+        """Commit a bounded batch and its replay cursor together, or commit neither."""
+        serialized = {
+            str(payload["event_id"]): json.dumps(
+                payload, sort_keys=True, separators=(",", ":")
+            )
+            for payload in payloads
+        }
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            count = int(connection.execute("SELECT COUNT(*) FROM outbox").fetchone()[0])
+            existing: set[str] = set()
+            ids = list(serialized)
+            for offset in range(0, len(ids), 500):
+                chunk = ids[offset : offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                existing.update(
+                    row[0]
+                    for row in connection.execute(
+                        f"SELECT event_id FROM outbox WHERE event_id IN ({placeholders})",
+                        chunk,
+                    )
+                )
+            new = [
+                (key, value, time.time())
+                for key, value in serialized.items()
+                if key not in existing
+            ]
+            if count + len(new) > self.max_events:
                 raise SpoolFullError(
                     f"Durable outbox reached configured limit of {self.max_events} events"
                 )
-
-            connection.execute(
-                """
-                INSERT INTO outbox(event_id, payload, enqueued_at, attempts, next_attempt_at)
-                VALUES (?, ?, ?, 0, 0)
-                """,
-                (event_id, serialized, time.time()),
+            self._check_byte_budget(connection,sum(len(value.encode()) for _,value,_ in new))
+            connection.executemany(
+                "INSERT INTO outbox(event_id, payload, enqueued_at) VALUES (?, ?, ?)",
+                new,
             )
-        return True
+            if cursor is not None:
+                connection.execute(
+                    """INSERT INTO metadata(key, value) VALUES ('last_event_time_nano', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    WHERE CAST(metadata.value AS INTEGER) < CAST(excluded.value AS INTEGER)""",
+                    (str(cursor),),
+                )
+        return len(new), count + len(new)
 
     def fetch_due(self, limit: int) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -173,7 +220,9 @@ class OutboxStore:
                 event_ids,
             )
 
-    def mark_failed(self, event_ids: list[str], error: str, max_retry_seconds: int) -> None:
+    def mark_failed(
+        self, event_ids: list[str], error: str, max_retry_seconds: int
+    ) -> None:
         if not event_ids:
             return
         now = time.time()
@@ -219,15 +268,16 @@ class OutboxStore:
         return str(row["value"]) if row else None
 
     def update_cursor(self, time_nano: int) -> None:
-        current = self.get_cursor()
-        if current is None or time_nano > current:
-            self.set_metadata("last_event_time_nano", str(time_nano))
+        self.enqueue_batch([], cursor=time_nano)
 
     def get_cursor(self) -> int | None:
         value = self.get_metadata("last_event_time_nano")
         return int(value) if value is not None else None
 
-    def cache_container(self, container_id: str, snapshot: dict[str, Any]) -> None:
+    def cache_container(
+        self, container_id: str, snapshot: dict[str, Any], *, docker_host_id: str | None = None
+    ) -> None:
+        container_id = self._container_cache_key(container_id, docker_host_id)
         serialized = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
         with self._connect() as connection:
             connection.execute(
@@ -240,10 +290,25 @@ class OutboxStore:
                 (container_id, serialized, time.time()),
             )
 
-    def get_cached_container(self, container_id: str) -> dict[str, Any] | None:
+    @staticmethod
+    def _container_cache_key(container_id: str, docker_host_id: str | None) -> str:
+        # Structured JSON prevents collisions even with custom host names.
+        return json.dumps([docker_host_id, container_id]) if docker_host_id is not None else container_id
+
+    def get_cached_container(
+        self, container_id: str, *, docker_host_id: str | None = None,
+        max_age_seconds: float | None = None,
+    ) -> dict[str, Any] | None:
+        container_id = self._container_cache_key(container_id, docker_host_id)
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT snapshot FROM container_cache WHERE container_id = ?",
+                "SELECT snapshot, updated_at FROM container_cache WHERE container_id = ?",
                 (container_id,),
             ).fetchone()
-        return json.loads(row["snapshot"]) if row else None
+        if row is None:
+            return None
+        age = time.time() - float(row["updated_at"])
+        # Clock rollback must not turn an old snapshot into an indefinitely fresh one.
+        if max_age_seconds is not None and not 0 <= age < max_age_seconds:
+            return None
+        return json.loads(row["snapshot"])

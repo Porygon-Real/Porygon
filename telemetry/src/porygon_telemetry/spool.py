@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 import time
+from itertools import zip_longest
 from contextlib import contextmanager
 from collections.abc import Iterator
 from pathlib import Path
@@ -55,6 +56,7 @@ class TelemetryStore:
         path: str,
         max_events: int,
         *,
+        max_bytes: int = 268435456,
         dead_letter_max_records: int = 1000,
         dead_letter_max_total_bytes: int = 1_048_576,
         dead_letter_excerpt_bytes: int = 512,
@@ -62,6 +64,7 @@ class TelemetryStore:
     ) -> None:
         self.path = Path(path)
         self.max_events = max_events
+        self.max_bytes = max_bytes
         self.dead_letter_max_records = dead_letter_max_records
         self.dead_letter_max_total_bytes = dead_letter_max_total_bytes
         self.dead_letter_excerpt_bytes = dead_letter_excerpt_bytes
@@ -81,6 +84,18 @@ class TelemetryStore:
                 yield connection
         finally:
             connection.close()
+
+    def health_stats(self):
+        with self._connect() as connection:
+            row=connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(payload AS BLOB))),0),MIN(enqueued_at) FROM outbox").fetchone()
+        disk=sum(path.stat().st_size for path in (self.path,Path(str(self.path)+'-wal'),Path(str(self.path)+'-shm')) if path.exists())
+        return {'queue_depth':int(row[0]),'queue_payload_bytes':int(row[1]),'spool_disk_bytes':disk,
+                'oldest_age_seconds':max(0,time.time()-float(row[2])) if row[2] is not None else 0}
+
+    def _check_byte_budget(self,connection,additional):
+        used=int(connection.execute("SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) FROM outbox").fetchone()[0])
+        if used+additional>self.max_bytes:
+            raise SpoolFullError('Durable outbox reached configured payload byte budget')
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -114,8 +129,32 @@ class TelemetryStore:
                     ON dead_letters(recorded_at, id);
                 """
             )
+            self._upgrade_outbox_channels(connection)
             self._upgrade_dead_letters(connection)
             self._prune_dead_letters(connection, time.time())
+
+    def _upgrade_outbox_channels(self, connection):
+        connection.execute("BEGIN IMMEDIATE")
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(outbox)")}
+        if "channel" not in columns:
+            connection.execute(
+                "ALTER TABLE outbox ADD COLUMN channel TEXT NOT NULL DEFAULT 'process'"
+            )
+            for row in connection.execute("SELECT event_id,payload FROM outbox"):
+                if json.loads(row["payload"]).get("_event_channel") == "kernel":
+                    connection.execute(
+                        "UPDATE outbox SET channel='kernel' WHERE event_id=?", (row["event_id"],)
+                    )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS ix_outbox_channel_due ON outbox(channel,next_attempt_at,enqueued_at)"
+        )
+
+    @staticmethod
+    def _channel(payload):
+        channel = payload.get("_event_channel", "process")
+        if channel not in {"process", "kernel"}:
+            raise ValueError("Unsupported telemetry outbox channel")
+        return channel
 
     def _upgrade_dead_letters(self, connection: sqlite3.Connection) -> None:
         columns = {
@@ -233,6 +272,7 @@ class TelemetryStore:
             if existing:
                 return False
 
+            self._check_byte_budget(connection,len(serialized.encode()))
             count = connection.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
             if count >= self.max_events:
                 raise SpoolFullError(
@@ -241,15 +281,19 @@ class TelemetryStore:
 
             connection.execute(
                 """
-                INSERT INTO outbox(event_id, payload, enqueued_at, attempts, next_attempt_at)
-                VALUES (?, ?, ?, 0, 0)
+                INSERT INTO outbox(event_id, payload, enqueued_at, attempts, next_attempt_at, channel)
+                VALUES (?, ?, ?, 0, 0, ?)
                 """,
-                (event_id, serialized, time.time()),
+                (event_id, serialized, time.time(), self._channel(payload)),
             )
         return True
 
     def enqueue_batch(
-        self, payloads: list[dict[str, Any]], *, inode: int, offset: int,
+        self,
+        payloads: list[dict[str, Any]],
+        *,
+        inode: int,
+        offset: int,
     ) -> tuple[int, int]:
         """Durably commit events and their file checkpoint in one transaction.
 
@@ -263,16 +307,31 @@ class TelemetryStore:
             existing: set[str] = set()
             if unique:
                 placeholders = ",".join("?" for _ in unique)
-                existing = {str(row[0]) for row in connection.execute(
-                    f"SELECT event_id FROM outbox WHERE event_id IN ({placeholders})", list(unique),
-                )}
+                existing = {
+                    str(row[0])
+                    for row in connection.execute(
+                        f"SELECT event_id FROM outbox WHERE event_id IN ({placeholders})",
+                        list(unique),
+                    )
+                }
             fresh = [(key, value) for key, value in unique.items() if key not in existing]
             if count + len(fresh) > self.max_events:
-                raise SpoolFullError(f"Durable process outbox reached configured limit of {self.max_events} events")
+                raise SpoolFullError(
+                    f"Durable process outbox reached configured limit of {self.max_events} events"
+                )
+            self._check_byte_budget(connection,sum(len(json.dumps(value,sort_keys=True,separators=(",",":")).encode()) for _,value in fresh))
             now = time.time()
             connection.executemany(
-                "INSERT INTO outbox(event_id,payload,enqueued_at,attempts,next_attempt_at) VALUES (?,?,?,0,0)",
-                [(key, json.dumps(value, sort_keys=True, separators=(",", ":")), now) for key, value in fresh],
+                "INSERT INTO outbox(event_id,payload,enqueued_at,attempts,next_attempt_at,channel) VALUES (?,?,?,0,0,?)",
+                [
+                    (
+                        key,
+                        json.dumps(value, sort_keys=True, separators=(",", ":")),
+                        now,
+                        self._channel(value),
+                    )
+                    for key, value in fresh
+                ],
             )
             connection.executemany(
                 "INSERT INTO metadata(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -293,6 +352,26 @@ class TelemetryStore:
                 (time.time(), limit),
             ).fetchall()
         return [json.loads(row["payload"]) for row in rows]
+
+    def fetch_fair_due(self, limit: int, prefer: str = "process") -> list[dict[str, Any]]:
+        """Fill available capacity while reserving fair turns for each channel."""
+        channels = [prefer, "kernel" if prefer == "process" else "process"]
+        batches = []
+        with self._connect() as connection:
+            for channel in channels:
+                rows = connection.execute(
+                    "SELECT payload FROM outbox WHERE channel=? AND next_attempt_at<=? ORDER BY enqueued_at,event_id LIMIT ?",
+                    (channel, time.time(), limit),
+                ).fetchall()
+                batches.append([json.loads(row["payload"]) for row in rows])
+        result = []
+        for pair in zip_longest(*batches):
+            for event in pair:
+                if event is not None:
+                    result.append(event)
+                    if len(result) >= limit:
+                        return result
+        return result
 
     def acknowledge(self, event_ids: list[str]) -> None:
         if not event_ids:

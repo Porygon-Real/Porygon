@@ -28,7 +28,7 @@
   <aside class="top-utility-bar" aria-label="System Identity and Quick Switcher">
     <div class="top-utility-inner">
       <div class="top-utility-tag">
-        23CSE498 &middot; Final Year Project &middot; Team 75
+        eBPF Runtime Anomaly Detection &middot; Systems Documentation
       </div>
       <nav class="top-utility-nav" aria-label="Primary Navigation">
         <a href="home.html">Home</a>
@@ -36,6 +36,7 @@
         <a href="index.html#telemetry">Telemetry</a>
         <a href="index.html#ml">Scoring &amp; ML</a>
         <a href="docs.html" class="active">Docs</a>
+        <a href="plans.html">Plans</a>
         <a href="index.html#simulator">Attack Lab</a>
       </nav>
     </div>
@@ -131,16 +132,18 @@
             <li class="doc-li"><strong>Kernel-space instrumentation (eBPF).</strong> Intercepts <code>execve</code>,
               <code>fork</code>, <code>connect</code>,
               and socket operations at the syscall boundary using modern Falco kernel probes with zero user-space
-              sidecar penalty.</li>
+              sidecar penalty.
+            </li>
             <li class="doc-li"><strong>Digest-bound behavioral baselines.</strong> Profiles historical container
               behavior tied strictly to cryptographic
               image digests (<code>image@sha256:...</code>) rather than mutable human tags.</li>
             <li class="doc-li"><strong>Information-theoretic drift ($D_{JS}$).</strong> Calculates base-2 Jensen-Shannon
               distance across categorical
               distributions (process names, binaries, parent-child lineages, bigram transitions) and token novelty.</li>
-            <li class="doc-li"><strong>Explainable ML classification (TreeSHAP).</strong> Evaluates 12 runtime telemetry
-              features against a Random Forest
-              ensemble, mapping anomalous activity to MITRE ATT&amp;CK tactics with local feature attributions.</li>
+            <li class="doc-li"><strong>Heuristic classification with tree-path deltas.</strong> Evaluates 12 runtime
+              telemetry
+              features against a hand-authored tree
+              ensemble, returning operational class scores and raw-space feature deltas.</li>
             <li class="doc-li"><strong>Deterministic rule synthesis &amp; containment.</strong> Cross-references
               anomalies against deterministic rules
               and active allowlists, triggering automated container quarantine, process termination, or network
@@ -295,7 +298,7 @@ docker compose ps</pre>
                 <tr>
                   <td>ML Threat Engine</td>
                   <td><code>backend/src/porygon_api/ml_classifier.py</code></td>
-                  <td>Random Forest ensemble, 12 feature extractions, TreeSHAP importances</td>
+                  <td>Hand-authored tree ensemble, 12 feature extractions, raw tree-path deltas</td>
                 </tr>
                 <tr>
                   <td>Baseline Profiler</td>
@@ -328,10 +331,12 @@ docker compose ps</pre>
           <ul class="doc-ul">
             <li class="doc-li"><strong>Syscall interception.</strong> Intercepts <code>sys_enter_execve</code>,
               <code>sys_enter_fork</code>, <code>sys_enter_connect</code>,
-              and file permission alterations.</li>
+              and file permission alterations.
+            </li>
             <li class="doc-li"><strong>Kernel metadata enrichment.</strong> The probe reads the calling process's kernel
               <code>task_struct</code>, extracting the
-              cgroup identifier, host PID, container namespace PID, parent executable, and user UID.</li>
+              cgroup identifier, host PID, container namespace PID, parent executable, and user UID.
+            </li>
             <li class="doc-li"><strong>Zero container overhead.</strong> Telemetry events pass through the eBPF perf
               ring-buffer to the userspace daemon
               with sub-50ms latency and minimal CPU overhead.</li>
@@ -451,11 +456,11 @@ where M = 0.5 * (P + Q)</pre>
             </table>
           </div>
           <p class="doc-p">
-            The model outputs probabilities across 5 target MITRE tactics: <code>benign</code>,
+            The model outputs heuristic scores across 5 operational classes: <code>benign</code>,
             <code>reconnaissance</code>,
             <code>privilege_escalation</code>, <code>shell_escape</code>, and <code>suspicious_tooling</code>,
-            accompanied by TreeSHAP
-            feature attribution matrices.
+            accompanied by raw tree-path
+            feature deltas and model provenance.
           </p>
         </section>
 
@@ -568,7 +573,7 @@ where M = 0.5 * (P + Q)</pre>
                 <tr>
                   <td><code>POST</code></td>
                   <td><code>/api/v1/ml/classify</code></td>
-                  <td>Evaluates observation window against Tree Ensemble and TreeSHAP explainer</td>
+                  <td>Evaluates supplied observations using heuristic trees and raw tree-path deltas</td>
                 </tr>
                 <tr>
                   <td><code>GET</code></td>

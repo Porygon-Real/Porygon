@@ -6,11 +6,19 @@ from porygon_responder.executor import DockerResponseExecutor
 
 
 class FakeContainer:
-    def __init__(self, *, running: bool = True, paused: bool = False, protected: bool = False):
+    def __init__(
+        self,
+        *,
+        running: bool = True,
+        paused: bool = False,
+        protected: bool = False,
+        auto_remove: bool = False,
+    ):
         self.id = "a" * 64
         self.running = running
         self.paused = paused
         self.protected = protected
+        self.auto_remove = auto_remove
         self.attrs: dict[str, Any] = {}
         self.reload()
 
@@ -21,7 +29,10 @@ class FakeContainer:
             "Config": {
                 "Labels": {"com.porygon.protected": "true"} if self.protected else {}
             },
-            "HostConfig": {"RestartPolicy": {"Name": "no", "MaximumRetryCount": 0}},
+            "HostConfig": {
+                "RestartPolicy": {"Name": "no", "MaximumRetryCount": 0},
+                "AutoRemove": self.auto_remove,
+            },
             "State": {
                 "Status": "running" if self.running else "exited",
                 "Running": self.running,
@@ -164,3 +175,38 @@ def test_batch_restart_with_nonzero_exit_is_failure():
     container.exit_code=1
     result=executor(container).execute(action_type='stop_container',target_container_id=container.id,operation='rollback')
     assert result.success is False
+
+
+def test_auto_remove_container_refuses_stop_rollback():
+    container = FakeContainer(running=False, auto_remove=True)
+    result = executor(container).execute(
+        action_type="stop_container", target_container_id=container.id, operation="rollback"
+    )
+    assert result.success is False
+    assert result.error_code == "invalid_request"
+    assert "auto-remove" in str(result.error_message)
+
+
+
+def test_frozen_host_mismatch_prevents_container_lookup_and_action():
+    container = FakeContainer()
+    runner = executor(container)
+    runner.client.info = lambda: {'ID':'other-daemon'}
+    def forbidden_lookup(_):
+        raise AssertionError('host mismatch must fail before container lookup')
+    runner.client.containers.get = forbidden_lookup
+    result = runner.execute(action_type='pause_container', target_container_id=container.id,
+                            operation='execute', target_docker_host_id='expected-daemon')
+    assert not result.success
+    assert result.error_code == 'invalid_request'
+    assert not container.paused
+
+
+def test_authenticated_executor_rejects_missing_frozen_host():
+    container = FakeContainer()
+    runner = executor(container)
+    runner.authenticated = True
+    result = runner.execute(action_type='pause_container', target_container_id=container.id,
+                            operation='execute')
+    assert not result.success
+    assert not container.paused

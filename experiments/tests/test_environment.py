@@ -227,3 +227,18 @@ def test_compare_environments_ignores_both_sides_unavailable():
     b["scoring_config"]["config_constant"] = {"status": "unavailable", "reason": "y"}
     diffs = environment.compare_environments(a, b)
     assert not any(item.startswith("scoring_config.config_constant") for item in diffs)
+
+
+def test_scoring_fingerprint_captures_command_extractor_changes(tmp_path, monkeypatch):
+    original = environment.BACKEND_SRC
+    for name in environment.SCORING_FILES:
+        (tmp_path / name).write_bytes((original / name).read_bytes())
+    monkeypatch.setattr(environment, 'BACKEND_SRC', tmp_path)
+    first = environment.scoring_config_fingerprint()
+    assert 'baseline.py' in first['files']
+    assert 'command_shapes.py' in first['files']
+    with (tmp_path / 'command_shapes.py').open('a') as handle:
+        handle.write('\n# changed extractor source\n')
+    second = environment.scoring_config_fingerprint()
+    assert first['files']['command_shapes.py']['sha256'] != second['files']['command_shapes.py']['sha256']
+    assert first['config_constant'] == second['config_constant']

@@ -72,16 +72,44 @@ def _image_ref(fields: dict[str, Any]) -> str | None:
     return repository
 
 
+def observed_process_metadata(fields, sensor_epoch=None):
+    """Pinned Falco fields only; filenames and PID proximity are never provenance."""
+    def positive(name):
+        value = _nonnegative_int(fields.get(name))
+        return value if value and value > 0 else None
+    def boolean(name):
+        value = fields.get(name)
+        if value is True or value == 'true':
+            return True
+        if value is False or value == 'false':
+            return False
+        return None
+    return {'sensor_epoch':sensor_epoch,'process_start_ns':positive('proc.pid.ts'),
+            'parent_start_ns':positive('proc.ppid.ts'),'pid_namespace_start_ns':positive('proc.pidns_init_start_ts'),
+            'exe_from_memfd':boolean('proc.is_exe_from_memfd'),
+            'exe_writable':boolean('proc.is_exe_writable')}
+
+
 def normalize_falco_event(
     raw_event: dict[str, Any],
     *,
     sensor_instance_id: str,
     expected_rule: str,
     reported_docker_host_id: str | None,
+    sensor_epoch: str | None = None,
 ) -> dict[str, Any] | None:
     rule_name = _text(raw_event.get("rule"), 255)
     if rule_name != expected_rule:
-        return None
+        # Lazy import avoids a module cycle while sharing existing timestamp and
+        # cleaning helpers. Existing exec identities and queued payloads are unchanged.
+        from porygon_telemetry.kernel import normalize_kernel_event
+
+        return normalize_kernel_event(
+            raw_event,
+            sensor_instance_id=sensor_instance_id,
+            reported_docker_host_id=reported_docker_host_id,
+            sensor_epoch=sensor_epoch,
+        )
 
     source = _text(raw_event.get("source"), 32) or "syscall"
     if source != "syscall":
@@ -91,6 +119,8 @@ def normalize_falco_event(
     if not isinstance(fields_value, dict):
         raise ValueError("Falco output_fields must be a JSON object")
     fields = {str(key): value for key, value in fields_value.items()}
+    if fields.get("evt.type", "execve") not in {"execve", "execveat"}:
+        raise ValueError("Exec telemetry cannot contain other syscalls")
 
     time_nano, occurred_at = _event_time(raw_event, fields)
     process_pid = _nonnegative_int(fields.get("proc.pid"))
@@ -118,9 +148,12 @@ def normalize_falco_event(
     tags = [str(item)[:128] for item in tags_value if _clean(item) is not None][:64]
 
     return {
+        **observed_process_metadata(fields, sensor_epoch),
         "event_id": event_id,
         "sensor_instance_id": sensor_instance_id,
         "sensor_hostname": _text(raw_event.get("hostname"), 255),
+        "exec_return_value": int(fields['evt.rawres']) if str(fields.get('evt.rawres','')).lstrip('-').isdigit() else None,
+        "event_direction": fields.get('evt.dir') if fields.get('evt.dir') in {'<','>'} else None,
         "source": "falco",
         "rule_name": rule_name,
         "priority": _text(raw_event.get("priority"), 32) or "Notice",
@@ -134,9 +167,7 @@ def normalize_falco_event(
         "reported_image_ref": _image_ref(fields),
         "process_pid": process_pid,
         "process_ppid": _nonnegative_int(fields.get("proc.ppid")),
-        "process_vpid": _nonnegative_int(
-            fields.get("proc.vpid", fields.get("thread.vpid"))
-        ),
+        "process_vpid": _nonnegative_int(fields.get("proc.vpid", fields.get("thread.vpid"))),
         "process_name": _text(fields.get("proc.name"), 255),
         "executable": _text(fields.get("proc.exepath")),
         "command_line": _text(fields.get("proc.cmdline")),

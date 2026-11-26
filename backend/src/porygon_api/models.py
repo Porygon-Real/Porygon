@@ -26,13 +26,14 @@ from porygon_api.db import Base
 class ServiceHeartbeat(Base):
     __tablename__ = "service_heartbeats"
     __table_args__ = (
-        UniqueConstraint("service_name", "instance_id", name="uq_service_heartbeat_identity"),
+        UniqueConstraint("docker_host_id", "service_name", "instance_id", name="uq_service_heartbeat_host_identity"),
         Index("ix_service_heartbeats_last_seen_at", "last_seen_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     service_name: Mapped[str] = mapped_column(String(64), nullable=False)
     instance_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    docker_host_id: Mapped[str] = mapped_column(String(128), nullable=False, default="unknown")
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     service_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -99,7 +100,11 @@ class ImageIdentity(Base):
 class ContainerIdentity(Base):
     __tablename__ = "container_identities"
     __table_args__ = (
-        UniqueConstraint("docker_host_id", "container_id", name="uq_container_identity_host_container"),
+        UniqueConstraint(
+            "docker_host_id",
+            "container_id",
+            name="uq_container_identity_host_container",
+        ),
         Index("ix_container_identities_name", "container_name"),
         Index("ix_container_identities_image_digest", "image_digest"),
         Index("ix_container_identities_last_seen_at", "last_seen_at"),
@@ -129,10 +134,30 @@ class ProcessExecEvent(Base):
         Index("ix_process_exec_events_pid", "docker_host_id", "process_pid", "occurred_at"),
         Index("ix_process_exec_events_parent_event", "parent_event_id"),
         Index("ix_process_exec_events_correlation", "correlation_status"),
+        Index(
+            "ix_process_exec_events_pending_parent",
+            "received_at",
+            postgresql_where=text("parent_event_id IS NULL AND container_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_process_exec_lifetime_context",
+            "docker_host_id", "container_id", "sensor_instance_id", "sensor_epoch",
+            "pid_namespace_start_ns", "process_pid", "process_start_ns", "time_nano", "event_id",
+            postgresql_where=text("correlation_status = 'resolved' AND exec_return_value = 0 AND event_direction = '<'"),
+            sqlite_where=text("correlation_status = 'resolved' AND exec_return_value = 0 AND event_direction = '<'"),
+        ),
     )
 
     event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     sensor_instance_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    exec_return_value: Mapped[int | None] = mapped_column(BigInteger,nullable=True)
+    event_direction: Mapped[str | None] = mapped_column(String(1),nullable=True)
+    sensor_epoch: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    process_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    parent_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    pid_namespace_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    exe_from_memfd: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    exe_writable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     sensor_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     rule_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -174,6 +199,71 @@ class ProcessExecEvent(Base):
     tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     output: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_fields: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    raw_event: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class KernelRuntimeEvent(Base):
+    __tablename__ = "kernel_runtime_events"
+    __table_args__ = (
+        CheckConstraint(
+            "runtime_action IN ('net_outbound','memfd_create','file_write_open','file_write')",
+            name="ck_kernel_events_action",
+        ),
+        CheckConstraint(
+            "correlation_status IN ('resolved','unresolved','ambiguous')",
+            name="ck_kernel_events_correlation",
+        ),
+        Index(
+            "ix_kernel_events_host_container_time", "docker_host_id", "container_id", "time_nano"
+        ),
+        Index("ix_kernel_events_action_time", "runtime_action", "occurred_at"),
+        Index("ix_kernel_events_image_time", "image_digest", "occurred_at"),
+        Index(
+            "ix_kernel_events_pending_identity",
+            "received_at",
+            postgresql_where=text("image_id IS NULL OR image_digest IS NULL"),
+        ),
+    )
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sensor_instance_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sensor_epoch: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    process_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    parent_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    pid_namespace_start_ns: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    exe_from_memfd: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    exe_writable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    sensor_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    rule_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[str] = mapped_column(String(32), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    time_nano: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_number: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_action: Mapped[str] = mapped_column(String(32), nullable=False)
+    return_value: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reported_docker_host_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reported_container_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    docker_host_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    container_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    image_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    image_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_digest: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    correlation_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    process_pid: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    process_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    executable: Mapped[str | None] = mapped_column(Text, nullable=True)
+    command_line: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_uid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    remote_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    remote_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    local_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    local_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    memory_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_fields: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     raw_event: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -239,9 +329,15 @@ class CalibratedRarityModel(Base):
             "status IN ('draft', 'active', 'retired')",
             name="ck_calibrated_rarity_models_status",
         ),
-        CheckConstraint("min_calibration_runs >= 1", name="ck_calibrated_rarity_models_min_calibration"),
+        CheckConstraint(
+            "min_calibration_runs >= 1",
+            name="ck_calibrated_rarity_models_min_calibration",
+        ),
         CheckConstraint("fit_run_count >= 0", name="ck_calibrated_rarity_models_fit_count"),
-        CheckConstraint("calibration_run_count >= 1", name="ck_calibrated_rarity_models_calibration_count"),
+        CheckConstraint(
+            "calibration_run_count >= 1",
+            name="ck_calibrated_rarity_models_calibration_count",
+        ),
         UniqueConstraint("model_key", name="uq_calibrated_rarity_models_model_key"),
         Index("ix_calibrated_rarity_models_scope_status", "profile_scope_id", "status"),
         Index("ix_calibrated_rarity_models_protocol", "protocol_id"),
@@ -271,7 +367,9 @@ class CalibratedRarityModel(Base):
 class CalibratedModelRun(Base):
     __tablename__ = "calibrated_model_runs"
     __table_args__ = (
-        CheckConstraint("split_role IN ('fit', 'calibration')", name="ck_calibrated_model_runs_role"),
+        CheckConstraint(
+            "split_role IN ('fit', 'calibration')", name="ck_calibrated_model_runs_role"
+        ),
         UniqueConstraint("model_id", "run_id", name="uq_calibrated_model_runs_model_run"),
         Index("ix_calibrated_model_runs_model_role", "model_id", "split_role"),
         Index("ix_calibrated_model_runs_run", "run_id"),
@@ -279,7 +377,9 @@ class CalibratedModelRun(Base):
 
     model_run_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     model_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"), nullable=False
+        String(36),
+        ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"),
+        nullable=False,
     )
     run_id: Mapped[str] = mapped_column(String(128), nullable=False)
     split_role: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -300,7 +400,9 @@ class CalibrationBlock(Base):
 
     block_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     model_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"), nullable=False
+        String(36),
+        ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"),
+        nullable=False,
     )
     run_id: Mapped[str] = mapped_column(String(128), nullable=False)
     block_statistic_id: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -334,7 +436,9 @@ class CalibratedRarityScore(Base):
     score_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
     model_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"), nullable=False
+        String(36),
+        ForeignKey("calibrated_rarity_models.model_id", ondelete="RESTRICT"),
+        nullable=False,
     )
     protocol_id: Mapped[str] = mapped_column(String(64), nullable=False)
     profile_scope_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -402,6 +506,7 @@ class AnomalyScore(Base):
     components: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     explanation: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     observation_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    assessment_scope: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     scoring_config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -442,7 +547,9 @@ class DetectionAllowlist(Base):
 class CustomDetectionRule(Base):
     __tablename__ = "custom_detection_rules"
     __table_args__ = (
-        CheckConstraint("target IN ('process', 'runtime')", name="ck_custom_detection_rules_target"),
+        CheckConstraint(
+            "target IN ('process', 'runtime', 'kernel')", name="ck_custom_detection_rules_target"
+        ),
         CheckConstraint(
             "severity_weight >= 0 AND severity_weight <= 1",
             name="ck_custom_detection_rules_severity_range",
@@ -451,19 +558,40 @@ class CustomDetectionRule(Base):
             "confidence_weight >= 0 AND confidence_weight <= 1",
             name="ck_custom_detection_rules_confidence_range",
         ),
-        # Partial (enabled-only) uniqueness: a disabled rule must not permanently burn
-        # its slug. Recreating a rule under the same slug after disabling the old one
-        # is a normal "fix and re-enable" workflow, not a conflict.
+        # One stable slug can have a single draft/shadow/active identity at a time;
+        # disabled rules release it for deliberate replacement.
         Index(
-            "uq_custom_detection_rules_slug_enabled",
+            "uq_custom_detection_rules_slug_live",
             "slug",
             unique=True,
-            postgresql_where=text("enabled"),
+            postgresql_where=text("lifecycle_state <> 'disabled'"),
+            sqlite_where=text("lifecycle_state <> 'disabled'"),
         ),
         Index("ix_custom_detection_rules_enabled", "enabled"),
+        CheckConstraint(
+            "lifecycle_state IN ('legacy_active', 'draft', 'shadow', 'active', 'disabled')",
+            name="ck_custom_detection_rules_lifecycle_state",
+        ),
+        CheckConstraint(
+            "candidate_state IN ('draft', 'shadow', 'none')",
+            name="ck_custom_detection_rules_candidate_state",
+        ),
     )
 
     custom_rule_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # New rules move through the workbench lifecycle. Existing rows are marked
+    # `legacy_active`/`disabled` by the additive migration and retain their old
+    # enabled bit for compatibility with older readers.
+    lifecycle_state: Mapped[str] = mapped_column(String(24), nullable=False, default="draft")
+    current_revision_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    active_revision_hash: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey(
+            "custom_detection_rule_revisions.revision_hash", ondelete="RESTRICT",
+            use_alter=True, name="fk_custom_detection_rules_active_revision",
+        ),
+        nullable=True,
+    )
+    candidate_state: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
     slug: Mapped[str] = mapped_column(String(40), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -481,11 +609,68 @@ class CustomDetectionRule(Base):
     disabled_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
+class CustomDetectionRuleRevision(Base):
+    """Immutable canonical content for one logical custom-rule revision."""
+
+    __tablename__ = "custom_detection_rule_revisions"
+
+    revision_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    custom_rule_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("custom_detection_rules.custom_rule_id", ondelete="RESTRICT"), nullable=False
+    )
+    document: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    provenance: Mapped[str] = mapped_column(String(32), nullable=False, default="authored")
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CustomDetectionRuleReceipt(Base):
+    """Bounded preview/shadow evidence; deliberately stores no raw event payloads."""
+
+    __tablename__ = "custom_detection_rule_receipts"
+
+    receipt_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    custom_rule_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("custom_detection_rules.custom_rule_id", ondelete="RESTRICT"), nullable=False
+    )
+    revision_hash: Mapped[str] = mapped_column(
+        String(64), ForeignKey("custom_detection_rule_revisions.revision_hash", ondelete="RESTRICT"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    interpreter_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    receipt_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CustomDetectionRuleAudit(Base):
+    """Append-only lifecycle audit entries with authenticated actor identity."""
+
+    __tablename__ = "custom_detection_rule_audit"
+
+    audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    custom_rule_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("custom_detection_rules.custom_rule_id", ondelete="RESTRICT"), nullable=False
+    )
+    revision_hash: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("custom_detection_rule_revisions.revision_hash", ondelete="RESTRICT"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class DetectionRun(Base):
     __tablename__ = "detection_runs"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('insufficient_data', 'no_findings', 'findings_only', 'incident_created')",
+            "status IN ('insufficient_data', 'no_findings', 'findings_only', 'incident_created', 'incident_updated', 'budget_exhausted', 'rule_evidence_incomplete', 'rule_error')",
             name="ck_detection_runs_status",
         ),
         UniqueConstraint("run_key", name="uq_detection_runs_run_key"),
@@ -520,6 +705,10 @@ class DetectionRun(Base):
     matches_count: Mapped[int] = mapped_column(Integer, nullable=False)
     incident_created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    # Null on historical rows means their custom ruleset content is unavailable;
+    # never reconstruct a past configuration from today's mutable rule table.
+    custom_rule_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    custom_rule_interpreter_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -553,15 +742,29 @@ class Incident(Base):
         UniqueConstraint("detection_run_id", name="uq_incidents_detection_run"),
         Index("ix_incidents_image_digest_first_seen", "image_digest", "first_seen_at"),
         Index("ix_incidents_status", "status"),
+        Index(
+            "uq_incidents_active_group",
+            "grouping_key",
+            unique=True,
+            postgresql_where=text("grouping_key IS NOT NULL AND status IN ('open','acknowledged')"),
+            sqlite_where=text("grouping_key IS NOT NULL AND status IN ('open','acknowledged')"),
+        ),
         Index("ix_incidents_severity", "severity_score"),
         Index("ix_incidents_created_at", "created_at"),
     )
 
+    notification_revision: Mapped[int]=mapped_column(Integer,nullable=False,default=0,server_default="0")
     incident_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     detection_run_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("detection_runs.run_id", ondelete="RESTRICT"),
         nullable=False,
+    )
+    grouping_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latest_detection_run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("detection_runs.run_id", ondelete="RESTRICT"),
+        nullable=True,
     )
     score_id: Mapped[str] = mapped_column(
         String(36),
@@ -571,7 +774,7 @@ class Incident(Base):
     image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    anomaly_score: Mapped[float] = mapped_column(Float, nullable=False)
+    anomaly_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     severity_score: Mapped[float] = mapped_column(Float, nullable=False)
     severity_level: Mapped[str] = mapped_column(String(16), nullable=False)
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
@@ -588,6 +791,21 @@ class Incident(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     closure_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class DetectionIncidentLink(Base):
+    __tablename__ = "detection_incident_links"
+    detection_run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("detection_runs.run_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    incident_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("incidents.incident_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
 
 class IncidentEvidence(Base):
@@ -648,7 +866,13 @@ class ResponseRecommendation(Base):
         ForeignKey("incidents.incident_id", ondelete="RESTRICT"),
         nullable=False,
     )
+    evidence_run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("detection_runs.run_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     target_container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    target_docker_host_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
     policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     recommended_action: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -695,11 +919,14 @@ class ResponseExecution(Base):
         nullable=False,
     )
     target_container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    target_docker_host_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     action_type: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
     executor_instance_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     pre_state: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     post_state: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
@@ -709,11 +936,17 @@ class ResponseExecution(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    rollback_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rollback_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     rollback_requested_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     rollback_note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    rollback_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    rollback_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rollback_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rollback_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class ResponseAuditEvent(Base):
@@ -772,7 +1005,9 @@ class ImageScan(Base):
     requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
     request_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     scanner_instance_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -792,7 +1027,9 @@ class SbomArtifact(Base):
 
     artifact_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     scan_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("image_scans.scan_id", ondelete="CASCADE"), nullable=False
+        String(36),
+        ForeignKey("image_scans.scan_id", ondelete="CASCADE"),
+        nullable=False,
     )
     image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
     format: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -813,7 +1050,9 @@ class VulnerabilityReportArtifact(Base):
 
     artifact_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     scan_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("image_scans.scan_id", ondelete="CASCADE"), nullable=False
+        String(36),
+        ForeignKey("image_scans.scan_id", ondelete="CASCADE"),
+        nullable=False,
     )
     image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
     format: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -828,8 +1067,14 @@ class VulnerabilityReportArtifact(Base):
 class VulnerabilityIntel(Base):
     __tablename__ = "vulnerability_intel"
     __table_args__ = (
-        CheckConstraint("epss_score IS NULL OR (epss_score >= 0 AND epss_score <= 1)", name="ck_vulnerability_intel_epss_score"),
-        CheckConstraint("epss_percentile IS NULL OR (epss_percentile >= 0 AND epss_percentile <= 1)", name="ck_vulnerability_intel_epss_percentile"),
+        CheckConstraint(
+            "epss_score IS NULL OR (epss_score >= 0 AND epss_score <= 1)",
+            name="ck_vulnerability_intel_epss_score",
+        ),
+        CheckConstraint(
+            "epss_percentile IS NULL OR (epss_percentile >= 0 AND epss_percentile <= 1)",
+            name="ck_vulnerability_intel_epss_percentile",
+        ),
         Index("ix_vulnerability_intel_kev", "kev"),
         Index("ix_vulnerability_intel_epss", "epss_score"),
     )
@@ -854,7 +1099,12 @@ class VulnerabilityFinding(Base):
     __tablename__ = "vulnerability_findings"
     __table_args__ = (
         UniqueConstraint(
-            "scan_id", "cve_id", "target", "package_type", "package_name", "installed_version",
+            "scan_id",
+            "cve_id",
+            "target",
+            "package_type",
+            "package_name",
+            "installed_version",
             name="uq_vulnerability_findings_identity",
         ),
         Index("ix_vulnerability_findings_scan", "scan_id"),
@@ -865,11 +1115,15 @@ class VulnerabilityFinding(Base):
 
     finding_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     scan_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("image_scans.scan_id", ondelete="CASCADE"), nullable=False
+        String(36),
+        ForeignKey("image_scans.scan_id", ondelete="CASCADE"),
+        nullable=False,
     )
     image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
     cve_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("vulnerability_intel.cve_id", ondelete="RESTRICT"), nullable=False
+        String(32),
+        ForeignKey("vulnerability_intel.cve_id", ondelete="RESTRICT"),
+        nullable=False,
     )
     target: Mapped[str] = mapped_column(Text, nullable=False)
     class_name: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -895,3 +1149,176 @@ class VulnerabilityFinding(Base):
     intel_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ApiCredential(Base):
+    """Opaque high-entropy credentials; plaintext material is never retained."""
+    __tablename__ = 'api_credentials'
+    __table_args__ = (
+        UniqueConstraint('token_sha256', name='uq_api_credentials_token_sha256'),
+        UniqueConstraint('replaces_credential_id', name='uq_api_credentials_replacement'),
+        CheckConstraint("kind IN ('operator','service')", name='ck_api_credentials_kind'),
+        Index('ix_api_credentials_subject', 'subject'),
+    )
+    credential_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    token_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    host_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    service_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    instance_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    replaces_credential_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class AssessmentTarget(Base):
+    __tablename__ = 'assessment_targets'
+    __table_args__ = (UniqueConstraint('docker_host_id','container_id','image_digest','context_hash',name='uq_assessment_target_scope'),)
+    target_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    docker_host_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    container_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    image_digest: Mapped[str] = mapped_column(String(255), nullable=False)
+    context_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    context_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    window_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    next_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    allowed_lateness_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    active_profile_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    coverage_state: Mapped[str] = mapped_column(String(32), nullable=False, default='unprofiled')
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ManagedProfile(Base):
+    __tablename__ = 'managed_profiles'
+    __table_args__ = (UniqueConstraint('target_id','artifact_hash',name='uq_managed_profile_artifact'),)
+    enrollment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey('assessment_targets.target_id',ondelete='RESTRICT'), nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(36), ForeignKey('behavior_profiles.profile_id',ondelete='RESTRICT'), nullable=False)
+    artifact_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    shadow_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    proposed_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AssessmentJob(Base):
+    __tablename__ = 'assessment_jobs'
+    __table_args__ = (UniqueConstraint('assessment_key',name='uq_assessment_job_key'),
+                     Index('ix_assessment_job_claim','state','next_retry_at','lease_expires_at'),)
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey('assessment_targets.target_id',ondelete='RESTRICT'), nullable=False)
+    profile_enrollment_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('managed_profiles.enrollment_id',ondelete='RESTRICT'), nullable=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    config_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default='pending')
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    score_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('anomaly_scores.score_id',ondelete='RESTRICT'), nullable=True)
+    detection_run_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('detection_runs.run_id',ondelete='RESTRICT'), nullable=True)
+    coverage: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AssessmentAudit(Base):
+    __tablename__ = 'assessment_audits'
+    audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    audit_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey('assessment_targets.target_id',ondelete='RESTRICT'), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RuntimeEvidenceBundle(Base):
+    __tablename__ = 'runtime_evidence_bundles'
+    bundle_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    score_id: Mapped[str] = mapped_column(String(36),ForeignKey('anomaly_scores.score_id',ondelete='RESTRICT'),nullable=False)
+    contract: Mapped[str] = mapped_column(String(64),nullable=False)
+    rules_hash: Mapped[str] = mapped_column(String(64),nullable=False)
+    document: Mapped[dict[str,Any]] = mapped_column(JSON,nullable=False)
+    feature_document: Mapped[dict[str,Any]] = mapped_column(JSON,nullable=False)
+    model_prediction: Mapped[dict[str,Any]] = mapped_column(JSON,nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class AdvisoryModel(Base):
+    __tablename__ = 'advisory_models'
+    artifact_hash: Mapped[str] = mapped_column(String(64),primary_key=True)
+    artifact: Mapped[dict[str,Any]] = mapped_column(JSON,nullable=False)
+    approved_by: Mapped[str] = mapped_column(String(128),nullable=False)
+    evaluation_reference: Mapped[str] = mapped_column(String(255),nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean,nullable=False,default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class NotificationDelivery(Base):
+    __tablename__='notification_deliveries'
+    __table_args__=(UniqueConstraint('delivery_key',name='uq_notification_delivery_key'),Index('ix_notification_delivery_claim','state','next_retry_at','lease_expires_at'))
+    delivery_id: Mapped[str]=mapped_column(String(36),primary_key=True)
+    delivery_key: Mapped[str]=mapped_column(String(64),nullable=False)
+    incident_id: Mapped[str]=mapped_column(String(36),ForeignKey('incidents.incident_id',ondelete='RESTRICT'),nullable=False)
+    revision: Mapped[int]=mapped_column(Integer,nullable=False)
+    destination_id: Mapped[str]=mapped_column(String(64),nullable=False)
+    destination_config_hash: Mapped[str]=mapped_column(String(64),nullable=False)
+    payload_bytes: Mapped[str]=mapped_column(Text,nullable=False)
+    state: Mapped[str]=mapped_column(String(16),nullable=False,default='pending')
+    generation: Mapped[int]=mapped_column(Integer,nullable=False,default=0)
+    attempts: Mapped[int]=mapped_column(Integer,nullable=False,default=0)
+    lease_owner: Mapped[str | None]=mapped_column(String(128),nullable=True)
+    lease_expires_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
+    next_retry_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
+    error_category: Mapped[str | None]=mapped_column(String(32),nullable=True)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    delivered_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
+
+
+class SensorHealthSample(Base):
+    __tablename__='sensor_health_samples'
+    __table_args__=(UniqueConstraint('docker_host_id','service_name','instance_id','counter_epoch','sequence',name='uq_sensor_health_host_sequence'),Index('ix_sensor_health_host_time','docker_host_id','observed_at'))
+    sample_id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    docker_host_id: Mapped[str]=mapped_column(String(128),nullable=False)
+    service_name: Mapped[str]=mapped_column(String(64),nullable=False)
+    instance_id: Mapped[str]=mapped_column(String(128),nullable=False)
+    counter_epoch: Mapped[str]=mapped_column(String(128),nullable=False)
+    sequence: Mapped[int]=mapped_column(BigInteger,nullable=False)
+    observed_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    received_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+    metrics: Mapped[dict[str,Any]]=mapped_column(JSON,nullable=False)
+
+
+class ModelQualityLock(Base):
+    __tablename__='model_quality_locks'
+    artifact_hash: Mapped[str]=mapped_column(String(64),ForeignKey('advisory_models.artifact_hash',ondelete='RESTRICT'),primary_key=True)
+    criteria_hash: Mapped[str]=mapped_column(String(64),nullable=False)
+    criteria: Mapped[dict[str,Any]]=mapped_column(JSON,nullable=False)
+    locked_by: Mapped[str]=mapped_column(String(128),nullable=False)
+    locked_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+
+
+class ModelPromotionReview(Base):
+    __tablename__='model_promotion_reviews'
+    review_hash: Mapped[str]=mapped_column(String(64),primary_key=True)
+    artifact_hash: Mapped[str]=mapped_column(String(64),ForeignKey('advisory_models.artifact_hash',ondelete='RESTRICT'),nullable=False)
+    document: Mapped[dict[str,Any]]=mapped_column(JSON,nullable=False)
+    reviewed_by: Mapped[str]=mapped_column(String(128),nullable=False)
+    reviewed_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)

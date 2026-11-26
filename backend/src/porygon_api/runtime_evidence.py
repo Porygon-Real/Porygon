@@ -1,0 +1,550 @@
+"""Bounded process-lifetime evidence; proximity is never promoted to causality."""
+
+from __future__ import annotations
+from collections import defaultdict
+from datetime import datetime, timezone
+from ipaddress import ip_address
+from sqlalchemy import select
+from fastapi import HTTPException
+from porygon_api.vulnerability import sha256_document
+
+CONTRACT = "porygon.runtime-evidence"
+RULES = {
+    "POR-EVD-CHILD-NET": {
+        "requires": [
+            "observed_parent",
+            "unexpected_exec",
+            "attributed_nonloopback_connection",
+        ],
+        "severity": 0.82,
+    },
+    "POR-EVD-MEMFD-EXEC": {
+        "requires": ["process_lifetime", "observed_exe_from_memfd"],
+        "severity": 0.90,
+    },
+    "POR-EVD-SENSITIVE-WRITE": {
+        "requires": [
+            "unexpected_exec",
+            "observed_parent",
+            "attributed_positive_sensitive_write",
+        ],
+        "severity": 0.86,
+    },
+    "POR-EVD-WRITABLE-NET": {
+        "requires": [
+            "unexpected_exec",
+            "observed_exe_writable",
+            "attributed_nonloopback_connection",
+        ],
+        "severity": 0.80,
+    },
+}
+CONFIG = {
+    "contract": CONTRACT,
+    "max_rows": 10000,
+    "max_link_seconds": 120,
+    "max_depth": 4,
+    "rules": RULES,
+}
+RULES_HASH = sha256_document(CONFIG)
+PROCESS_CONTEXT_CONTRACT = "porygon.runtime-evidence.process-context"
+CONTEXT_CONFIG = {**CONFIG, "contract": PROCESS_CONTEXT_CONTRACT,
+                  "max_context_rows": 2048, "max_context_keys": 512,
+                  "attribution": "latest-successful-exec-exact-lifetime",
+                  "sensitive_paths": ["/etc/", "/root/.ssh/", "/usr/bin/", "/bin/", "/usr/sbin/", "/sbin/"]}
+PROCESS_CONTEXT_RULES_HASH = sha256_document(CONTEXT_CONFIG)
+
+
+def rules_hash_for(contract):
+    if contract == CONTRACT:
+        return RULES_HASH
+    if contract == PROCESS_CONTEXT_CONTRACT:
+        return PROCESS_CONTEXT_RULES_HASH
+    raise ValueError("Unsupported runtime evidence contract")
+
+
+FIELDS = (
+    "event_id",
+    "docker_host_id",
+    "container_id",
+    "sensor_instance_id",
+    "sensor_epoch",
+    "process_pid",
+    "process_start_ns",
+    "parent_start_ns",
+    "pid_namespace_start_ns",
+    "process_ppid",
+    "time_nano",
+    "event_type",
+    "runtime_action",
+    "return_value",
+    "exe_from_memfd",
+    "exe_writable",
+    "executable",
+    "parent_executable",
+    "remote_address",
+    "remote_port",
+    "file_path",
+    "exec_return_value",
+    "event_direction",
+)
+
+
+def epoch_ns(value):
+    value = (
+        value.replace(tzinfo=timezone.utc)
+        if value.tzinfo is None
+        else value.astimezone(timezone.utc)
+    )
+    delta = value - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return (delta.days * 86400 + delta.seconds) * 1000000000 + delta.microseconds * 1000
+
+
+def identity(event):
+    """Require observed namespace/lifetime fields; adapter epoch is conservative."""
+    values = [
+        event.get(key)
+        for key in (
+            "docker_host_id",
+            "container_id",
+            "sensor_instance_id",
+            "sensor_epoch",
+            "pid_namespace_start_ns",
+            "process_pid",
+            "process_start_ns",
+        )
+    ]
+    if (
+        not all(value is not None for value in values)
+        or any(
+            not isinstance(event.get(key), str)
+            or not event[key]
+            or len(event[key]) > 128
+            for key in ("docker_host_id", "sensor_instance_id", "sensor_epoch")
+        )
+        or any(
+            not isinstance(event.get(key), int)
+            or isinstance(event.get(key), bool)
+            or event[key] <= 0
+            for key in ("pid_namespace_start_ns", "process_pid", "process_start_ns")
+        )
+    ):
+        return None
+    if event["process_start_ns"] > event["time_nano"]:
+        return None
+    return tuple(values)
+
+
+def query_events(db, scope, start, end, *, process_ids=None, kernel_ids=None):
+    from porygon_api.models import ProcessExecEvent, KernelRuntimeEvent
+
+    records = []
+    for model, ids in (
+        (ProcessExecEvent, process_ids),
+        (KernelRuntimeEvent, kernel_ids),
+    ):
+        query = select(model).where(
+            model.docker_host_id == scope.docker_host_id,
+            model.container_id == scope.container_id,
+            model.correlation_status == "resolved",
+            model.time_nano >= epoch_ns(start),
+            model.time_nano < epoch_ns(end),
+        )
+        if ids is not None:
+            query = query.where(model.event_id.in_(ids))
+        rows = db.scalars(
+            query.order_by(model.time_nano, model.event_id).limit(
+                CONFIG["max_rows"] + 1
+            )
+        ).all()
+        if len(rows) > CONFIG["max_rows"]:
+            raise HTTPException(
+                413, "Runtime evidence selection exceeds its bounded contract"
+            )
+        if ids is not None and len(rows) != len(set(ids)):
+            raise HTTPException(409, "Frozen runtime evidence is unavailable")
+        for row in rows:
+            record = {field: getattr(row, field, None) for field in FIELDS}
+            record["channel"] = "process" if model is ProcessExecEvent else "kernel"
+            records.append(record)
+    if len(records) > CONFIG["max_rows"]:
+        raise HTTPException(
+            413, "Runtime evidence selection exceeds its bounded contract"
+        )
+    return sorted(records, key=lambda event: (event["time_nano"], event["event_id"]))
+
+
+def query_context_events(db, scope, start, end, events, *, context_ids=None):
+    """Fetch bounded latest preceding exact-lifetime execs, never a PID-only scan.
+
+    Bounds apply to keys and rows, not process age. Unknown sensor epochs and
+    process starts abstain. Frozen replay supplies IDs and verifies exact scope.
+    """
+    from porygon_api.models import ProcessExecEvent
+
+    start_ns = epoch_ns(start)
+    fields = ("docker_host_id", "container_id", "sensor_instance_id", "sensor_epoch",
+              "pid_namespace_start_ns", "process_pid", "process_start_ns")
+    if context_ids is not None:
+        if len(set(context_ids)) > CONTEXT_CONFIG["max_context_rows"]:
+            raise HTTPException(413, "Runtime context exceeds row bound")
+        rows = db.scalars(select(ProcessExecEvent).where(
+            ProcessExecEvent.event_id.in_(context_ids),
+            ProcessExecEvent.docker_host_id == scope.docker_host_id,
+            ProcessExecEvent.container_id == scope.container_id,
+            ProcessExecEvent.correlation_status == "resolved",
+            ProcessExecEvent.time_nano < start_ns,
+            ProcessExecEvent.exec_return_value == 0,
+            ProcessExecEvent.event_direction == "<",
+        )).all()
+        if len(rows) != len(set(context_ids)):
+            raise HTTPException(409, "Frozen preceding process context unavailable")
+        result = [{**{f: getattr(row, f, None) for f in FIELDS}, "channel": "process"} for row in rows]
+        return {"events": sorted(result, key=lambda x: (x["time_nano"], x["event_id"])), "status": "complete"}
+    pending = set()
+    for event in events:
+        key = identity(event)
+        if key:
+            # Each current action has its own bound: a later exec must never be
+            # attached retroactively to an earlier operation of the same PID.
+            pending.add((key, min(start_ns - 1, event["time_nano"])))
+            if type(event.get("process_ppid")) is int and type(event.get("parent_start_ns")) is int:
+                pending.add(((*key[:5], event["process_ppid"], event["parent_start_ns"]), min(start_ns - 1, event["time_nano"])))
+    result, seen = {}, set()
+    truncated = False
+    for depth in range(CONTEXT_CONFIG["max_depth"]):
+        next_keys = set()
+        for key, cutoff in sorted(pending):
+            marker = (key, cutoff)
+            if marker in seen:
+                continue
+            if len(seen) >= CONTEXT_CONFIG["max_context_keys"] or len(result) >= CONTEXT_CONFIG["max_context_rows"]:
+                truncated = True
+                break
+            seen.add(marker)
+            row = db.scalar(select(ProcessExecEvent).where(
+                *(getattr(ProcessExecEvent, field) == value for field, value in zip(fields, key)),
+                ProcessExecEvent.correlation_status == "resolved",
+                ProcessExecEvent.time_nano <= cutoff,
+                ProcessExecEvent.exec_return_value == 0,
+                ProcessExecEvent.event_direction == "<",
+            ).order_by(ProcessExecEvent.time_nano.desc(), ProcessExecEvent.event_id.desc()).limit(1))
+            if row is None:
+                continue
+            event = {**{f: getattr(row, f, None) for f in FIELDS}, "channel": "process"}
+            if identity(event) != key:
+                continue
+            result[row.event_id] = event
+            if type(event.get("process_ppid")) is int and type(event.get("parent_start_ns")) is int:
+                next_keys.add(((*key[:5], event["process_ppid"], event["parent_start_ns"]), event["time_nano"]))
+        pending = next_keys - seen
+        if truncated or not pending:
+            break
+    if pending:
+        truncated = True
+    return {"events": sorted(result.values(), key=lambda x: (x["time_nano"], x["event_id"])),
+            "status": "truncated" if truncated else "complete"}
+
+
+def successful_exec(event):
+    return (
+        event.get("channel") == "process"
+        and event.get("exec_return_value") == 0
+        and event.get("event_direction") == "<"
+    )
+
+
+def completed_outbound(event):
+    if (
+        event.get("runtime_action") != "net_outbound"
+        or type(event.get("return_value")) is not int
+        or event["return_value"] < 0
+    ):
+        return False
+    try:
+        if (
+            type(event.get("remote_port")) is not int
+            or not 1 <= event["remote_port"] <= 65535
+        ):
+            return False
+        address = ip_address(event.get("remote_address"))
+        return not (
+            address.is_loopback
+            or address.is_unspecified
+            or (
+                getattr(address, "ipv4_mapped", None)
+                and address.ipv4_mapped.is_loopback
+            )
+        )
+    except (ValueError, TypeError):
+        return False
+
+
+def positive_sensitive_write(event, *, include_sbin=True):
+    return (
+        event.get("runtime_action") == "file_write"
+        and type(event.get("return_value")) is int
+        and event["return_value"] > 0
+        and isinstance(event.get("file_path"), str)
+        and event["file_path"].startswith(
+            ("/etc/", "/root/.ssh/", "/usr/bin/", "/bin/")
+            + (("/sbin/", "/usr/sbin/") if include_sbin else ())
+        )
+    )
+
+
+def build_bundle(events, scope, window_start, window_end, known_executables, *, context=None):
+    """Pure deterministic replay over a deliberately argument-free evidence subset."""
+    if len(events) > CONFIG["max_rows"]:
+        raise ValueError("Evidence row bound exceeded")
+    start_ns = epoch_ns(window_start)
+    end_ns = epoch_ns(window_end)
+    selected = []
+    for source in events:
+        event = {field: source.get(field) for field in (*FIELDS, "channel")}
+        if (
+            event["docker_host_id"] != scope.docker_host_id
+            or event["container_id"] != scope.container_id
+            or not isinstance(event["time_nano"], int)
+            or isinstance(event["time_nano"], bool)
+            or not start_ns <= event["time_nano"] < end_ns
+        ):
+            raise ValueError("Evidence outside declared exact target/window")
+        selected.append(event)
+    selected.sort(key=lambda item: (item["time_nano"], item["event_id"]))
+    if len({item["event_id"] for item in selected}) != len(selected):
+        raise ValueError("Duplicate evidence IDs")
+    contextual = context is not None
+    context_rows = []
+    if contextual:
+        if len(context.get("events", [])) > CONTEXT_CONFIG["max_context_rows"]:
+            raise ValueError("Preceding process context bound exceeded")
+        for source in context.get("events", []):
+            event = {field: source.get(field) for field in (*FIELDS, "channel")}
+            if (event["docker_host_id"] != scope.docker_host_id
+                or event["container_id"] != scope.container_id
+                or type(event.get("time_nano")) is not int
+                or not 0 < event["time_nano"] < start_ns
+                or not successful_exec(event) or identity(event) is None):
+                raise ValueError("Invalid preceding process context")
+            context_rows.append(event)
+        context_rows.sort(key=lambda item: (item["time_nano"], item["event_id"]))
+        if len({item["event_id"] for item in context_rows + selected}) != len(context_rows + selected):
+            raise ValueError("Duplicate preceding evidence IDs")
+    rules_hash = PROCESS_CONTEXT_RULES_HASH if contextual else RULES_HASH
+    executions = defaultdict(list)
+    for event in context_rows + selected:
+        key = identity(event)
+        if (
+            event["channel"] == "process"
+            and key
+            and event.get("exec_return_value") == 0
+            and event.get("event_direction") == "<"
+        ):
+            executions[key].append(event)
+    edges = []
+    parents = {}
+    attributions = {}
+    for event in context_rows + selected:
+        key = identity(event)
+        if not key:
+            edges.append(
+                {
+                    "source": event["event_id"],
+                    "target": None,
+                    "relation": "process_identity",
+                    "certainty": "unavailable",
+                }
+            )
+            continue
+        if event["channel"] == "process":
+            if (
+                event.get("exec_return_value") != 0
+                or event.get("event_direction") != "<"
+            ):
+                edges.append(
+                    {
+                        "source": event["event_id"],
+                        "target": None,
+                        "relation": "successful_exec",
+                        "certainty": "unavailable",
+                    }
+                )
+                continue
+            parent_key = (
+                *key[:5],
+                event.get("process_ppid"),
+                event.get("parent_start_ns"),
+            )
+            candidates = [
+                item
+                for item in executions.get(parent_key, [])
+                if item["time_nano"] <= event["time_nano"]
+            ]
+            if candidates:
+                parent = max(
+                    candidates, key=lambda item: (item["time_nano"], item["event_id"])
+                )
+                parents[event["event_id"]] = parent
+                edges.append(
+                    {
+                        "source": parent["event_id"],
+                        "target": event["event_id"],
+                        "relation": "parent_process",
+                        "certainty": "observed",
+                    }
+                )
+            elif event.get("process_ppid") is not None:
+                edges.append(
+                    {
+                        "source": None,
+                        "target": event["event_id"],
+                        "relation": "parent_process",
+                        "certainty": "unavailable",
+                    }
+                )
+        else:
+            candidates = [
+                item
+                for item in executions.get(key, [])
+                if item["time_nano"] <= event["time_nano"]
+                and (contextual or event["time_nano"] - item["time_nano"] <= CONFIG["max_link_seconds"] * 1e9)
+            ]
+            if candidates:
+                process = max(
+                    candidates, key=lambda item: (item["time_nano"], item["event_id"])
+                )
+                attributions[event["event_id"]] = process
+                edges.append(
+                    {
+                        "source": process["event_id"],
+                        "target": event["event_id"],
+                        "relation": "same_observed_process_lifetime",
+                        "certainty": "observed",
+                    }
+                )
+            else:
+                # PID/time proximity alone remains an inferred association and
+                # is excluded from every rule's supporting causal path.
+                candidates = [
+                    item
+                    for item in selected
+                    if item["channel"] == "process"
+                    and item["process_pid"] == event["process_pid"]
+                ]
+                edges.append(
+                    {
+                        "source": candidates[-1]["event_id"] if candidates else None,
+                        "target": event["event_id"],
+                        "relation": "proximity_only",
+                        "certainty": "inferred" if candidates else "unavailable",
+                    }
+                )
+    findings = []
+
+    def emit(rule, event, support):
+        ids = sorted(set(support))
+        spec = RULES[rule]
+        document = {"rule_id": rule, "supporting_ids": ids, "rules_hash": rules_hash}
+        if any(item["finding_hash"] == sha256_document(document) for item in findings):
+            return
+        findings.append(
+            dict(
+                document,
+                finding_hash=sha256_document(document),
+                severity=spec["severity"],
+                certainty="observed",
+                time_nano=event["time_nano"],
+                explanation=spec["requires"],
+            )
+        )
+
+    for event in selected:
+        if event["channel"] == "process":
+            if (
+                identity(event)
+                and event["exe_from_memfd"] is True
+                and event.get("exec_return_value") == 0
+                and event.get("event_direction") == "<"
+            ):
+                emit("POR-EVD-MEMFD-EXEC", event, [event["event_id"]])
+            continue
+        process = attributions.get(event["event_id"])
+        if (
+            not process
+            or not process.get("executable")
+            or process["executable"] in known_executables
+        ):
+            continue
+        parent = parents.get(process["event_id"])
+        outbound = completed_outbound(event)
+        if outbound and parent:
+            emit(
+                "POR-EVD-CHILD-NET",
+                event,
+                [parent["event_id"], process["event_id"], event["event_id"]],
+            )
+        if outbound and process["exe_writable"] is True:
+            emit(
+                "POR-EVD-WRITABLE-NET", event, [process["event_id"], event["event_id"]]
+            )
+        if parent and positive_sensitive_write(event, include_sbin=contextual):
+            emit(
+                "POR-EVD-SENSITIVE-WRITE",
+                event,
+                [parent["event_id"], process["event_id"], event["event_id"]],
+            )
+    document = {
+        "contract": PROCESS_CONTEXT_CONTRACT if contextual else CONTRACT,
+        "rules_hash": rules_hash,
+        "scope": scope.manifest(),
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "known_executables": sorted(known_executables),
+        "events": selected,
+        "edges": edges,
+        "findings": sorted(findings, key=lambda item: item["finding_hash"]),
+        "coverage": {
+            "complete": False,
+            "source_drop_coverage": "unknown",
+            "unavailable_identity_events": sum(
+                identity(item) is None for item in selected
+            ),
+        },
+    }
+    if contextual:
+        document["context_events"] = context_rows
+        document["coverage"]["process_context"] = context.get("status", "unavailable")
+        document["coverage"]["unattributed_kernel_events"] = sum(
+            event["channel"] == "kernel" and event["event_id"] not in attributions for event in selected)
+        document["coverage"]["async_connection_completion"] = "unsupported"
+    return dict(document, bundle_hash=sha256_document(document))
+
+
+def detection_matches(bundle):
+    return [
+        {
+            "rule_id": item["rule_id"],
+            "name": item["rule_id"],
+            "category": "runtime_evidence",
+            "description": "Observed process-lifetime evidence hypothesis",
+            "severity_weight": item["severity"],
+            "confidence_weight": 0.9,
+            "incident_eligible": True,
+            "suppressed": False,
+            "source_type": "runtime_evidence",
+            "source_id": item["finding_hash"],
+            "container_id": bundle["scope"]["container_id"],
+            "occurred_at": datetime.fromtimestamp(
+                item["time_nano"] / 1e9, tz=timezone.utc
+            ).isoformat(),
+            "summary": "Observed attributable runtime evidence; review the supporting records.",
+            "details": {
+                "supporting_ids": item["supporting_ids"],
+                "bundle_hash": bundle["bundle_hash"],
+                "rules_hash": bundle["rules_hash"],
+                "certainty": item["certainty"],
+            },
+        }
+        for item in bundle["findings"]
+    ]

@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import hashlib
 import json
 import math
 from typing import Any
 
-from porygon_api.baseline import FEATURE_SCHEMA_VERSION
+from porygon_api.baseline import (
+    FEATURE_SCHEMA_VERSION,
+    COMMAND_LINEAGE_SCHEMA,
+    SUPPORT_AWARE_SCHEMA,
+    MIN_SUPPORT_AWARE_BASELINE_EVENTS,
+    MAX_TEMPORAL_SEGMENTS_PER_WINDOW,
+    MAX_TEMPORAL_FEATURE_RECORDS,
+    MAX_TEMPORAL_EVENTS,
+    MIN_COMMAND_COVERAGE,
+    command_lineage_contract,
+    support_aware_contract,
+)
 
 ALGORITHM_VERSION = "porygon.distance.v1"
 
@@ -51,6 +63,81 @@ SCORING_CONFIG: dict[str, Any] = {
 }
 
 
+COMMAND_LINEAGE_ALGORITHM = "porygon.distance.command-lineage"
+SUPPORT_AWARE_ALGORITHM = "porygon.distance.support-aware"
+SUPPORT_AWARE_SMOOTHING_POLICY = "fixed-total-common-minimum-support-mixture"
+COMMAND_LINEAGE_CONFIG = deepcopy(SCORING_CONFIG)
+COMMAND_LINEAGE_CONFIG.update(
+    {
+        "algorithm_version": COMMAND_LINEAGE_ALGORITHM,
+        "feature_schema_version": COMMAND_LINEAGE_SCHEMA,
+        "categorical_weights": {
+            "process_name": 0.10,
+            "executable": 0.20,
+            "parent_child": 0.15,
+            "user_uid": 0.10,
+            "runtime_action": 0.05,
+            "process_sequence_bigram": 0.20,
+            "command_shape": 0.20,
+        },
+        "sequence_contract": "verified-parent-links-within-host-container-sensor-window",
+        "minimum_command_coverage": MIN_COMMAND_COVERAGE,
+        "feature_extractor_contract": command_lineage_contract(),
+    }
+)
+
+SUPPORT_AWARE_CONFIG = deepcopy(COMMAND_LINEAGE_CONFIG)
+SUPPORT_AWARE_CONFIG.update(
+    {
+        "algorithm_version": SUPPORT_AWARE_ALGORITHM,
+        "feature_schema_version": SUPPORT_AWARE_SCHEMA,
+        "feature_extractor_contract": support_aware_contract(),
+        "minimum_baseline_process_events": MIN_SUPPORT_AWARE_BASELINE_EVENTS,
+        "minimum_baseline_family_events": 20,
+        "minimum_observed_process_events": 3,
+        "minimum_observed_family_events": 3,
+        "minimum_eligible_families": 3,
+        "minimum_baseline_nonempty_windows_for_numeric": 3,
+        "dirichlet_smoothing_alpha": 0.5,
+        "smoothing_policy": SUPPORT_AWARE_SMOOTHING_POLICY,
+        "max_baseline_support_tokens": 128,
+        "maximum_temporal_segments_per_window": MAX_TEMPORAL_SEGMENTS_PER_WINDOW,
+        "maximum_temporal_feature_records": MAX_TEMPORAL_FEATURE_RECORDS,
+        "maximum_temporal_events": MAX_TEMPORAL_EVENTS,
+        "temporal_minimum_family_events": 3,
+        "temporal_aggregation": "maximum-supported-subwindow-and-aggregate",
+    }
+)
+
+
+RARE_EXECUTION_ALGORITHM = "porygon.distance.rare-execution"
+
+
+def get_scoring_config(
+    feature_schema_version: str = FEATURE_SCHEMA_VERSION,
+    algorithm_version: str | None = None,
+) -> dict[str, Any]:
+    if feature_schema_version == FEATURE_SCHEMA_VERSION:
+        config = deepcopy(SCORING_CONFIG)
+    elif feature_schema_version == COMMAND_LINEAGE_SCHEMA:
+        config = deepcopy(COMMAND_LINEAGE_CONFIG)
+    elif feature_schema_version == SUPPORT_AWARE_SCHEMA:
+        config = deepcopy(SUPPORT_AWARE_CONFIG)
+    else:
+        raise ValueError("Unsupported feature schema")
+    if algorithm_version in {None, config["algorithm_version"]}:
+        return config
+    if algorithm_version == RARE_EXECUTION_ALGORITHM:
+        config["algorithm_version"] = RARE_EXECUTION_ALGORITHM
+        config["numeric_policy"] = {
+            "zero_baseline_shell_score": 0.70,
+            "required_zero_statistics": ["min", "max", "mean", "median", "p95", "stddev"],
+            "application": "floor-shell-component-only-when-training-statistics-are-all-zero",
+        }
+        return config
+    raise ValueError("Scoring algorithm is incompatible with the selected feature schema")
+
+
 def _canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -63,7 +150,9 @@ def _round(value: float) -> float:
     return round(float(value), 12)
 
 
-def _weighted_average(values: dict[str, float], weights: dict[str, float]) -> tuple[float | None, dict[str, float]]:
+def _weighted_average(
+    values: dict[str, float], weights: dict[str, float]
+) -> tuple[float | None, dict[str, float]]:
     available = {name: value for name, value in values.items() if name in weights}
     denominator = sum(weights[name] for name in available)
     if not available or denominator <= 0:
@@ -134,7 +223,9 @@ def _numeric_deviation(
     feature_name: str,
     baseline_summary: dict[str, Any],
     observed_summary: dict[str, Any],
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
+    config = config if config is not None else SCORING_CONFIG
     if not baseline_summary or not observed_summary:
         return None
 
@@ -143,14 +234,25 @@ def _numeric_deviation(
     p95 = float(baseline_summary.get("p95", median))
     stddev = max(0.0, float(baseline_summary.get("stddev", 0.0)))
     robust_sigma = abs(p95 - median) / 1.6448536269514722
-    floor = float(SCORING_CONFIG["numeric_scale_floors"][feature_name])
+    floor = float(config["numeric_scale_floors"][feature_name])
     scale = max(stddev, robust_sigma, abs(median) * 0.10, floor)
     z_score = abs(observed - median) / scale
-    tolerance = float(SCORING_CONFIG["numeric_z_tolerance"])
-    saturation = float(SCORING_CONFIG["numeric_z_saturation"])
+    tolerance = float(config["numeric_z_tolerance"])
+    saturation = float(config["numeric_z_saturation"])
     score = max(0.0, min(1.0, (z_score - tolerance) / (saturation - tolerance)))
 
-    return {
+    policy_applied = False
+    unadjusted_score = score
+    policy = config.get("numeric_policy")
+    if policy and feature_name == "shell_process_ratio" and observed > 0:
+        statistics = policy["required_zero_statistics"]
+        if all(
+            key in baseline_summary and float(baseline_summary[key]) == 0.0 for key in statistics
+        ):
+            score = max(score, float(policy["zero_baseline_shell_score"]))
+            policy_applied = True
+
+    result = {
         "score": _round(score),
         "observed": _round(observed),
         "baseline_median": _round(median),
@@ -160,9 +262,15 @@ def _numeric_deviation(
         "absolute_z": _round(z_score),
     }
 
+    if policy_applied:
+        result.update(
+            policy="zero_baseline_shell_floor", score_before_policy=_round(unadjusted_score)
+        )
+    return result
 
-def score_band(total_score: float) -> str:
-    bands = SCORING_CONFIG["score_bands"]
+
+def score_band(total_score: float, config: dict[str, Any] | None = None) -> str:
+    bands = (config if config is not None else SCORING_CONFIG)["score_bands"]
     if total_score < bands["baseline_like_max"]:
         return "baseline_like"
     if total_score < bands["elevated_max"]:
@@ -179,28 +287,63 @@ def build_observation_key(
     window_start: str,
     window_end: str,
     selected_event_ids_sha256: str,
+    feature_schema_version: str = FEATURE_SCHEMA_VERSION,
+    observation_features_sha256: str | None = None,
+    algorithm_version: str | None = None,
 ) -> str:
-    return sha256_json(
-        {
-            "profile_id": profile_id,
-            "profile_model_hash": profile_model_hash,
-            "window_start": window_start,
-            "window_end": window_end,
-            "selected_event_ids_sha256": selected_event_ids_sha256,
-            "scoring_config": SCORING_CONFIG,
-        }
-    )
+    document = {
+        "profile_id": profile_id,
+        "profile_model_hash": profile_model_hash,
+        "window_start": window_start,
+        "window_end": window_end,
+        "selected_event_ids_sha256": selected_event_ids_sha256,
+        "scoring_config": get_scoring_config(feature_schema_version, algorithm_version),
+    }
+    if feature_schema_version in (COMMAND_LINEAGE_SCHEMA, SUPPORT_AWARE_SCHEMA):
+        if (
+            observation_features_sha256 is None
+            or len(observation_features_sha256) != 64
+            or any(c not in "0123456789abcdef" for c in observation_features_sha256)
+        ):
+            raise ValueError("Contract-aware observations require their feature document hash")
+        # Parent reconciliation can repair links without changing event IDs.
+        document["observation_features_sha256"] = observation_features_sha256
+    return sha256_json(document)
 
 
 def score_feature_documents(
     *,
     baseline_features: dict[str, Any],
     observation_features: dict[str, Any],
-) -> tuple[float, str, dict[str, Any], dict[str, Any]]:
-    if baseline_features.get("schema_version") != FEATURE_SCHEMA_VERSION:
-        raise ValueError("Unsupported baseline feature schema")
-    if observation_features.get("schema_version") != FEATURE_SCHEMA_VERSION:
-        raise ValueError("Unsupported observation feature schema")
+    algorithm_version: str | None = None,
+) -> tuple[float | None, str, dict[str, Any], dict[str, Any]]:
+    schema = baseline_features.get("schema_version")
+    config = get_scoring_config(schema, algorithm_version)
+    if observation_features.get("schema_version") != schema:
+        raise ValueError(
+            "Unsupported observation feature schema: baseline and observation must match"
+        )
+    if schema == SUPPORT_AWARE_SCHEMA:
+        from porygon_api.scoring_support import score_support_aware_feature_documents
+
+        return score_support_aware_feature_documents(
+            baseline_features=baseline_features,
+            observation_features=observation_features,
+            config=config,
+        )
+    if schema == COMMAND_LINEAGE_SCHEMA:
+        for document in (baseline_features, observation_features):
+            if document.get("extractor_contract_sha256") != sha256_json(
+                config["feature_extractor_contract"]
+            ):
+                raise ValueError("Unsupported command-lineage extractor contract")
+            coverage = document.get("observation_coverage", {}).get("command_event_fraction", 0)
+            if (
+                not isinstance(coverage, (float, int))
+                or not math.isfinite(coverage)
+                or not MIN_COMMAND_COVERAGE <= coverage <= 1
+            ):
+                raise ValueError("Insufficient command-line evidence coverage")
 
     baseline_categories = baseline_features.get("categorical_distributions", {})
     observed_categories = observation_features.get("categorical_distributions", {})
@@ -210,7 +353,7 @@ def score_feature_documents(
     category_details: dict[str, Any] = {}
     novelty_details: dict[str, Any] = {}
 
-    for family in SCORING_CONFIG["categorical_weights"]:
+    for family in config["categorical_weights"]:
         baseline = baseline_categories.get(family, {})
         observed = observed_categories.get(family, {})
         distance = jensen_shannon_distance(baseline, observed)
@@ -239,22 +382,23 @@ def score_feature_documents(
 
     categorical_score, categorical_effective = _weighted_average(
         categorical_values,
-        SCORING_CONFIG["categorical_weights"],
+        config["categorical_weights"],
     )
     novelty_score, novelty_effective = _weighted_average(
         novelty_values,
-        SCORING_CONFIG["categorical_weights"],
+        config["categorical_weights"],
     )
 
     baseline_numeric = baseline_features.get("numeric_summaries", {})
     observed_numeric = observation_features.get("numeric_summaries", {})
     numeric_values: dict[str, float] = {}
     numeric_details: dict[str, Any] = {}
-    for feature_name in SCORING_CONFIG["numeric_weights"]:
+    for feature_name in config["numeric_weights"]:
         detail = _numeric_deviation(
             feature_name,
             baseline_numeric.get(feature_name, {}),
             observed_numeric.get(feature_name, {}),
+            config=config,
         )
         if detail is not None:
             numeric_values[feature_name] = detail["score"]
@@ -264,7 +408,7 @@ def score_feature_documents(
 
     numeric_score, numeric_effective = _weighted_average(
         numeric_values,
-        SCORING_CONFIG["numeric_weights"],
+        config["numeric_weights"],
     )
 
     group_values = {
@@ -278,7 +422,7 @@ def score_feature_documents(
     }
     total_score, group_effective = _weighted_average(
         group_values,
-        SCORING_CONFIG["top_level_weights"],
+        config["top_level_weights"],
     )
     if total_score is None:
         raise ValueError("No scoreable feature groups were present")
@@ -319,9 +463,7 @@ def score_feature_documents(
         )
     for family, raw_score in novelty_values.items():
         contribution = (
-            group_effective.get("novelty", 0.0)
-            * novelty_effective.get(family, 0.0)
-            * raw_score
+            group_effective.get("novelty", 0.0) * novelty_effective.get(family, 0.0) * raw_score
         )
         contributors.append(
             {
@@ -345,7 +487,9 @@ def score_feature_documents(
                 "weighted_contribution": _round(contribution),
             }
         )
-    contributors.sort(key=lambda item: (-item["weighted_contribution"], item["kind"], item["feature"]))
+    contributors.sort(
+        key=lambda item: (-item["weighted_contribution"], item["kind"], item["feature"])
+    )
 
     unseen_tokens: list[dict[str, Any]] = []
     for family, detail in novelty_details.items():
@@ -359,7 +503,7 @@ def score_feature_documents(
             )
     unseen_tokens.sort(key=lambda item: (-item["proportion"], item["feature"], item["token"]))
 
-    band = score_band(total_score)
+    band = score_band(total_score, config)
     explanation = {
         "band": band,
         "interpretation": (

@@ -289,12 +289,12 @@ If a vulnerability is only at Stage 1 or Stage 2, Porygon categorizes it as:
 
 ---
 
-### Block 6: Explainable Machine Learning — Solving the ML Fallacy with TreeSHAP
+### Block 6: Heuristic Classification and Raw Tree-path Explanations
 
-Remember **Lie #2** ("A black-box AI model will magically catch attacks")? Porygon solves the explainability crisis through a supervised **Tree Ensemble (Random Forest)** combined with **TreeSHAP (SHapley Additive exPlanations)**.
+Porygon's default classifier uses five hand-authored decision trees with raw tree-path feature deltas. Its model metadata records heuristic provenance, unvalidated calibration status and a canonical ensemble hash.
 
-Instead of outputting an arbitrary, unexplainable percentage, Porygon's ML engine:
-1. **Computes a 12-Dimensional Feature Vector** over 60-second observation windows:
+The default classifier exposes its feature inputs, operational class scores and raw output decomposition:
+1. **Computes a 12-Dimensional Feature Vector** from caller-selected observation windows or supplied event sets:
    - `shell_ratio`: Interactive shell frequency (`sh`, `bash`, `dash`).
    - `root_ratio`: Proportion of processes running as root (UID 0).
    - `recon_ratio`: Network and host discovery binaries (`whoami`, `ip`, `nmap`).
@@ -306,16 +306,17 @@ Instead of outputting an arbitrary, unexplainable percentage, Porygon's ML engin
    - `parent_shim_ratio`: Processes spawned by container shims (`runc`, `docker exec`).
    - `suspicious_sequence_ratio`: Recon-to-exploit chaining.
    - `jensen_shannon_drift`: Information-theoretic distance $D_{JS}$.
-2. **Maps Directly to MITRE ATT&CK Tactics:**
+2. **Returns Operational Class Labels:**
    - Categorizes activity into `benign`, `reconnaissance`, `privilege_escalation`, `shell_escape`, or `suspicious_tooling`.
-3. **Explains Every Verdict Mathematically:**
-   - Using TreeSHAP additive feature attributions ($\Delta \mathbf{P}$), Porygon tells the operator exactly *which* features pushed the decision:
+3. **Exposes Raw Tree-path Deltas:**
+   - Each feature receives the child-minus-parent changes along traversed tree paths. The average root value plus all feature deltas reconstructs each raw ensemble output before fixed score sharpening.
    ```text
-   Verdict: PRIVILEGE ESCALATION (Confidence: 94.2%)
-   ├─ root_ratio:              +0.42  (Process ran as UID 0)
-   ├─ shell_ratio:             +0.31  (Interactive shell spawned)
-   ├─ priv_escalation_ratio:   +0.18  (nsenter / sudo invocation)
-   └─ compiler_miner_ratio:    -0.05  (No mining loop detected)
+   model_kind: heuristic
+   training_status: hand_authored
+   calibration_status: unvalidated
+   explanation_method: tree_path_delta
+   explanation_output_space: raw_ensemble_probability
+   raw_output = base_value + sum(full_feature_contributions)
    ```
 4. **Pure-Python Architecture:**
    - Implemented in clean, dependency-free Python (`ml_classifier.py`) without requiring bloated C-extensions or external machine-learning frameworks.
@@ -450,12 +451,12 @@ Open your terminal and run this 60-second experiment:
    docker exec -it lab-target nc -h || true
    ```
 
-4. **Ask Porygon to classify the runtime threat and TreeSHAP attributions:**
+4. **Ask Porygon to inspect heuristic class scores and raw tree-path deltas:**
    ```bash
    CONTAINER_ID=$(docker ps -qf "name=lab-target")
    curl -s -X POST "http://127.0.0.1:8000/api/v1/ml/classify-container/$CONTAINER_ID" | jq .
    ```
-   * **Look at the output:** The Tree Ensemble categorizes the activity as `suspicious_tooling` and breaks down exact feature attributions!
+   * **Look at the output:** The heuristic ensemble returns a class score and raw-space feature deltas for the supplied executions.
 
 5. **View the detected security incident:**
    ```bash

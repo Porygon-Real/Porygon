@@ -38,7 +38,9 @@ def request(
         _load_env()
         token = os.getenv("PORYGON_OPERATOR_API_TOKEN", "")
         if len(token) < 32:
-            raise SystemExit("Set PORYGON_OPERATOR_API_TOKEN to the operator token used by the stack")
+            raise SystemExit(
+                "Set PORYGON_OPERATOR_API_TOKEN to the operator token used by the stack"
+            )
         headers["X-Porygon-Operator-Token"] = token
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
@@ -52,25 +54,35 @@ def request(
 
 
 def query_string(values: dict[str, object | None]) -> str:
-    return urllib.parse.urlencode({key: value for key, value in values.items() if value is not None})
+    return urllib.parse.urlencode(
+        {key: value for key, value in values.items() if value is not None}
+    )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Manage Porygon image scans and vulnerability evidence")
+    parser = argparse.ArgumentParser(
+        description="Manage Porygon image scans and vulnerability evidence"
+    )
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("policy", help="Show evidence stages and the exploitation claim boundary")
 
     create = commands.add_parser("create", help="Queue a digest-bound image scan")
-    create.add_argument("--image-digest", required=True)
+    create.add_argument(
+        "--image-identity",
+        "--image-digest",
+        dest="image_digest",
+        required=True,
+        help="repository@sha256:... or local:sha256:<full-image-id>",
+    )
     create.add_argument("--requested-by", required=True)
     create.add_argument("--docker-host-id")
     create.add_argument("--scan-reference", default="initial")
     create.add_argument("--note")
 
     scans = commands.add_parser("scans", help="List image scans")
-    scans.add_argument("--image-digest")
+    scans.add_argument("--image-identity", "--image-digest", dest="image_digest")
     scans.add_argument("--status", choices=["queued", "claimed", "completed", "failed"])
     scans.add_argument("--limit", type=int, default=100)
 
@@ -84,7 +96,7 @@ def main() -> int:
     get_report.add_argument("scan_id")
 
     findings = commands.add_parser("findings", help="List vulnerability findings")
-    findings.add_argument("--image-digest")
+    findings.add_argument("--image-identity", "--image-digest", dest="image_digest")
     findings.add_argument("--cve-id")
     findings.add_argument("--severity", choices=["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"])
     findings.add_argument("--limit", type=int, default=100)
@@ -103,7 +115,7 @@ def main() -> int:
             f"{base}/operator/v1/image-scans",
             operator=True,
             payload={
-                "image_digest": args.image_digest,
+                "image_identity": args.image_digest,
                 "requested_by": args.requested_by,
                 "docker_host_id": args.docker_host_id,
                 "scan_reference": args.scan_reference,

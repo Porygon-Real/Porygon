@@ -28,11 +28,13 @@ class Settings(BaseSettings):
 
     internal_api_token: SecretStr = Field(min_length=32)
     operator_api_token: SecretStr = Field(min_length=32)
+    access_mode: Literal["local", "authenticated"] = "local"
     response_execution_mode: Literal["disabled", "live"] = "disabled"
     calibrated_enabled: bool = False
     ai_api_key: SecretStr | None = None
     ai_provider: Literal["gemini", "openai"] = "gemini"
     ai_model: str | None = None
+    ai_max_concurrent_audits: int = Field(default=2, ge=1, le=16)
     response_approval_max_age_seconds: int = Field(default=3600, ge=60, le=86400)
     baseline_max_events: int = Field(default=250000, ge=100, le=2000000)
     baseline_max_windows: int = Field(default=50000, ge=10, le=500000)
@@ -44,6 +46,26 @@ class Settings(BaseSettings):
     sbom_max_components: int = Field(default=500000, ge=1, le=2000000)
     raw_event_retention_days: int = Field(default=30, ge=1, le=3650)
     retention_max_delete_batch: int = Field(default=50000, ge=1, le=1000000)
+    reconciliation_enabled: bool = True
+    reconciliation_interval_seconds: float = Field(default=5, ge=0.2, le=300)
+    reconciliation_batch_size: int = Field(default=500, ge=1, le=5000)
+    notification_enabled: bool = False
+    notification_config_file: str | None = None
+    notification_poll_seconds: float = Field(default=2,ge=0.2,le=300)
+    notification_batch_size: int = Field(default=10,ge=1,le=100)
+    notification_max_attempts: int = Field(default=8,ge=1,le=30)
+    notification_lease_seconds: int = Field(default=60,ge=20,le=3600)
+    notification_timeout_seconds: int = Field(default=10,ge=1,le=15)
+    runtime_evidence_enabled: bool = False
+    assessment_enabled: bool = False
+    assessment_poll_seconds: float = Field(default=2,ge=0.2,le=300)
+    assessment_jobs_per_tick: int = Field(default=10,ge=1,le=100)
+    assessment_lease_seconds: int = Field(default=120,ge=10,le=3600)
+    assessment_max_attempts: int = Field(default=5,ge=1,le=20)
+    assessment_allowed_lateness_seconds: int = Field(default=10,ge=0,le=3600)
+    assessment_heartbeat_max_age_seconds: int = Field(default=60,ge=10,le=3600)
+    retention_scheduler_enabled: bool = False
+    retention_interval_seconds: int = Field(default=21600, ge=60, le=604800)
 
     @property
     def database_url(self) -> URL:

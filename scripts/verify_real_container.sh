@@ -9,6 +9,11 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Internal checks use Docker exec; the public gateway intentionally rejects /internal/.
+if [[ -z "${PORYGON_VERIFY_BASE_URL:-}" ]]; then
+  exec python3 scripts/verification_api.py bash "$0" "$@"
+fi
+
 fail() {
   echo "[FAIL] $*" >&2
   docker compose logs --tail=80 backend telemetry collector 2>/dev/null || true
@@ -27,7 +32,7 @@ mkdir -p artifacts
 
 backend_port="$(grep -E '^BACKEND_PORT=' .env | tail -1 | cut -d= -f2 || true)"
 backend_port="${backend_port:-8000}"
-base_url="http://127.0.0.1:${backend_port}"
+base_url="${PORYGON_VERIFY_BASE_URL:-http://127.0.0.1:${backend_port}}"
 curl --fail --silent --show-error "${base_url}/health/live" >/dev/null \
   || fail "the stack is not reachable on ${base_url}; run make up first"
 pass "Live stack is reachable for real-container acceptance"
