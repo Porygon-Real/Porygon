@@ -87,6 +87,8 @@ services:
       PORYGON_RETENTION_MAX_DELETE_BATCH: ${PORYGON_RETENTION_MAX_DELETE_BATCH:-50000}
       PORYGON_RESPONSE_APPROVAL_MAX_AGE_SECONDS: ${PORYGON_RESPONSE_APPROVAL_MAX_AGE_SECONDS:-3600}
       PORYGON_PARENT_CORRELATION_LOOKBACK_SECONDS: ${PORYGON_PARENT_CORRELATION_LOOKBACK_SECONDS:-600}
+      PORYGON_ML_MODEL_PATH: ${PORYGON_ML_MODEL_PATH:-}
+      PORYGON_ML_MODEL_NOBASELINE_PATH: ${PORYGON_ML_MODEL_NOBASELINE_PATH:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,6 +110,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
+    volumes:
+      - ./backend/ml_training/models:/models:ro
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -217,7 +221,7 @@ services:
     command:
       - sh
       - -ec
-      - chown 0:10003 /var/log/porygon && chmod 2770 /var/log/porygon
+      - chown 0:10003 /var/log/porygon && chmod 775 /var/log/porygon && touch /var/log/porygon/falco-events.jsonl && chown 0:10003 /var/log/porygon/falco-events.jsonl && chmod 664 /var/log/porygon/falco-events.jsonl
     network_mode: none
     volumes:
       - porygon_falco_events:/var/log/porygon
@@ -482,6 +486,8 @@ services:
       - SYS_RESOURCE
       - SYS_PTRACE
       - SYS_ADMIN
+    group_add:
+      - "10003"
     security_opt:
       - no-new-privileges:true
     tmpfs:

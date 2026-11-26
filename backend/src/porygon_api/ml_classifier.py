@@ -14,6 +14,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Literal, Protocol
+from pathlib import Path
 
 MODEL_VERSION = "porygon.ml.rf.v1"
 FEATURE_CONTRACT = "porygon.ml.features.exec-taxonomy"
@@ -41,6 +42,19 @@ FEATURE_NAMES: tuple[str, ...] = (
     "parent_shim_ratio",
     "suspicious_sequence_ratio",
     "jensen_shannon_drift",
+)
+
+NOBASELINE_FEATURE_NAMES: tuple[str, ...] = (
+    "shell_ratio",
+    "root_ratio",
+    "recon_ratio",
+    "tooling_ratio",
+    "priv_escalation_ratio",
+    "compiler_miner_ratio",
+    "distinct_proc_count",
+    "event_count",
+    "parent_shim_ratio",
+    "suspicious_sequence_ratio",
 )
 
 # Binary taxonomy sets for container environments
@@ -140,6 +154,7 @@ class MLThreatClassificationResult:
         "privilege_escalation",
         "shell_escape",
         "suspicious_tooling",
+        "insufficient_data",
     ]
     confidence: float
     risk_level: Literal["clean", "low", "medium", "high", "critical"]
@@ -151,6 +166,7 @@ class MLThreatClassificationResult:
     explanation_base_values: dict[str, float]
     raw_output_values: dict[str, float]
     full_feature_contributions: dict[str, dict[str, float]]
+    model_variant: Literal["baseline", "no_baseline"] = "baseline"
     model_version: str = MODEL_VERSION
     classified_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -158,6 +174,38 @@ class MLThreatClassificationResult:
         result = asdict(self)
         result["classified_at"] = self.classified_at.isoformat()
         return result
+
+
+def make_insufficient_data_result(
+    model_variant: Literal["baseline", "no_baseline"] = "no_baseline",
+    model_metadata: ClassifierMetadata | None = None,
+    features: tuple[str, ...] | list[str] | None = None,
+) -> MLThreatClassificationResult:
+    feat_names = list(features or FEATURE_NAMES)
+    meta = model_metadata or ClassifierMetadata(
+        model_kind="insufficient_data",
+        training_status="not_applicable",
+        calibration_status="not_applicable",
+        explanation_method="none",
+        explanation_output_space="none",
+        feature_contract=FEATURE_CONTRACT,
+        input_document_schema=INPUT_DOCUMENT_SCHEMA,
+        model_artifact_sha256="",
+    )
+    return MLThreatClassificationResult(
+        predicted_class="insufficient_data",
+        confidence=0.0,
+        risk_level="clean",
+        class_probabilities={c: 0.0 for c in CLASSES},
+        feature_vector={f: 0.0 for f in feat_names},
+        top_contributing_features=[],
+        summary="Classification: insufficient_data (fewer than 3 process execution events in telemetry slice).",
+        model_metadata=meta,
+        explanation_base_values={c: 0.0 for c in CLASSES},
+        raw_output_values={c: 0.0 for c in CLASSES},
+        full_feature_contributions={c: {f: 0.0 for f in feat_names} for c in CLASSES},
+        model_variant=model_variant,
+    )
 
 
 def extract_features_from_events(
@@ -382,27 +430,48 @@ def _softmax(probs: list[float], temperature: float = 0.35) -> list[float]:
 class PorygonThreatClassifier:
     """Heuristic tree ensemble with explicit provenance and tree-path deltas."""
 
-    def __init__(self, trees: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        trees: list[dict[str, Any]] | None = None,
+        temperature: float = 0.35,
+        features: tuple[str, ...] | list[str] | None = None,
+        metadata_override: dict[str, Any] | None = None,
+    ) -> None:
         self._hand_authored_default = not trees
         self.trees = trees or self._build_default_ensemble()
+        self.temperature = float(temperature)
+        self.features = tuple(features or FEATURE_NAMES)
+        self._metadata_override = metadata_override or {}
+
+    @classmethod
+    def from_artifact(cls, artifact: dict[str, Any] | Path | str) -> PorygonThreatClassifier:
+        return load_model_artifact(artifact)
 
     @property
     def metadata(self) -> ClassifierMetadata:
+        from porygon_api.model_registry import sha256_document
         document = {
-            "classes": CLASSES, "features": FEATURE_NAMES,
+            "classes": CLASSES, "features": self.features,
             "feature_contract": FEATURE_CONTRACT, "input_document_schema": INPUT_DOCUMENT_SCHEMA,
             "trees": self.trees,
-            "score_transform": {"method": "log_probability_softmax", "temperature": 0.35},
+            "score_transform": {"method": "log_probability_softmax", "temperature": self.temperature},
         }
-        digest = hashlib.sha256(json.dumps(
-            document, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode()).hexdigest()
+        digest = sha256_document(document)
+        model_kind = self._metadata_override.get("model_kind") or (
+            "heuristic" if self._hand_authored_default else "tree_ensemble"
+        )
+        training_status = self._metadata_override.get("training_status") or (
+            "hand_authored" if self._hand_authored_default else "unspecified"
+        )
+        calibration_status = self._metadata_override.get("calibration_status") or "unvalidated"
         return ClassifierMetadata(
-            model_kind="heuristic" if self._hand_authored_default else "tree_ensemble",
-            training_status="hand_authored" if self._hand_authored_default else "unspecified",
-            calibration_status="unvalidated", explanation_method="tree_path_delta",
+            model_kind=model_kind,
+            training_status=training_status,
+            calibration_status=calibration_status,
+            explanation_method="tree_path_delta",
             explanation_output_space="raw_ensemble_probability",
-            feature_contract=FEATURE_CONTRACT, input_document_schema=INPUT_DOCUMENT_SCHEMA,
+            feature_contract=FEATURE_CONTRACT,
+            input_document_schema=INPUT_DOCUMENT_SCHEMA,
             model_artifact_sha256=digest,
         )
 
@@ -555,7 +624,7 @@ class PorygonThreatClassifier:
         self, tree: dict[str, Any], x: list[float]
     ) -> tuple[list[float], list[list[float]]]:
         """Traverse a decision tree and calculate exact local feature contributions."""
-        num_features = len(FEATURE_NAMES)
+        num_features = len(self.features)
         num_classes = len(CLASSES)
         contribs = [[0.0] * num_classes for _ in range(num_features)]
 
@@ -575,11 +644,13 @@ class PorygonThreatClassifier:
         return curr["probs"], contribs
 
     def predict_vector(
-        self, feature_dict: dict[str, float]
+        self,
+        feature_dict: dict[str, float],
+        model_variant: Literal["baseline", "no_baseline"] = "baseline",
     ) -> MLThreatClassificationResult:
         """Run ML threat classification and feature attribution over a feature vector."""
-        x = [float(feature_dict.get(fname, 0.0)) for fname in FEATURE_NAMES]
-        num_features = len(FEATURE_NAMES)
+        x = [float(feature_dict.get(fname, 0.0)) for fname in self.features]
+        num_features = len(self.features)
         num_classes = len(CLASSES)
 
         raw_probs = [0.0] * num_classes
@@ -597,7 +668,7 @@ class PorygonThreatClassifier:
 
         # Compatibility score sharpening is fixed, not fitted calibration. Path
         # deltas explain raw_probs; the nonlinear transformation is separate.
-        heuristic_scores = _softmax(raw_probs, temperature=0.35)
+        heuristic_scores = _softmax(raw_probs, temperature=self.temperature)
         pred_idx = heuristic_scores.index(max(heuristic_scores))
         predicted_class = CLASSES[pred_idx]
         confidence = heuristic_scores[pred_idx]
@@ -622,16 +693,17 @@ class PorygonThreatClassifier:
             confidence=round(confidence, 4),
             risk_level=risk_level,  # type: ignore
             class_probabilities=class_prob_map,
-            feature_vector={fname: round(x[i], 4) for i, fname in enumerate(FEATURE_NAMES)},
+            feature_vector={fname: round(x[i], 4) for i, fname in enumerate(self.features)},
             top_contributing_features=contributions,
             summary=summary,
             model_metadata=self.metadata,
             explanation_base_values={name: base_values[i] for i, name in enumerate(CLASSES)},
             raw_output_values={name: raw_probs[i] for i, name in enumerate(CLASSES)},
             full_feature_contributions={
-                name: {feature: all_contribs[j][i] for j, feature in enumerate(FEATURE_NAMES)}
+                name: {feature: all_contribs[j][i] for j, feature in enumerate(self.features)}
                 for i, name in enumerate(CLASSES)
             },
+            model_variant=model_variant,
             model_version=MODEL_VERSION,
         )
 
@@ -640,23 +712,32 @@ class PorygonThreatClassifier:
         events: Iterable[ProcessEventLike | dict[str, Any]],
         baseline_features: dict[str, Any] | None = None,
         drift_score: float | None = None,
+        model_variant: Literal["baseline", "no_baseline"] = "baseline",
     ) -> MLThreatClassificationResult:
         """Classify a sequence of process execution events directly."""
-        fvec = extract_features_from_events(events, baseline_features, drift_score)
-        return self.predict_vector(fvec)
+        event_list = list(events)
+        if len(event_list) == 0:
+            return make_insufficient_data_result(
+                model_variant=model_variant,
+                model_metadata=self.metadata,
+                features=self.features,
+            )
+        fvec = extract_features_from_events(event_list, baseline_features, drift_score)
+        return self.predict_vector(fvec, model_variant=model_variant)
 
     def predict_document(
         self,
         observation_features: dict[str, Any],
         baseline_features: dict[str, Any] | None = None,
         drift_score: float | None = None,
+        model_variant: Literal["baseline", "no_baseline"] = "baseline",
     ) -> MLThreatClassificationResult:
         """Classify a Porygon FeatureDocument observation window."""
         for document in (observation_features, baseline_features):
             if document and document.get("schema_version") not in {None, "porygon.behaviour.v1"}:
                 raise ValueError("The classifier requires the porygon.behaviour.v1 feature contract")
         fvec = extract_features_from_document(observation_features, baseline_features, drift_score)
-        return self.predict_vector(fvec)
+        return self.predict_vector(fvec, model_variant=model_variant)
 
     def _compute_risk_level(
         self, predicted_class: str, confidence: float, x: list[float]
@@ -679,7 +760,7 @@ class PorygonThreatClassifier:
         predicted_class: str,
     ) -> list[MLFeatureContribution]:
         items: list[tuple[float, str, float, float]] = []
-        for f_idx, fname in enumerate(FEATURE_NAMES):
+        for f_idx, fname in enumerate(self.features):
             val = float(feature_dict.get(fname, 0.0))
             contrib = all_contribs[f_idx][pred_idx]
             items.append((abs(contrib), fname, val, contrib))
@@ -753,9 +834,61 @@ class PorygonThreatClassifier:
                 f"({confidence * 100:.1f}% class score)."
             )
         return (
-            f"Classified as {predicted_class.upper()} ({confidence * 100:.1f}% heuristic class score, "
+            f"Classified as {predicted_class.upper()} ({confidence * 100:.1f}% class score, "
             f"risk: {risk_level.upper()}). Primary driver: {top_factor}"
         )
 
 
 default_classifier = PorygonThreatClassifier()
+
+
+def load_model_artifact(artifact_source: dict[str, Any] | Path | str) -> PorygonThreatClassifier:
+    """Load a trained tree ensemble artifact with digest verification."""
+    from porygon_api.model_registry import sha256_document
+
+    if isinstance(artifact_source, (str, Path)):
+        with open(artifact_source, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+    elif isinstance(artifact_source, dict):
+        doc = artifact_source
+    else:
+        raise TypeError(f"Unsupported artifact source: {type(artifact_source)}")
+
+    trees = doc.get("trees")
+    if not trees or not isinstance(trees, list):
+        raise ValueError("Invalid artifact: missing or malformed 'trees'")
+
+    score_transform = doc.get("score_transform", {})
+    temperature = float(score_transform.get("temperature", 0.35))
+
+    expected_digest = doc.get("model_metadata", {}).get("model_artifact_sha256")
+    features = doc.get("features", FEATURE_NAMES)
+    check_doc = {
+        "classes": doc.get("classes", CLASSES),
+        "features": features,
+        "feature_contract": doc.get("feature_contract", FEATURE_CONTRACT),
+        "input_document_schema": doc.get("input_document_schema", INPUT_DOCUMENT_SCHEMA),
+        "trees": trees,
+        "score_transform": {
+            "method": score_transform.get("method", "log_probability_softmax"),
+            "temperature": temperature,
+        },
+    }
+    actual_digest = sha256_document(check_doc)
+    if expected_digest and expected_digest != actual_digest:
+        raise ValueError(
+            f"Artifact SHA-256 digest mismatch: expected {expected_digest}, computed {actual_digest}"
+        )
+
+    meta = doc.get("model_metadata", {})
+    return PorygonThreatClassifier(
+        trees=trees,
+        temperature=temperature,
+        features=features,
+        metadata_override={
+            "model_kind": meta.get("model_kind", "tree_ensemble"),
+            "training_status": meta.get("training_status", "trained"),
+            "calibration_status": meta.get("calibration_status", "validated"),
+        },
+    )
+

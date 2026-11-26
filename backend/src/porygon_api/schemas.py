@@ -1334,6 +1334,7 @@ class MLThreatClassificationOut(BaseModel):
         "privilege_escalation",
         "shell_escape",
         "suspicious_tooling",
+        "insufficient_data",
     ]
     confidence: float = Field(ge=0.0, le=1.0)
     risk_level: Literal["clean", "low", "medium", "high", "critical"]
@@ -1347,6 +1348,7 @@ class MLThreatClassificationOut(BaseModel):
     explanation_base_values: dict[str, float]
     raw_output_values: dict[str, float]
     full_feature_contributions: dict[str, dict[str, float]]
+    model_variant: Literal["baseline", "no_baseline"] = "baseline"
 
 
 class MLClassifyEventsIn(BaseModel):

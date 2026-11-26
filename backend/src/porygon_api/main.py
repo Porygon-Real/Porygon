@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from pathlib import Path
 from threading import BoundedSemaphore
 from typing import Any, AsyncIterator
 from uuid import uuid4
@@ -157,8 +160,95 @@ from porygon_api.ml_classifier import (
     CLASSES as ML_CLASSES,
     FEATURE_NAMES as ML_FEATURE_NAMES,
     MODEL_VERSION as ML_MODEL_VERSION,
+    PorygonThreatClassifier,
     default_classifier,
+    make_insufficient_data_result,
 )
+
+
+@lru_cache(maxsize=4)
+def _load_cached_classifier(path_str: str) -> PorygonThreatClassifier:
+    """Load model artifact from path with LRU caching."""
+    return PorygonThreatClassifier.from_artifact(path_str)
+
+
+def get_container_classifier() -> PorygonThreatClassifier:
+    """Retrieve active ML threat classifier.
+
+    If PORYGON_ML_MODEL_PATH is set:
+      Loads the trained artifact via PorygonThreatClassifier.from_artifact.
+      If the file is missing or fails hash verification, raises HTTP 500 error.
+    If unset:
+      Returns the hand-authored default heuristic classifier.
+    """
+    model_path = os.getenv("PORYGON_ML_MODEL_PATH")
+    if not model_path or not model_path.strip():
+        return default_classifier
+
+    path_str = model_path.strip()
+    p = Path(path_str)
+    if not p.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Configured PORYGON_ML_MODEL_PATH '{path_str}' does not exist or is not a file.",
+        )
+
+    try:
+        return _load_cached_classifier(path_str)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load ML model artifact from '{path_str}': {err}",
+        ) from err
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error loading ML model artifact from '{path_str}': {err}",
+        ) from err
+
+
+def get_nobaseline_classifier() -> PorygonThreatClassifier:
+    """Retrieve active no-baseline (10-feature) ML threat classifier.
+
+    If PORYGON_ML_MODEL_NOBASELINE_PATH is set:
+      Loads the trained artifact via PorygonThreatClassifier.from_artifact.
+      If the file is missing or fails hash verification, raises HTTP 500 error.
+    If unset:
+      Falls back to get_container_classifier().
+    """
+    model_path = os.getenv("PORYGON_ML_MODEL_NOBASELINE_PATH")
+    if not model_path or not model_path.strip():
+        return get_container_classifier()
+
+    path_str = model_path.strip()
+    p = Path(path_str)
+    if not p.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Configured PORYGON_ML_MODEL_NOBASELINE_PATH '{path_str}' does not exist or is not a file.",
+        )
+
+    try:
+        return _load_cached_classifier(path_str)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load no-baseline ML model artifact from '{path_str}': {err}",
+        ) from err
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error loading no-baseline ML model artifact from '{path_str}': {err}",
+        ) from err
+
+
+def get_classifier_for_request(
+    has_baseline: bool,
+) -> tuple[PorygonThreatClassifier, Literal["baseline", "no_baseline"]]:
+    """Select classifier variant: 12-feature when baseline exists, 10-feature no-baseline otherwise."""
+    if has_baseline:
+        return get_container_classifier(), "baseline"
+    return get_nobaseline_classifier(), "no_baseline"
 from porygon_api.scoring import (
     ALGORITHM_VERSION,
     get_scoring_config,
@@ -2591,15 +2681,17 @@ def audit_container(
 @app.get("/api/v1/ml/model-info", response_model=MLModelInfoOut, tags=["ml"])
 def get_ml_model_info() -> MLModelInfoOut:
     """Return architecture, classes, and feature metadata for Porygon's ML Threat Classifier."""
+    classifier = get_container_classifier()
+    meta = classifier.metadata
     return MLModelInfoOut(
-        model_name="Porygon Heuristic Threat Classifier",
+        model_name="Porygon ML Threat Classifier" if meta.model_kind != "heuristic" else "Porygon Heuristic Threat Classifier",
         model_version=ML_MODEL_VERSION,
-        algorithm="Hand-authored Decision Tree Ensemble",
+        algorithm="Trained Decision Tree Ensemble" if meta.model_kind != "heuristic" else "Hand-authored Decision Tree Ensemble",
         classes=list(ML_CLASSES),
         features=list(ML_FEATURE_NAMES),
-        num_trees=len(default_classifier.trees),
+        num_trees=len(classifier.trees),
         explainability_method="Tree-path deltas in raw ensemble probability space",
-        model_metadata=default_classifier.metadata.to_dict(),
+        model_metadata=meta.to_dict(),
     )
 
 
@@ -2646,7 +2738,16 @@ def classify_events(
             if latest_score:
                 drift_score = latest_score.total_score
 
-    res = default_classifier.predict_events(events, drift_score=drift_score)
+    if not events:
+        classifier = get_nobaseline_classifier()
+        res = make_insufficient_data_result(
+            model_variant="no_baseline",
+            model_metadata=classifier.metadata,
+            features=classifier.features,
+        )
+    else:
+        classifier, variant = get_classifier_for_request(has_baseline=False)
+        res = classifier.predict_events(events, drift_score=drift_score, model_variant=variant)
     return MLThreatClassificationOut(
         predicted_class=res.predicted_class,
         confidence=res.confidence,
@@ -2670,6 +2771,7 @@ def classify_events(
         explanation_base_values=res.explanation_base_values,
         raw_output_values=res.raw_output_values,
         full_feature_contributions=res.full_feature_contributions,
+        model_variant=res.model_variant,
     )
 
 
@@ -2685,6 +2787,7 @@ def classify_container(
 ) -> MLThreatClassificationOut:
     """Classify live container process telemetry against expected baseline profiles."""
     cid = container_id.strip()
+    limit_val = event_limit.default if hasattr(event_limit, "default") else int(event_limit)
     container = db.scalar(
         select(ContainerIdentity).where(
             or_(
@@ -2709,7 +2812,7 @@ def classify_container(
                     )
                 )
                 .order_by(desc(ProcessExecEvent.occurred_at))
-                .limit(event_limit)
+                .limit(limit_val)
             ).all()
         )
     else:
@@ -2724,7 +2827,7 @@ def classify_container(
                     )
                 )
                 .order_by(desc(ProcessExecEvent.occurred_at))
-                .limit(event_limit)
+                .limit(limit_val)
             ).all()
         )
         if not db_events:
@@ -2782,9 +2885,19 @@ def classify_container(
         for e in db_events
     ]
 
-    res = default_classifier.predict_events(
-        events_data, baseline_features=baseline_features, drift_score=drift_score
-    )
+    has_baseline = bool(baseline_features) and (drift_score is not None)
+    classifier, variant = get_classifier_for_request(has_baseline)
+
+    if len(db_events) < 3:
+        res = make_insufficient_data_result(
+            model_variant=variant,
+            model_metadata=classifier.metadata,
+            features=classifier.features,
+        )
+    else:
+        res = classifier.predict_events(
+            events_data, baseline_features=baseline_features, drift_score=drift_score, model_variant=variant
+        )
     return MLThreatClassificationOut(
         predicted_class=res.predicted_class,
         confidence=res.confidence,
@@ -2808,6 +2921,7 @@ def classify_container(
         explanation_base_values=res.explanation_base_values,
         raw_output_values=res.raw_output_values,
         full_feature_contributions=res.full_feature_contributions,
+        model_variant=res.model_variant,
     )
 
 
@@ -2818,11 +2932,14 @@ def classify_container(
 )
 def classify_features(payload: MLClassifyFeaturesIn) -> MLThreatClassificationOut:
     """Classify a Porygon FeatureDocument observation window."""
+    has_baseline = bool(payload.baseline_features) and (payload.drift_score is not None)
+    classifier, variant = get_classifier_for_request(has_baseline)
     try:
-        res = default_classifier.predict_document(
+        res = classifier.predict_document(
             observation_features=payload.observation_features,
             baseline_features=payload.baseline_features,
             drift_score=payload.drift_score,
+            model_variant=variant,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -2849,6 +2966,7 @@ def classify_features(payload: MLClassifyFeaturesIn) -> MLThreatClassificationOu
         explanation_base_values=res.explanation_base_values,
         raw_output_values=res.raw_output_values,
         full_feature_contributions=res.full_feature_contributions,
+        model_variant=res.model_variant,
     )
 
 
