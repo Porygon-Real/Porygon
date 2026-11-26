@@ -86,6 +86,13 @@ document.addEventListener('alpine:init', () => {
     mlLoadingBatch: false,
     mlTacticFilter: 'all',
     mlSearchQuery: '',
+    mlModelInfo: null,
+    mlModelInfoError: false,
+    mlIncludeStopped: false,
+    mlAutoRefreshTimer: null,
+    mlAutoRefreshPaused: false,
+    mlLastUpdated: null,
+    mlQueuedStoppedClassification: false,
 
     // Rules & Incidents
     rules: [],
@@ -627,6 +634,146 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    isContainerRunning(c) {
+      if (!c?.current_snapshot?.state?.running) {
+        return false;
+      }
+      if (!c?.last_seen_at) {
+        return false;
+      }
+      const seenMs = new Date(c.last_seen_at).getTime();
+      if (isNaN(seenMs)) {
+        return false;
+      }
+      const ageSeconds = (Date.now() - seenMs) / 1000;
+      return ageSeconds >= -60 && ageSeconds <= 120;
+    },
+
+    formatLastSeen(ts) {
+      if (!ts) return '—';
+      try {
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return String(ts);
+        return d.toLocaleTimeString();
+      } catch (_) {
+        return String(ts);
+      }
+    },
+
+    get mlBaseWorkloads() {
+      const all = this.containers || [];
+      if (this.mlIncludeStopped) {
+        return all;
+      }
+      return all.filter(c => this.isContainerRunning(c));
+    },
+
+    stopMLAutoRefresh() {
+      if (this.mlAutoRefreshTimer) {
+        clearInterval(this.mlAutoRefreshTimer);
+        this.mlAutoRefreshTimer = null;
+      }
+    },
+
+    startMLAutoRefresh() {
+      this.stopMLAutoRefresh(); // Always clearInterval first so there are never two timers
+      if (this.mlAutoRefreshPaused) return;
+
+      this.mlAutoRefreshTimer = setInterval(async () => {
+        if (this.activeTab !== 'ml') {
+          this.stopMLAutoRefresh();
+          return;
+        }
+        if (this.mlAutoRefreshPaused) return;
+        if (typeof document !== 'undefined' && document.hidden) return; // Skip if tab hidden
+        if (this.mlLoadingBatch) return;
+
+        // Re-fetch container inventory first so new, stopped and removed containers update
+        await this.fetchContainers();
+        await this.classifyFleetForMLView(true);
+      }, 30000);
+    },
+
+    toggleMLAutoRefresh() {
+      this.mlAutoRefreshPaused = !this.mlAutoRefreshPaused;
+      if (this.mlAutoRefreshPaused) {
+        this.stopMLAutoRefresh();
+      } else {
+        this.startMLAutoRefresh();
+      }
+    },
+
+    async toggleIncludeStopped() {
+      this.mlIncludeStopped = !this.mlIncludeStopped;
+      if (this.mlIncludeStopped) {
+        if (this.mlLoadingBatch) {
+          // A run is currently active; queue classification of stopped containers
+          this.mlQueuedStoppedClassification = true;
+          return;
+        }
+        // Classify newly visible stopped containers once if not already classified
+        const newlyVisible = (this.containers || []).filter(c =>
+          !this.isContainerRunning(c) && !this.mlClassifications[c.container_id || c.id]
+        );
+        if (newlyVisible.length > 0) {
+          await this.classifyContainerBatch(newlyVisible, false, false);
+        }
+      } else {
+        this.mlQueuedStoppedClassification = false;
+      }
+    },
+
+    mlIsInsufficient(r) {
+      return r?.predicted_class === 'insufficient_data';
+    },
+
+    mlIsError(r) {
+      return r?.predicted_class === 'error' || Boolean(r?.error);
+    },
+
+    mlVariantLabel(r) {
+      if (!r || this.mlIsError(r)) return '';
+      const base = r.model_variant === 'no_baseline'
+        ? 'NO BASELINE · 10 FEATURES · LOWER CONFIDENCE'
+        : 'BASELINE · 12 FEATURES';
+      return r.stale ? `${base} · STALE` : base;
+    },
+
+    mlVerdictLabel(r) {
+      if (this.mlIsError(r)) return 'ERROR';
+      if (this.mlIsInsufficient(r)) return r?.stale ? 'INSUFFICIENT DATA (STALE)' : 'INSUFFICIENT DATA';
+      const v = (r?.risk_level || '').toUpperCase() === 'CLEAN' ? 'CLEAN' : (r?.risk_level || '').toUpperCase();
+      return r?.stale ? `${v} (STALE)` : v;
+    },
+
+    mlVerdictClass(r) {
+      if (this.mlIsError(r)) return 'bg-red-700 text-white';
+      if (this.mlIsInsufficient(r)) return 'bg-neutral-400 text-white'; // grey
+      const rl = (r?.risk_level || '').toLowerCase();
+      if (rl === 'clean') return 'bg-emerald-600 text-white';
+      if (rl === 'medium' || rl === 'low') return 'bg-amber-500 text-white';
+      if (rl === 'high' || rl === 'critical') return 'bg-red-600 text-white';
+      return 'bg-neutral-400 text-white';
+    },
+
+    mlTacticLabel(r) {
+      if (this.mlIsError(r)) return 'ERROR';
+      if (this.mlIsInsufficient(r)) return 'INSUFFICIENT DATA';
+      return r?.predicted_class ? r.predicted_class.replace(/_/g, ' ') : 'UNCLASSIFIED';
+    },
+
+    mlTacticBadgeClass(r) {
+      if (this.mlIsError(r)) return 'border-red-400 bg-red-100 text-red-700';
+      if (this.mlIsInsufficient(r)) return 'border-neutral-400 bg-neutral-100 text-neutral-600';
+      const cls = r?.predicted_class;
+      if (cls === 'benign') return 'bg-emerald-100 text-emerald-800 border-[#111111]';
+      if (cls === 'shell_escape') return 'bg-red-100 text-red-800 border-[#111111]';
+      if (cls === 'reconnaissance') return 'bg-blue-100 text-blue-800 border-[#111111]';
+      if (cls === 'suspicious_tooling') return 'bg-amber-100 text-amber-800 border-[#111111]';
+      if (cls === 'privilege_escalation') return 'bg-purple-100 text-purple-800 border-[#111111]';
+      return 'border-neutral-400 bg-neutral-100 text-neutral-600';
+    },
+
     async classifyContainerWithML(container) {
       this.mlClassifyModal.container = container;
       this.mlClassifyModal.loading = true;
@@ -653,7 +800,18 @@ document.addEventListener('alpine:init', () => {
 
         if (!resp.ok) {
           const detail = data.detail;
-          this.mlClassifyModal.error = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg || d).join(', ') : 'ML classification failed');
+          const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg || d).join(', ') : 'ML classification failed');
+          this.mlClassifyModal.error = msg;
+          if (cid) {
+            this.mlClassifications = {
+              ...this.mlClassifications,
+              [cid]: {
+                predicted_class: 'error',
+                error: true,
+                errorMessage: msg,
+              }
+            };
+          }
         } else {
           this.mlClassifyModal.result = data;
           if (cid) {
@@ -661,36 +819,118 @@ document.addEventListener('alpine:init', () => {
           }
         }
       } catch (err) {
-        this.mlClassifyModal.error = err.message || 'Network error communicating with ML classification API';
+        const msg = err.message || 'Network error communicating with ML classification API';
+        this.mlClassifyModal.error = msg;
+        const cid = container.container_id || container.id;
+        if (cid) {
+          this.mlClassifications = {
+            ...this.mlClassifications,
+            [cid]: {
+              predicted_class: 'error',
+              error: true,
+              errorMessage: msg,
+            }
+          };
+        }
       } finally {
         this.mlClassifyModal.loading = false;
       }
     },
 
-    async classifyFleetForMLView() {
-      if (!this.containers || this.containers.length === 0) return;
+    async classifyContainerBatch(targets, clearAtStart = false, isAuto = false) {
+      if (this.mlLoadingBatch) return;
+      if (!targets || targets.length === 0) return;
       this.mlLoadingBatch = true;
+      if (clearAtStart) {
+        this.mlClassifications = {};
+      }
       try {
-        const promises = this.containers.map(async (c) => {
-          const cid = c.container_id || c.id;
-          if (!cid) return;
-          try {
-            const resp = await this._apiFetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-            });
-            if (resp.ok) {
-              const data = await resp.json();
-              this.mlClassifications = { ...this.mlClassifications, [cid]: data };
+        const newResults = {};
+        const chunkSize = 8;
+        const list = [...targets];
+        for (let i = 0; i < list.length; i += chunkSize) {
+          const chunk = list.slice(i, i + chunkSize);
+          await Promise.all(chunk.map(async (c) => {
+            const cid = c.container_id || c.id;
+            if (!cid) return;
+            try {
+              const resp = await this._apiFetch(`/api/v1/ml/classify-container/${encodeURIComponent(cid)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              });
+              if (resp.ok) {
+                const data = await resp.json();
+                newResults[cid] = data;
+              } else {
+                let errText = `HTTP ${resp.status}`;
+                try {
+                  const errJson = await resp.json();
+                  errText = errJson.detail || errText;
+                } catch (_) {}
+                const prev = this.mlClassifications[cid];
+                if (isAuto && prev && !prev.error && prev.predicted_class !== 'error') {
+                  newResults[cid] = {
+                    ...prev,
+                    stale: true,
+                    staleError: typeof errText === 'string' ? errText : JSON.stringify(errText),
+                  };
+                } else {
+                  newResults[cid] = {
+                    predicted_class: 'error',
+                    error: true,
+                    errorMessage: typeof errText === 'string' ? errText : JSON.stringify(errText),
+                  };
+                }
+              }
+            } catch (e) {
+              console.warn(`Failed ML classification for ${cid}:`, e);
+              const prev = this.mlClassifications[cid];
+              if (isAuto && prev && !prev.error && prev.predicted_class !== 'error') {
+                newResults[cid] = {
+                  ...prev,
+                  stale: true,
+                  staleError: e.message || 'Network error',
+                };
+              } else {
+                newResults[cid] = {
+                  predicted_class: 'error',
+                  error: true,
+                  errorMessage: e.message || 'Network error',
+                };
+              }
             }
-          } catch (e) {
-            console.warn(`Failed ML classification for ${cid}:`, e);
-          }
-        });
-        await Promise.all(promises);
+          }));
+        }
+        if (clearAtStart) {
+          this.mlClassifications = newResults;
+        } else {
+          // Swap in new results
+          this.mlClassifications = { ...this.mlClassifications, ...newResults };
+        }
+        this.mlLastUpdated = new Date().toLocaleTimeString();
       } finally {
         this.mlLoadingBatch = false;
+        if (this.mlQueuedStoppedClassification) {
+          this.mlQueuedStoppedClassification = false;
+          if (this.mlIncludeStopped) {
+            const newlyVisible = (this.containers || []).filter(c =>
+              !this.isContainerRunning(c) && !this.mlClassifications[c.container_id || c.id]
+            );
+            if (newlyVisible.length > 0) {
+              setTimeout(() => {
+                this.classifyContainerBatch(newlyVisible, false, false);
+              }, 0);
+            }
+          }
+        }
       }
+    },
+
+    async classifyFleetForMLView(isAuto = false) {
+      const targets = isAuto
+        ? (this.containers || []).filter(c => this.isContainerRunning(c))
+        : this.mlBaseWorkloads;
+      await this.classifyContainerBatch(targets, !isAuto, isAuto);
     },
 
     inspectMLFromTable(container) {
@@ -698,7 +938,7 @@ document.addEventListener('alpine:init', () => {
       if (this.mlClassifications[cid]) {
         this.mlClassifyModal.container = container;
         this.mlClassifyModal.result = this.mlClassifications[cid];
-        this.mlClassifyModal.error = null;
+        this.mlClassifyModal.error = this.mlClassifications[cid].error ? (this.mlClassifications[cid].errorMessage || 'ML classification failed') : null;
         this.mlClassifyModal.loading = false;
         this.mlClassifyModal.show = true;
       } else {
@@ -707,7 +947,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     get filteredMLWorkloads() {
-      let list = (this.containers || []).map(c => {
+      let list = this.mlBaseWorkloads.map(c => {
         const cid = c.container_id || c.id;
         const ml = this.mlClassifications[cid] || null;
         return {
@@ -716,10 +956,16 @@ document.addEventListener('alpine:init', () => {
         };
       });
 
+      const attackClasses = new Set(['reconnaissance', 'privilege_escalation', 'shell_escape', 'suspicious_tooling']);
+
       if (this.mlTacticFilter === 'clean' || this.mlTacticFilter === 'benign') {
         list = list.filter(item => item.ml && item.ml.predicted_class === 'benign');
       } else if (this.mlTacticFilter === 'threats') {
-        list = list.filter(item => item.ml && item.ml.predicted_class !== 'benign');
+        list = list.filter(item => item.ml && attackClasses.has(item.ml.predicted_class));
+      } else if (this.mlTacticFilter === 'insufficient') {
+        list = list.filter(item => item.ml && item.ml.predicted_class === 'insufficient_data');
+      } else if (this.mlTacticFilter === 'error') {
+        list = list.filter(item => item.ml && (item.ml.predicted_class === 'error' || item.ml.error));
       } else if (this.mlTacticFilter && this.mlTacticFilter !== 'all') {
         list = list.filter(item => item.ml && item.ml.predicted_class === this.mlTacticFilter);
       }
@@ -737,20 +983,69 @@ document.addEventListener('alpine:init', () => {
     },
 
     get mlSummaryStats() {
-      const total = (this.containers || []).length;
-      const keys = Object.keys(this.mlClassifications);
-      const classified = keys.length;
+      const base = this.mlBaseWorkloads;
+      const total = base.length;
       let benign = 0;
       let threats = 0;
-      for (const cid of keys) {
+      let insufficient = 0;
+      let error = 0;
+      const attackClasses = new Set(['reconnaissance', 'privilege_escalation', 'shell_escape', 'suspicious_tooling']);
+      for (const c of base) {
+        const cid = c.container_id || c.id;
         const res = this.mlClassifications[cid];
-        if (res && res.predicted_class === 'benign') {
+        if (!res) continue;
+        if (res.predicted_class === 'benign') {
           benign++;
-        } else if (res) {
+        } else if (res.predicted_class === 'insufficient_data') {
+          insufficient++;
+        } else if (res.predicted_class === 'error' || res.error) {
+          error++;
+        } else if (attackClasses.has(res.predicted_class)) {
           threats++;
         }
       }
-      return { total, classified, benign, threats };
+      return { total, benign, threats, insufficient, error };
+    },
+
+    get mlModelBadge() {
+      if (this.mlModelInfoError) return 'MODEL ERROR';
+      if (!this.mlModelInfo) return 'LOADING MODEL INFO...';
+      const meta = this.mlModelInfo.model_metadata || {};
+      const training = (meta.training_status || 'unknown').toUpperCase();
+      const calibRaw = (meta.calibration_status || 'unvalidated').toUpperCase();
+      const calibration = calibRaw === 'VALIDATED' ? 'CALIBRATED' : calibRaw;
+      const sha = meta.model_artifact_sha256 || '';
+      const hash = sha ? sha.substring(0, 8) : '';
+      return hash ? `${training} · ${calibration} · ${hash}` : `${training} · ${calibration}`;
+    },
+
+    get mlClassificationSummary() {
+      const res = this.mlClassifyModal.result;
+      if (!res) return '';
+      if (res.error) {
+        return `Classification error: ${res.errorMessage || 'Unable to classify container'}`;
+      }
+      if (res.summary) {
+        return res.summary.replace(/^Heuristic classification:/i, 'Classification:');
+      }
+      const cls = res.predicted_class ? res.predicted_class.replace(/_/g, ' ') : 'unknown';
+      const score = ((res.confidence || 0) * 100).toFixed(1);
+      return `Classification: ${cls} (${score}% class score).`;
+    },
+
+    async fetchMLModelInfo() {
+      try {
+        const res = await this._apiFetch('/api/v1/ml/model-info');
+        if (res.ok) {
+          this.mlModelInfo = await res.json();
+          this.mlModelInfoError = false;
+        } else {
+          this.mlModelInfoError = true;
+        }
+      } catch (e) {
+        console.warn('ml/model-info failed', e);
+        this.mlModelInfoError = true;
+      }
     },
 
     // Chart.js instances are NOT kept as an Alpine component property at
@@ -795,8 +1090,16 @@ document.addEventListener('alpine:init', () => {
           if (newTab === 'pipeline' && !this.pipelineIncidentId && this.incidents.length > 0) {
             this.openPipelineForIncident(this.incidents[0]);
           }
-          if (newTab === 'ml' && Object.keys(this.mlClassifications).length === 0) {
-            this.classifyFleetForMLView();
+          if (newTab === 'ml') {
+            if (!this.mlModelInfo && !this.mlModelInfoError) {
+              this.fetchMLModelInfo();
+            }
+            if (Object.keys(this.mlClassifications).length === 0) {
+              this.classifyFleetForMLView(false);
+            }
+            this.startMLAutoRefresh();
+          } else {
+            this.stopMLAutoRefresh();
           }
           const triggerResize = () => {
             if (newTab === 'overview') {
@@ -829,6 +1132,10 @@ document.addEventListener('alpine:init', () => {
       }, 3000);
       // heavier refresh for system info every 10s
       setInterval(() => { this.fetchSystemInfo(); this.fetchAnomalyScores(); this.fetchAssessmentStatus(); }, 10000);
+
+      if (this.activeTab === 'ml') {
+        this.startMLAutoRefresh();
+      }
     },
 
     // helpers
@@ -1766,7 +2073,8 @@ document.addEventListener('alpine:init', () => {
         this.fetchProcessSummary(),
         this.fetchIncidents(),
         this.fetchScans(),
-        this.fetchAnomalyScores()
+        this.fetchAnomalyScores(),
+        this.fetchMLModelInfo()
       ]);
     },
 

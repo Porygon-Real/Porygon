@@ -299,7 +299,7 @@
                   <td class="font-mono text-xs" x-text="c.current_snapshot?.state?.pid || '—'"></td>
                   <td class="font-mono text-xs uppercase" x-text="c.container_name.includes('porygon') ? 'CORE' : 'APP'"></td>
                   <td class="text-right whitespace-nowrap">
-                    <button @click.stop="classifyContainerWithML(c)" class="btn-news-secondary py-0.5 px-2 text-[10px] mr-1 bg-[#FFF9E6] hover:bg-[#FFF0B3] border border-[#111111]" title="Classify container execution features with the heuristic tree ensemble">
+                    <button @click.stop="classifyContainerWithML(c)" class="btn-news-secondary py-0.5 px-2 text-[10px] mr-1 bg-[#FFF9E6] hover:bg-[#FFF0B3] border border-[#111111]" title="Classify container execution features with the tree ensemble">
                       <i class="ph ph-brain text-xs"></i> ML CLASSIFY
                     </button>
                     <button @click.stop="auditContainerWithAi(c)" class="btn-news-secondary py-0.5 px-2 text-[10px]" title="Inspect security posture advisory">
@@ -740,24 +740,33 @@
         <div class="flex flex-wrap items-center justify-between border-b border-[#111111] pb-3 mb-4 gap-3">
           <div>
             <div class="flex items-center gap-2">
-              <h2 class="font-serif font-bold text-2xl text-[#111111] m-0">Heuristic Threat Classifier</h2>
-              <span class="border border-[#111111] bg-[#111111] text-white px-2 py-0.5 text-[10px] font-mono font-bold uppercase">Heuristic Trees + Path Deltas</span>
+              <h2 class="font-serif font-bold text-2xl text-[#111111] m-0" x-text="mlModelInfo?.model_name || 'Threat Classifier'">Heuristic Threat Classifier</h2>
+              <span class="border border-[#111111] bg-[#111111] text-white px-2 py-0.5 text-[10px] font-mono font-bold uppercase" x-text="mlModelBadge">LOADING MODEL INFO...</span>
             </div>
-            <p class="font-body text-xs text-neutral-600 m-0 mt-0.5">On-demand classification of 12 process-execution features with raw tree-path attribution.</p>
+            <p class="font-body text-xs text-neutral-600 m-0 mt-0.5">On-demand classification of 10–12 process-execution features with raw tree-path attribution.</p>
           </div>
-          <div class="flex items-center gap-2">
-            <button @click="classifyFleetForMLView()"
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-mono text-[11px] text-neutral-500" x-text="mlLastUpdated ? 'Last updated ' + mlLastUpdated : 'Last updated: —'"></span>
+            <button @click="toggleMLAutoRefresh()"
+                    type="button"
+                    class="btn-news-secondary py-1 px-2.5 text-xs flex items-center gap-1 border border-[#111111]"
+                    :title="mlAutoRefreshPaused ? 'Resume auto-refresh every 30s' : 'Pause 30s auto-refresh'">
+              <i class="ph text-xs" :class="mlAutoRefreshPaused ? 'ph-play' : 'ph-pause'"></i>
+              <span x-text="mlAutoRefreshPaused ? 'RESUME' : 'PAUSE'"></span>
+            </button>
+            <button @click="classifyFleetForMLView(false)"
                     :disabled="mlLoadingBatch"
+                    type="button"
                     class="btn-news-primary py-1.5 px-3 text-xs flex items-center gap-1.5"
-                    title="Run ML threat classification on all running containers in the fleet">
+                    title="Run ML threat classification on all visible containers">
               <i class="ph" :class="mlLoadingBatch ? 'ph-spinner animate-spin' : 'ph-arrows-clockwise'"></i>
-              <span x-text="mlLoadingBatch ? 'CLASSIFYING FLEET...' : 'CLASSIFY ALL WORKLOADS'"></span>
+              <span x-text="mlLoadingBatch ? 'CLASSIFYING...' : 'CLASSIFY ALL WORKLOADS'"></span>
             </button>
           </div>
         </div>
 
-        <!-- 4-Stage KPI / Stat Cards -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6 text-center font-mono text-xs">
+        <!-- 5-Stage KPI / Stat Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6 text-center font-mono text-xs">
           <div class="border border-[#111111] bg-[#F9F9F7] p-3">
             <div class="text-neutral-500 font-bold">1. MONITORED FLEET</div>
             <div class="font-serif font-black text-2xl text-[#111111] mt-1" x-text="mlSummaryStats.total">0</div>
@@ -771,25 +780,53 @@
             <div class="font-bold" :class="mlSummaryStats.threats > 0 ? 'text-[#CC0000]' : 'text-neutral-500'">3. ACTIVE THREATS</div>
             <div class="font-serif font-black text-2xl mt-1" x-text="mlSummaryStats.threats">0</div>
           </div>
+          <div class="border border-[#111111] bg-neutral-100 text-neutral-700 p-3">
+            <div class="text-neutral-500 font-bold">4. INSUFFICIENT DATA</div>
+            <div class="font-serif font-black text-2xl mt-1 text-neutral-700" x-text="mlSummaryStats.insufficient">0</div>
+          </div>
+          <div class="border border-[#111111] p-3"
+               :class="mlSummaryStats.error > 0 ? 'border-2 border-red-500 bg-red-50 text-red-700' : 'bg-[#F9F9F7] text-neutral-700'">
+            <div class="font-bold" :class="mlSummaryStats.error > 0 ? 'text-red-700' : 'text-neutral-500'">5. ERRORS</div>
+            <div class="font-serif font-black text-2xl mt-1" :class="mlSummaryStats.error > 0 ? 'text-red-700' : 'text-neutral-700'" x-text="mlSummaryStats.error">0</div>
+          </div>
           <div class="border border-[#111111] bg-[#F9F9F7] p-3">
-            <div class="text-neutral-500 font-bold">4. FEATURE VECTOR</div>
-            <div class="font-serif font-black text-2xl text-[#111111] mt-1">12 SIGNALS</div>
+            <div class="text-neutral-500 font-bold">6. FEATURE VECTOR</div>
+            <div class="font-serif font-black text-sm text-[#111111] mt-2">10–12 SIGNALS (by variant)</div>
           </div>
         </div>
 
         <!-- Filter & Search Toolbar -->
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4 font-mono text-xs">
-          <div class="flex items-center gap-1 border border-[#111111] p-0.5 bg-neutral-100">
-            <button @click="mlTacticFilter='all'"
-                    :class="mlTacticFilter==='all' ? 'bg-[#111111] text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
-                    class="px-2.5 py-1 uppercase text-[11px] transition-colors">ALL (<span x-text="containers.length"></span>)</button>
-            <button @click="mlTacticFilter='threats'"
-                    :class="mlTacticFilter==='threats' ? 'bg-[#CC0000] text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
-                    class="px-2.5 py-1 uppercase text-[11px] transition-colors">THREATS ONLY (<span x-text="mlSummaryStats.threats"></span>)</button>
-            <button @click="mlTacticFilter='clean'"
-                    :class="mlTacticFilter==='clean' ? 'bg-emerald-800 text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
-                    class="px-2.5 py-1 uppercase text-[11px] transition-colors">BENIGN (<span x-text="mlSummaryStats.benign"></span>)</button>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-1 border border-[#111111] p-0.5 bg-neutral-100">
+              <button @click="mlTacticFilter='all'"
+                      :class="mlTacticFilter==='all' ? 'bg-[#111111] text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
+                      class="px-2.5 py-1 uppercase text-[11px] transition-colors">ALL (<span x-text="mlSummaryStats.total"></span>)</button>
+              <button @click="mlTacticFilter='threats'"
+                      :class="mlTacticFilter==='threats' ? 'bg-[#CC0000] text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
+                      class="px-2.5 py-1 uppercase text-[11px] transition-colors">THREATS ONLY (<span x-text="mlSummaryStats.threats"></span>)</button>
+              <button @click="mlTacticFilter='clean'"
+                      :class="mlTacticFilter==='clean' ? 'bg-emerald-800 text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
+                      class="px-2.5 py-1 uppercase text-[11px] transition-colors">BENIGN (<span x-text="mlSummaryStats.benign"></span>)</button>
+              <button @click="mlTacticFilter='insufficient'"
+                      :class="mlTacticFilter==='insufficient' ? 'bg-neutral-600 text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
+                      class="px-2.5 py-1 uppercase text-[11px] transition-colors">INSUFFICIENT (<span x-text="mlSummaryStats.insufficient"></span>)</button>
+              <template x-if="mlSummaryStats.error > 0">
+                <button @click="mlTacticFilter='error'"
+                        :class="mlTacticFilter==='error' ? 'bg-red-700 text-white font-bold' : 'text-neutral-700 hover:bg-neutral-200'"
+                        class="px-2.5 py-1 uppercase text-[11px] transition-colors">ERROR (<span x-text="mlSummaryStats.error"></span>)</button>
+              </template>
+            </div>
+
+            <label class="flex items-center gap-1.5 cursor-pointer text-xs font-mono text-neutral-700 select-none border border-[#111111] bg-white px-2 py-1">
+              <input type="checkbox"
+                     :checked="mlIncludeStopped"
+                     @change="toggleIncludeStopped()"
+                     class="rounded border-[#111111] text-[#111111] focus:ring-0 cursor-pointer" />
+              <span>Include stopped</span>
+            </label>
           </div>
+
           <div class="flex items-center gap-2">
             <span class="text-neutral-500 uppercase text-[11px]">SEARCH:</span>
             <input type="text"
@@ -818,25 +855,28 @@
                   <td class="font-mono text-xs">
                     <div class="font-bold text-[#111111]" x-text="item.container.container_name"></div>
                     <div class="text-[10px] text-neutral-500 truncate max-w-[180px]" x-text="item.container.container_id.substring(0, 12)"></div>
+                    <div class="flex items-center gap-1.5 mt-1 font-mono text-[9px]">
+                      <span class="px-1 py-0.2 border uppercase font-bold"
+                            :class="isContainerRunning(item.container) ? 'bg-[#111111] text-white border-[#111111]' : 'bg-neutral-200 text-neutral-600 border-neutral-400'"
+                            x-text="isContainerRunning(item.container) ? 'RUNNING' : 'STOPPED'"></span>
+                      <span class="text-neutral-500" x-text="'last seen ' + formatLastSeen(item.container.last_seen_at)"></span>
+                    </div>
+                    <template x-if="item.ml && !mlIsError(item.ml)">
+                      <div class="text-[9px] text-neutral-500 font-mono mt-0.5 tracking-tight" x-text="mlVariantLabel(item.ml)"></div>
+                    </template>
                   </td>
                   <td>
                     <template x-if="item.ml">
-                      <span class="font-mono font-bold text-[11px] px-2 py-0.5 border border-[#111111] uppercase inline-block"
-                            :class="{
-                              'bg-emerald-100 text-emerald-800': item.ml.predicted_class === 'benign',
-                              'bg-red-100 text-red-800': item.ml.predicted_class === 'shell_escape',
-                              'bg-blue-100 text-blue-800': item.ml.predicted_class === 'reconnaissance',
-                              'bg-amber-100 text-amber-800': item.ml.predicted_class === 'suspicious_tooling',
-                              'bg-purple-100 text-purple-800': item.ml.predicted_class === 'privilege_escalation'
-                            }"
-                            x-text="item.ml.predicted_class.replace('_', ' ')"></span>
+                      <span class="font-mono font-bold text-[11px] px-2 py-0.5 border uppercase inline-block"
+                            :class="mlTacticBadgeClass(item.ml)"
+                            x-text="mlTacticLabel(item.ml)"></span>
                     </template>
                     <template x-if="!item.ml">
                       <span class="font-mono text-[10px] text-neutral-400 uppercase italic">UNCLASSIFIED</span>
                     </template>
                   </td>
                   <td class="font-mono text-xs">
-                    <template x-if="item.ml">
+                    <template x-if="item.ml && !mlIsInsufficient(item.ml) && !mlIsError(item.ml)">
                       <div>
                         <div class="font-bold" x-text="((item.ml.confidence || 0) * 100).toFixed(1) + '%'"></div>
                         <div class="w-20 bg-neutral-200 h-1.5 border border-[#111111] mt-1">
@@ -844,26 +884,28 @@
                         </div>
                       </div>
                     </template>
-                    <template x-if="!item.ml">
+                    <template x-if="!item.ml || mlIsInsufficient(item.ml) || mlIsError(item.ml)">
                       <span class="text-neutral-400">—</span>
                     </template>
                   </td>
                   <td>
                     <template x-if="item.ml">
                       <span class="px-1.5 py-0.5 text-[10px] font-mono font-bold uppercase border border-[#111111]"
-                            :class="{
-                              'bg-emerald-600 text-white': item.ml.risk_level === 'clean',
-                              'bg-amber-500 text-white': item.ml.risk_level === 'medium' || item.ml.risk_level === 'low',
-                              'bg-red-600 text-white': item.ml.risk_level === 'high' || item.ml.risk_level === 'critical'
-                            }"
-                            x-text="item.ml.risk_level"></span>
+                            :class="mlVerdictClass(item.ml)"
+                            x-text="mlVerdictLabel(item.ml)"></span>
                     </template>
                     <template x-if="!item.ml">
                       <span class="text-neutral-400 text-xs font-mono">—</span>
                     </template>
                   </td>
                   <td class="font-mono text-xs">
-                    <template x-if="item.ml && item.ml.top_contributing_features && item.ml.top_contributing_features.length > 0">
+                    <template x-if="item.ml && mlIsError(item.ml)">
+                      <div class="font-mono text-[11px] text-red-600 truncate max-w-[320px]" x-text="item.ml.errorMessage || 'Classification error'"></div>
+                    </template>
+                    <template x-if="item.ml && mlIsInsufficient(item.ml)">
+                      <div class="font-body text-[11px] text-neutral-500 italic">Fewer than 3 process events in the telemetry slice.</div>
+                    </template>
+                    <template x-if="item.ml && !mlIsInsufficient(item.ml) && !mlIsError(item.ml) && item.ml.top_contributing_features && item.ml.top_contributing_features.length > 0">
                       <div>
                         <span class="font-bold text-[#111111]" x-text="item.ml.top_contributing_features[0].feature"></span>
                         <span class="font-bold text-[11px] ml-1"
@@ -879,7 +921,7 @@
                   <td class="text-right whitespace-nowrap">
                     <button @click="inspectMLFromTable(item.container)"
                             class="btn-news-secondary py-1 px-2.5 text-[11px] bg-[#FFF9E6] hover:bg-[#FFF0B3] border border-[#111111]"
-                            title="Inspect top raw-space tree-path drivers and heuristic class scores">
+                            title="Inspect top raw-space tree-path drivers and class scores">
                       <i class="ph ph-tree-structure text-xs"></i> INSPECT PATH DELTAS
                     </button>
                   </td>
@@ -1443,7 +1485,7 @@
 
         <div x-show="mlClassifyModal.loading" class="text-center py-8 font-mono text-xs space-y-2">
           <i class="ph ph-spinner animate-spin text-2xl text-neutral-600"></i>
-          <div>EVALUATING 12 EXECUTION FEATURES VIA HEURISTIC TREES...</div>
+          <div>EVALUATING 12 EXECUTION FEATURES VIA TREE ENSEMBLE...</div>
         </div>
 
         <div x-show="mlClassifyModal.error" class="border border-red-500 bg-red-50 p-3 text-red-700 text-xs font-mono my-2" x-text="mlClassifyModal.error"></div>
@@ -1451,41 +1493,73 @@
         <div x-show="!mlClassifyModal.loading && mlClassifyModal.result" class="space-y-4 font-body text-xs">
           <!-- Primary Verdict Card -->
           <div class="border-2 border-[#111111] p-4 bg-[#F9F9F7]">
-            <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
-              <div class="flex items-center gap-2">
-                <span class="font-mono text-xs font-bold uppercase text-neutral-500">PREDICTED TACTIC:</span>
-                <span class="font-mono font-bold text-sm px-2.5 py-0.5 border border-[#111111] uppercase"
-                      :class="{
-                        'bg-emerald-100 text-emerald-800': mlClassifyModal.result?.predicted_class === 'benign',
-                        'bg-red-100 text-red-800': mlClassifyModal.result?.predicted_class === 'shell_escape',
-                        'bg-blue-100 text-blue-800': mlClassifyModal.result?.predicted_class === 'reconnaissance',
-                        'bg-amber-100 text-amber-800': mlClassifyModal.result?.predicted_class === 'suspicious_tooling',
-                        'bg-purple-100 text-purple-800': mlClassifyModal.result?.predicted_class === 'privilege_escalation'
-                      }"
-                      x-text="mlClassifyModal.result?.predicted_class?.replace('_', ' ')"></span>
+            <!-- Insufficient Data Box -->
+            <template x-if="mlIsInsufficient(mlClassifyModal.result)">
+              <div class="border border-neutral-400 bg-neutral-100 p-4 font-mono text-xs text-neutral-700 space-y-1">
+                <div class="font-bold text-neutral-900">INSUFFICIENT DATA</div>
+                <div>Fewer than 3 process execution events; no verdict is given.</div>
               </div>
-              <div class="flex items-center gap-2 font-mono text-xs">
-                <span class="text-neutral-500">CLASS SCORE:</span>
-                <span class="font-bold text-sm" x-text="((mlClassifyModal.result?.confidence || 0) * 100).toFixed(1) + '%'"></span>
-                <span class="px-1.5 py-0.5 font-bold uppercase border border-[#111111]"
-                      :class="{
-                        'bg-emerald-600 text-white': mlClassifyModal.result?.risk_level === 'clean',
-                        'bg-amber-500 text-white': mlClassifyModal.result?.risk_level === 'medium' || mlClassifyModal.result?.risk_level === 'low',
-                        'bg-red-600 text-white': mlClassifyModal.result?.risk_level === 'high' || mlClassifyModal.result?.risk_level === 'critical'
-                      }"
-                      x-text="mlClassifyModal.result?.risk_level"></span>
+            </template>
+
+            <!-- Error Box -->
+            <template x-if="mlIsError(mlClassifyModal.result)">
+              <div class="border border-red-400 bg-red-50 p-4 font-mono text-xs text-red-700 space-y-1">
+                <div class="font-bold text-red-900">CLASSIFICATION ERROR</div>
+                <div x-text="mlClassifyModal.result?.errorMessage || 'Unable to classify container'"></div>
               </div>
-            </div>
-            <p class="text-neutral-800 leading-relaxed font-body mt-2" x-text="mlClassifyModal.result?.summary"></p>
+            </template>
+
+            <!-- Normal Verdict Display -->
+            <template x-if="!mlIsInsufficient(mlClassifyModal.result) && !mlIsError(mlClassifyModal.result)">
+              <div>
+                <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="font-mono text-xs font-bold uppercase text-neutral-500">PREDICTED TACTIC:</span>
+                      <span class="font-mono font-bold text-sm px-2.5 py-0.5 border border-[#111111] uppercase"
+                            :class="{
+                              'bg-emerald-100 text-emerald-800': mlClassifyModal.result?.predicted_class === 'benign',
+                              'bg-red-100 text-red-800': mlClassifyModal.result?.predicted_class === 'shell_escape',
+                              'bg-blue-100 text-blue-800': mlClassifyModal.result?.predicted_class === 'reconnaissance',
+                              'bg-amber-100 text-amber-800': mlClassifyModal.result?.predicted_class === 'suspicious_tooling',
+                              'bg-purple-100 text-purple-800': mlClassifyModal.result?.predicted_class === 'privilege_escalation'
+                            }"
+                            x-text="mlClassifyModal.result?.predicted_class?.replace(/_/g, ' ')"></span>
+                    </div>
+                    <div class="text-[10px] font-mono text-neutral-500 mt-1" x-text="mlVariantLabel(mlClassifyModal.result)"></div>
+                  </div>
+                  <div class="flex items-center gap-2 font-mono text-xs">
+                    <span class="text-neutral-500">CLASS SCORE:</span>
+                    <span class="font-bold text-sm" x-text="((mlClassifyModal.result?.confidence || 0) * 100).toFixed(1) + '%'"></span>
+                    <span class="px-1.5 py-0.5 font-bold uppercase border border-[#111111]"
+                          :class="{
+                            'bg-emerald-600 text-white': mlClassifyModal.result?.risk_level === 'clean',
+                            'bg-amber-500 text-white': mlClassifyModal.result?.risk_level === 'medium' || mlClassifyModal.result?.risk_level === 'low',
+                            'bg-red-600 text-white': mlClassifyModal.result?.risk_level === 'high' || mlClassifyModal.result?.risk_level === 'critical'
+                          }"
+                          x-text="mlClassifyModal.result?.risk_level"></span>
+                  </div>
+                </div>
+
+                <!-- Advisory note for no_baseline variant -->
+                <template x-if="mlClassifyModal.result?.model_variant === 'no_baseline'">
+                  <div class="mt-2 p-2 border border-amber-300 bg-amber-50 text-amber-900 font-body text-xs leading-relaxed">
+                    No baseline profile for this image; drift features unavailable. Benign recall for this variant is about 41% on the test set, so reconnaissance verdicts may be false alarms.
+                  </div>
+                </template>
+
+                <p class="text-neutral-800 leading-relaxed font-body mt-2" x-text="mlClassificationSummary"></p>
+              </div>
+            </template>
           </div>
 
-          <!-- Heuristic class scores -->
-          <div class="border border-[#111111] p-3 bg-white">
-            <h4 class="font-mono font-bold text-xs uppercase text-neutral-600 mb-2">Heuristic Class Scores</h4>
+          <!-- Class scores (hidden if insufficient or error) -->
+          <div x-show="!mlIsInsufficient(mlClassifyModal.result) && !mlIsError(mlClassifyModal.result)" class="border border-[#111111] p-3 bg-white">
+            <h4 class="font-mono font-bold text-xs uppercase text-neutral-600 mb-2">Class Scores</h4>
             <div class="space-y-1.5">
               <template x-for="(prob, tactic) in (mlClassifyModal.result?.class_probabilities || {})" :key="tactic">
                 <div class="flex items-center gap-2 font-mono text-[11px]">
-                  <span class="w-36 uppercase truncate text-neutral-700" x-text="tactic.replace('_', ' ')"></span>
+                  <span class="w-36 uppercase truncate text-neutral-700" x-text="tactic.replace(/_/g, ' ')"></span>
                   <div class="flex-1 bg-neutral-200 h-2.5 border border-[#111111]">
                     <div class="h-full bg-[#111111]" :style="'width: ' + Math.min(100, Math.max(0, prob * 100)) + '%'"></div>
                   </div>
@@ -1495,10 +1569,10 @@
             </div>
           </div>
 
-          <!-- Tree-path Feature Attribution Table -->
-          <div class="border border-[#111111] p-3 bg-white">
+          <!-- Tree-path Feature Attribution Table (hidden if insufficient or error) -->
+          <div x-show="!mlIsInsufficient(mlClassifyModal.result) && !mlIsError(mlClassifyModal.result)" class="border border-[#111111] p-3 bg-white">
             <div class="flex items-center justify-between mb-2">
-              <h4 class="font-mono font-bold text-xs uppercase text-neutral-600">Tree-path Deltas (Top Raw-space Drivers)</h4>
+              <h4 class="font-mono font-bold text-xs uppercase text-neutral-600">Tree-path Deltas (path-based attribution)</h4>
               <span class="font-mono text-[10px] text-neutral-400">Raw ensemble output space</span>
             </div>
             <table class="w-full text-left font-mono text-[11px] border-collapse">
@@ -1528,8 +1602,8 @@
           </div>
 
           <div class="font-mono text-[10px] text-neutral-500 flex justify-between items-center pt-1">
-            <span>MODEL: Heuristic Tree Ensemble (<span x-text="mlClassifyModal.result?.model_version"></span>)</span>
-            <span>CLASSIFIED AT: <span x-text="mlClassifyModal.result?.classified_at"></span></span>
+            <span x-text="'MODEL: ' + (mlModelInfo?.model_name || 'Tree Ensemble') + (mlVariantLabel(mlClassifyModal.result) ? ' · ' + mlVariantLabel(mlClassifyModal.result) : '')"></span>
+            <span x-text="mlClassifyModal.result?.classified_at ? 'CLASSIFIED AT: ' + mlClassifyModal.result.classified_at : ''"></span>
           </div>
         </div>
 
